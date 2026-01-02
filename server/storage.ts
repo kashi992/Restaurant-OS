@@ -114,10 +114,17 @@ export class MemStorage implements IStorage {
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = randomUUID();
     const user: User = { 
-      ...insertUser, 
       id,
-      createdAt: new Date(),
+      tenantId: insertUser.tenantId ?? null,
+      username: insertUser.username,
+      email: insertUser.email,
+      password: insertUser.password,
+      role: insertUser.role ?? "staff",
+      firstName: insertUser.firstName ?? null,
+      lastName: insertUser.lastName ?? null,
+      isActive: insertUser.isActive ?? true,
       lastLogin: null,
+      createdAt: new Date(),
     };
     this.users.set(id, user);
     return user;
@@ -126,7 +133,7 @@ export class MemStorage implements IStorage {
   async updateUser(id: string, updates: Partial<InsertUser>): Promise<User | undefined> {
     const user = this.users.get(id);
     if (!user) return undefined;
-    const updated = { ...user, ...updates };
+    const updated = { ...user, ...updates } as User;
     this.users.set(id, updated);
     return updated;
   }
@@ -147,8 +154,17 @@ export class MemStorage implements IStorage {
   async createTenant(insertTenant: InsertTenant): Promise<Tenant> {
     const id = randomUUID();
     const tenant: Tenant = { 
-      ...insertTenant, 
       id,
+      name: insertTenant.name,
+      slug: insertTenant.slug,
+      logoUrl: insertTenant.logoUrl ?? null,
+      address: insertTenant.address ?? null,
+      phone: insertTenant.phone ?? null,
+      email: insertTenant.email ?? null,
+      timezone: insertTenant.timezone ?? "UTC",
+      currency: insertTenant.currency ?? "USD",
+      isActive: insertTenant.isActive ?? true,
+      settings: insertTenant.settings ?? {},
       createdAt: new Date(),
     };
     this.tenants.set(id, tenant);
@@ -158,7 +174,7 @@ export class MemStorage implements IStorage {
   async updateTenant(id: string, updates: Partial<InsertTenant>): Promise<Tenant | undefined> {
     const tenant = this.tenants.get(id);
     if (!tenant) return undefined;
-    const updated = { ...tenant, ...updates };
+    const updated = { ...tenant, ...updates } as Tenant;
     this.tenants.set(id, updated);
     return updated;
   }
@@ -176,7 +192,15 @@ export class MemStorage implements IStorage {
 
   async createCategory(insertCategory: InsertCategory): Promise<Category> {
     const id = randomUUID();
-    const category: Category = { ...insertCategory, id };
+    const category: Category = { 
+      id,
+      tenantId: insertCategory.tenantId,
+      name: insertCategory.name,
+      description: insertCategory.description ?? null,
+      imageUrl: insertCategory.imageUrl ?? null,
+      sortOrder: insertCategory.sortOrder ?? 0,
+      isActive: insertCategory.isActive ?? true,
+    };
     this.categories.set(id, category);
     return category;
   }
@@ -184,7 +208,7 @@ export class MemStorage implements IStorage {
   async updateCategory(id: string, updates: Partial<InsertCategory>): Promise<Category | undefined> {
     const category = this.categories.get(id);
     if (!category) return undefined;
-    const updated = { ...category, ...updates };
+    const updated = { ...category, ...updates } as Category;
     this.categories.set(id, updated);
     return updated;
   }
@@ -213,8 +237,18 @@ export class MemStorage implements IStorage {
   async createMenuItem(insertItem: InsertMenuItem): Promise<MenuItem> {
     const id = randomUUID();
     const item: MenuItem = { 
-      ...insertItem, 
       id,
+      tenantId: insertItem.tenantId,
+      categoryId: insertItem.categoryId ?? null,
+      name: insertItem.name,
+      description: insertItem.description ?? null,
+      price: insertItem.price,
+      imageUrl: insertItem.imageUrl ?? null,
+      isAvailable: insertItem.isAvailable ?? true,
+      preparationTime: insertItem.preparationTime ?? null,
+      allergens: insertItem.allergens ?? null,
+      tags: insertItem.tags ?? null,
+      sortOrder: insertItem.sortOrder ?? 0,
       createdAt: new Date(),
     };
     this.menuItems.set(id, item);
@@ -224,7 +258,7 @@ export class MemStorage implements IStorage {
   async updateMenuItem(id: string, updates: Partial<InsertMenuItem>): Promise<MenuItem | undefined> {
     const item = this.menuItems.get(id);
     if (!item) return undefined;
-    const updated = { ...item, ...updates };
+    const updated = { ...item, ...updates } as MenuItem;
     this.menuItems.set(id, updated);
     return updated;
   }
@@ -244,7 +278,15 @@ export class MemStorage implements IStorage {
 
   async createTable(insertTable: InsertTable): Promise<Table> {
     const id = randomUUID();
-    const table: Table = { ...insertTable, id };
+    const table: Table = { 
+      id,
+      tenantId: insertTable.tenantId,
+      number: insertTable.number,
+      capacity: insertTable.capacity ?? 4,
+      qrCode: insertTable.qrCode ?? null,
+      status: insertTable.status ?? "available",
+      isActive: insertTable.isActive ?? true,
+    };
     this.tables.set(id, table);
     return table;
   }
@@ -252,7 +294,7 @@ export class MemStorage implements IStorage {
   async updateTable(id: string, updates: Partial<InsertTable>): Promise<Table | undefined> {
     const table = this.tables.get(id);
     if (!table) return undefined;
-    const updated = { ...table, ...updates };
+    const updated = { ...table, ...updates } as Table;
     this.tables.set(id, updated);
     return updated;
   }
@@ -282,8 +324,19 @@ export class MemStorage implements IStorage {
     const id = randomUUID();
     const now = new Date();
     const order: Order = { 
-      ...insertOrder, 
       id,
+      tenantId: insertOrder.tenantId,
+      tableId: insertOrder.tableId ?? null,
+      userId: insertOrder.userId ?? null,
+      orderNumber: insertOrder.orderNumber,
+      status: insertOrder.status ?? "pending",
+      orderType: insertOrder.orderType ?? "dine_in",
+      subtotal: insertOrder.subtotal ?? "0",
+      tax: insertOrder.tax ?? "0",
+      total: insertOrder.total ?? "0",
+      notes: insertOrder.notes ?? null,
+      customerName: insertOrder.customerName ?? null,
+      customerPhone: insertOrder.customerPhone ?? null,
       createdAt: now,
       updatedAt: now,
     };
@@ -294,7 +347,7 @@ export class MemStorage implements IStorage {
   async updateOrder(id: string, updates: Partial<InsertOrder>): Promise<Order | undefined> {
     const order = this.orders.get(id);
     if (!order) return undefined;
-    const updated = { ...order, ...updates, updatedAt: new Date() };
+    const updated = { ...order, ...updates, updatedAt: new Date() } as Order;
     this.orders.set(id, updated);
     return updated;
   }
@@ -306,7 +359,16 @@ export class MemStorage implements IStorage {
 
   async createOrderItem(insertItem: InsertOrderItem): Promise<OrderItem> {
     const id = randomUUID();
-    const item: OrderItem = { ...insertItem, id };
+    const item: OrderItem = { 
+      id,
+      orderId: insertItem.orderId,
+      menuItemId: insertItem.menuItemId,
+      quantity: insertItem.quantity ?? 1,
+      unitPrice: insertItem.unitPrice,
+      totalPrice: insertItem.totalPrice,
+      notes: insertItem.notes ?? null,
+      status: insertItem.status ?? "pending",
+    };
     this.orderItems.set(id, item);
     return item;
   }
@@ -314,7 +376,7 @@ export class MemStorage implements IStorage {
   async updateOrderItem(id: string, updates: Partial<InsertOrderItem>): Promise<OrderItem | undefined> {
     const item = this.orderItems.get(id);
     if (!item) return undefined;
-    const updated = { ...item, ...updates };
+    const updated = { ...item, ...updates } as OrderItem;
     this.orderItems.set(id, updated);
     return updated;
   }
@@ -335,8 +397,13 @@ export class MemStorage implements IStorage {
   async createPayment(insertPayment: InsertPayment): Promise<Payment> {
     const id = randomUUID();
     const payment: Payment = { 
-      ...insertPayment, 
       id,
+      orderId: insertPayment.orderId,
+      tenantId: insertPayment.tenantId,
+      amount: insertPayment.amount,
+      method: insertPayment.method,
+      status: insertPayment.status ?? "pending",
+      transactionId: insertPayment.transactionId ?? null,
       createdAt: new Date(),
     };
     this.payments.set(id, payment);
@@ -346,7 +413,7 @@ export class MemStorage implements IStorage {
   async updatePayment(id: string, updates: Partial<InsertPayment>): Promise<Payment | undefined> {
     const payment = this.payments.get(id);
     if (!payment) return undefined;
-    const updated = { ...payment, ...updates };
+    const updated = { ...payment, ...updates } as Payment;
     this.payments.set(id, updated);
     return updated;
   }
