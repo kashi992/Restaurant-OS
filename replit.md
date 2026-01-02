@@ -5,7 +5,7 @@ A full-stack, multi-tenant restaurant Point of Sale (POS) system with QR code or
 
 **Purpose**: Enable restaurants to manage orders, menus, and tables through a POS dashboard, while allowing customers to place orders via QR code scanning.
 
-**Current State**: Backend foundation complete with health endpoints, database connection, and multi-tenant schema defined. UI development pending.
+**Current State**: Complete database schema with 20+ tables, seed data with sample restaurant, ready for API implementation.
 
 ## Tech Stack
 - **Backend**: Express.js, PostgreSQL (Drizzle ORM), JWT, Socket.IO
@@ -33,15 +33,41 @@ A full-stack, multi-tenant restaurant Point of Sale (POS) system with QR code or
 ### Shared (`shared/`)
 - `schema.ts` - Drizzle ORM schema + Zod validation + TypeScript types
 
-## Database Schema (Multi-Tenant)
-- **tenants** - Restaurant entities (id, name, slug, settings)
-- **users** - Staff users scoped to tenant (admin, manager, staff, kitchen roles)
-- **categories** - Menu categories per tenant
-- **menu_items** - Menu items with prices, allergens, tags
-- **tables** - Restaurant tables with QR codes
+### Scripts (`scripts/`)
+- `seed.ts` - Database seed script (creates super admin + sample restaurant)
+
+## Database Schema (Multi-Tenant) - 20+ Tables
+
+### Core Tenant Tables
+- **restaurants** - Core tenant entity (id, name, slug, settings, tax rate)
+- **restaurant_domains** - Custom domains for white-labeling
+- **restaurant_feature_allowlist** - Hard permissions (what features allowed)
+- **restaurant_settings** - Soft toggles (JSON config values)
+
+### Users & Authorization
+- **users** - Global users (can belong to multiple restaurants)
+- **roles** - Permission roles per restaurant (admin, manager, server, kitchen, cashier)
+- **restaurant_users** - Junction: users <-> restaurants with role assignment
+
+### Menu Management
+- **menus** - Named menus with time availability (Breakfast, Lunch, Dinner)
+- **categories** - Menu categories per menu
+- **menu_items** - Products with prices, allergens, tags, prep time
+- **modifier_groups** - Groups like "Size", "Toppings" with min/max selections
+- **modifiers** - Individual options with prices
+- **menu_item_modifier_groups** - Junction: items <-> modifier groups
+
+### Tables & QR
+- **dining_tables** - Physical tables with floor plan positions
+- **qr_tokens** - QR codes for table ordering
+
+### Orders & Payments
 - **orders** - Customer orders with status tracking
-- **order_items** - Line items in orders
-- **payments** - Payment records
+- **order_items** - Line items (denormalized for historical accuracy)
+- **order_status_history** - Audit trail for status changes
+- **payments** - Payment records with transaction details
+- **split_sessions** - Split payment sessions
+- **split_shares** - Individual shares within splits
 
 ## API Endpoints
 
@@ -76,14 +102,31 @@ All secrets managed via `.env` file. See `.env.example` for full list:
 - `npm run build` - Build for production
 - `npm run db:push` - Push schema to database
 - `npm run db:studio` - Open Drizzle Studio
+- `npx tsx scripts/seed.ts` - Seed database with sample data
+
+## Seed Data
+Running `npx tsx scripts/seed.ts` creates:
+- **Super Admin**: admin@posqr.com / admin123
+- **Restaurant**: "The Flying Fork" (slug: flying-fork)
+  - 7 feature permissions
+  - 6 settings
+  - 5 roles (admin, manager, server, kitchen, cashier)
+  - 4 staff users
+  - 1 menu with 6 categories
+  - 19 menu items
+  - 3 modifier groups
+  - 10 dining tables with QR codes
 
 ## Recent Changes
-- **2026-01-02**: Initial backend setup
-  - Created multi-tenant PostgreSQL schema
-  - Set up Express server with health endpoints
-  - Integrated Socket.IO for real-time updates
-  - Created storage interface with MemStorage implementation
-  - Added comprehensive README and .env.example
+- **2026-01-02**: Phase 1 - Database schema complete
+  - Created comprehensive multi-tenant PostgreSQL schema (20+ tables)
+  - Implemented restaurant_feature_allowlist (hard permissions)
+  - Implemented restaurant_settings (soft toggles with JSON values)
+  - Added modifier system (groups + modifiers + item linking)
+  - Added split payment support (sessions + shares)
+  - Added order status history for audit trail
+  - Created seed script with full sample restaurant
+  - Added comprehensive ERD notes to README
 
 ## User Preferences
 - No Replit-specific services (portable to any VPS/hosting)

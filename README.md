@@ -51,6 +51,9 @@ A full-stack, multi-tenant restaurant Point of Sale (POS) system with QR code or
 ├── shared/                 # Shared code between frontend and backend
 │   └── schema.ts           # Database schema and TypeScript types
 │
+├── scripts/                # Utility scripts
+│   └── seed.ts             # Database seed script
+│
 ├── .env.example            # Environment variables template
 ├── drizzle.config.ts       # Drizzle ORM configuration
 ├── package.json            # Dependencies and scripts
@@ -119,13 +122,272 @@ Push the schema to the database:
 npm run db:push
 ```
 
-### 5. Start the Development Server
+### 5. Seed the Database (Optional)
+
+Populate the database with sample data:
+
+```bash
+npx tsx scripts/seed.ts
+```
+
+This creates:
+- Super Admin: `admin@posqr.com` / `admin123`
+- Sample Restaurant: "The Flying Fork" with full menu, tables, and staff
+
+### 6. Start the Development Server
 
 ```bash
 npm run dev
 ```
 
 The application will be available at `http://localhost:5000`.
+
+## Database Schema
+
+### Entity Relationship Diagram (ERD)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              MULTI-TENANT CORE                               │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────┐     ┌─────────────────────┐     ┌──────────────────────────┐
+│  restaurants │────<│ restaurant_domains  │     │ restaurant_feature_      │
+│──────────────│     │─────────────────────│     │ allowlist                │
+│ id (PK)      │     │ id (PK)             │     │──────────────────────────│
+│ name         │     │ restaurant_id (FK)  │────>│ id (PK)                  │
+│ slug (UNIQ)  │     │ domain (UNIQ)       │     │ restaurant_id (FK)       │
+│ address      │     │ is_primary          │     │ feature_key              │
+│ city/state   │     │ is_verified         │     │ is_enabled               │
+│ country      │     │ ssl_enabled         │     │ expires_at               │
+│ timezone     │     └─────────────────────┘     └──────────────────────────┘
+│ currency     │
+│ tax_rate     │     ┌─────────────────────┐
+│ is_active    │────<│ restaurant_settings │
+│ timestamps   │     │─────────────────────│
+└──────────────┘     │ id (PK)             │
+       │             │ restaurant_id (FK)  │
+       │             │ setting_key         │
+       │             │ setting_value (JSON)│
+       │             └─────────────────────┘
+       │
+       │
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                           USERS & AUTHORIZATION                               │
+└──────────────────────────────────────────────────────────────────────────────┘
+       │
+       │         ┌──────────────────┐
+       │         │      users       │
+       │         │──────────────────│
+       │         │ id (PK)          │
+       │         │ email (UNIQ)     │
+       │         │ password         │
+       │         │ first/last_name  │
+       │         │ is_super_admin   │
+       │         │ is_active        │
+       │         │ timestamps       │
+       │         └────────┬─────────┘
+       │                  │
+       │    ┌─────────────┴────────────┐
+       │    │                          │
+       ▼    ▼                          ▼
+┌──────────────────┐          ┌──────────────────┐
+│      roles       │          │ restaurant_users │
+│──────────────────│          │──────────────────│
+│ id (PK)          │          │ id (PK)          │
+│ restaurant_id(FK)│◄────────>│ restaurant_id(FK)│
+│ name             │          │ user_id (FK)     │
+│ description      │          │ role_id (FK)     │◄─┐
+│ permissions(JSON)│          │ pin              │  │
+│ is_system_role   │──────────│ is_active        │  │
+└──────────────────┘          │ hired_at         │  │
+                              └──────────────────┘  │
+                                                    │
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                              MENU MANAGEMENT                                  │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────┐     ┌──────────────────┐     ┌──────────────────────────────┐
+│    menus     │────<│   categories     │────<│        menu_items            │
+│──────────────│     │──────────────────│     │──────────────────────────────│
+│ id (PK)      │     │ id (PK)          │     │ id (PK)                      │
+│ restaurant_id│     │ restaurant_id(FK)│     │ restaurant_id (FK)           │
+│ name         │     │ menu_id (FK)     │     │ category_id (FK)             │
+│ description  │     │ name             │     │ name                         │
+│ is_active    │     │ description      │     │ description                  │
+│ is_default   │     │ image_url        │     │ price                        │
+│ available_   │     │ sort_order       │     │ compare_at_price             │
+│   from/to    │     │ is_active        │     │ cost                         │
+│ available_   │     └──────────────────┘     │ image_url                    │
+│   days (JSON)│                              │ sku / barcode                │
+│ sort_order   │                              │ is_available / is_popular    │
+└──────────────┘                              │ preparation_time             │
+                                              │ calories                     │
+                                              │ allergens (ARRAY)            │
+                                              │ tags (ARRAY)                 │
+                                              │ sort_order                   │
+                                              └──────────────────────────────┘
+                                                           │
+                                                           │
+┌──────────────────────┐     ┌────────────────────────────┐│
+│   modifier_groups    │────<│        modifiers           ││
+│──────────────────────│     │────────────────────────────││
+│ id (PK)              │     │ id (PK)                    ││
+│ restaurant_id (FK)   │     │ modifier_group_id (FK)     ││
+│ name                 │     │ name                       ││
+│ description          │     │ price                      ││
+│ is_required          │     │ is_default                 ││
+│ min_selections       │     │ is_available               ││
+│ max_selections       │     │ sort_order                 ││
+│ sort_order           │     └────────────────────────────┘│
+└──────────────────────┘                                   │
+         │                                                 │
+         │         ┌────────────────────────────────┐      │
+         └────────>│ menu_item_modifier_groups      │<─────┘
+                   │────────────────────────────────│
+                   │ id (PK)                        │
+                   │ menu_item_id (FK)              │
+                   │ modifier_group_id (FK)         │
+                   │ sort_order                     │
+                   └────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                           TABLES & QR CODES                                   │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────┐             ┌──────────────────┐
+│  dining_tables   │────────────<│    qr_tokens     │
+│──────────────────│             │──────────────────│
+│ id (PK)          │             │ id (PK)          │
+│ restaurant_id(FK)│             │ restaurant_id(FK)│
+│ number (UNIQ*)   │             │ table_id (FK)    │
+│ name             │             │ token (UNIQ)     │
+│ capacity         │             │ qr_code_url      │
+│ section          │             │ token_type       │
+│ status           │             │ is_active        │
+│ is_active        │             │ scans_count      │
+│ position_x/y     │             │ last_scanned_at  │
+│ timestamps       │             │ expires_at       │
+└──────────────────┘             └──────────────────┘
+         │
+         │
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                           ORDERS & PAYMENTS                                   │
+└──────────────────────────────────────────────────────────────────────────────┘
+         │
+         ▼
+┌───────────────────────┐     ┌──────────────────────┐
+│        orders         │────<│     order_items      │
+│───────────────────────│     │──────────────────────│
+│ id (PK)               │     │ id (PK)              │
+│ restaurant_id (FK)    │     │ order_id (FK)        │
+│ table_id (FK)         │     │ menu_item_id (FK)    │
+│ server_id (FK→users)  │     │ name (denormalized)  │
+│ qr_token_id (FK)      │     │ quantity             │
+│ order_number (UNIQ*)  │     │ unit_price           │
+│ display_number        │     │ modifiers_price      │
+│ status                │     │ total_price          │
+│ order_type            │     │ modifiers (JSON)     │
+│ source                │     │ notes                │
+│ subtotal              │     │ status               │
+│ tax_amount            │     │ sent_to_kitchen_at   │
+│ tip_amount            │     │ prepared_at          │
+│ discount_amount       │     │ served_at            │
+│ total                 │     │ timestamps           │
+│ paid_amount           │     └──────────────────────┘
+│ notes                 │
+│ customer_name/phone   │     ┌──────────────────────────┐
+│ guest_count           │────<│ order_status_history     │
+│ estimated_ready_at    │     │──────────────────────────│
+│ completed_at          │     │ id (PK)                  │
+│ cancelled_at/reason   │     │ order_id (FK)            │
+│ timestamps            │     │ user_id (FK)             │
+└───────────────────────┘     │ from_status              │
+         │                    │ to_status                │
+         │                    │ notes                    │
+         │                    │ created_at               │
+         │                    └──────────────────────────┘
+         │
+         │         ┌──────────────────┐     ┌──────────────────┐
+         │────────<│  split_sessions  │────<│   split_shares   │
+         │         │──────────────────│     │──────────────────│
+         │         │ id (PK)          │     │ id (PK)          │
+         │         │ order_id (FK)    │     │ split_session_id │
+         │         │ split_type       │     │ share_number     │
+         │         │ total_shares     │     │ amount           │
+         │         │ status           │     │ tip_amount       │
+         │         │ timestamps       │     │ item_ids (JSON)  │
+         │         └──────────────────┘     │ is_paid          │
+         │                                  │ payment_id (FK)  │
+         │                                  │ paid_at          │
+         │                                  └──────────────────┘
+         │                                           │
+         ▼                                           │
+┌─────────────────────────┐                          │
+│       payments          │<─────────────────────────┘
+│─────────────────────────│
+│ id (PK)                 │
+│ order_id (FK)           │
+│ restaurant_id (FK)      │
+│ split_session_id (FK)   │
+│ amount                  │
+│ tip_amount              │
+│ method                  │
+│ status                  │
+│ transaction_id          │
+│ card_last_four/brand    │
+│ receipt_url             │
+│ refunded_amount         │
+│ metadata (JSON)         │
+│ processed_at            │
+│ refunded_at             │
+│ timestamps              │
+└─────────────────────────┘
+```
+
+### Table Descriptions
+
+| Table | Description |
+|-------|-------------|
+| `restaurants` | Core tenant entity - each restaurant is a separate tenant |
+| `restaurant_domains` | Custom domains for white-labeling |
+| `restaurant_feature_allowlist` | Hard permissions - what features a restaurant can access |
+| `restaurant_settings` | Soft toggles - restaurant-controlled settings (JSON values) |
+| `users` | Global users table - can belong to multiple restaurants |
+| `roles` | Permission roles per restaurant (admin, manager, server, kitchen, cashier) |
+| `restaurant_users` | Junction table linking users to restaurants with roles |
+| `menus` | Named menus (Breakfast, Lunch, Dinner) with time availability |
+| `categories` | Menu categories within a menu |
+| `menu_items` | Products with prices, allergens, tags, and prep time |
+| `modifier_groups` | Groups of modifiers (e.g., "Size", "Toppings") |
+| `modifiers` | Individual modifier options with prices |
+| `menu_item_modifier_groups` | Junction table linking items to modifier groups |
+| `dining_tables` | Physical restaurant tables with floor plan positions |
+| `qr_tokens` | QR code tokens for table ordering |
+| `orders` | Customer orders with status, totals, and customer info |
+| `order_items` | Line items in an order (denormalized for historical accuracy) |
+| `order_status_history` | Audit trail for order status changes |
+| `payments` | Payment records with method, status, and transaction details |
+| `split_sessions` | Split payment sessions (equal, by item, by amount) |
+| `split_shares` | Individual shares within a split session |
+
+### Key Relationships
+
+1. **Multi-Tenancy**: All business data is scoped to `restaurant_id`
+2. **Users ↔ Restaurants**: Many-to-many via `restaurant_users` with role assignment
+3. **Menu Hierarchy**: Menus → Categories → Menu Items (with optional category)
+4. **Modifier System**: Menu Items ↔ Modifier Groups (many-to-many) → Modifiers
+5. **Orders**: Connected to tables, servers, and QR tokens; contain order items
+6. **Payments**: Split payments supported via split_sessions/split_shares
+
+### Indexes
+
+All foreign keys are indexed for query performance. Additional indexes:
+- `restaurants.slug` - Unique, for URL routing
+- `users.email` - Unique, for login
+- `orders.status` - For filtering active orders
+- `orders.created_at` - For date-range queries
+- `dining_tables.status` - For availability checks
 
 ## API Endpoints
 
@@ -193,19 +455,7 @@ The application will be available at `http://localhost:5000`.
 | `npm run start` | Start production server |
 | `npm run db:push` | Push schema changes to database |
 | `npm run db:studio` | Open Drizzle Studio (database GUI) |
-
-## Database Schema
-
-### Core Tables
-
-- **tenants** - Restaurant/business entities
-- **users** - Staff and admin users (scoped to tenant)
-- **categories** - Menu categories
-- **menu_items** - Menu items with prices
-- **tables** - Restaurant tables with QR codes
-- **orders** - Customer orders
-- **order_items** - Individual items in an order
-- **payments** - Payment records
+| `npx tsx scripts/seed.ts` | Seed database with sample data |
 
 ## Deployment
 

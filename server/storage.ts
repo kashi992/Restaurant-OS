@@ -1,12 +1,24 @@
 import { 
   type User, type InsertUser,
-  type Tenant, type InsertTenant,
+  type Restaurant, type InsertRestaurant,
+  type RestaurantDomain, type InsertRestaurantDomain,
+  type RestaurantFeature, type InsertRestaurantFeature,
+  type RestaurantSetting, type InsertRestaurantSetting,
+  type Role, type InsertRole,
+  type RestaurantUser, type InsertRestaurantUser,
+  type Menu, type InsertMenu,
   type Category, type InsertCategory,
   type MenuItem, type InsertMenuItem,
-  type Table, type InsertTable,
+  type ModifierGroup, type InsertModifierGroup,
+  type Modifier, type InsertModifier,
+  type DiningTable, type InsertDiningTable,
+  type QrToken, type InsertQrToken,
   type Order, type InsertOrder,
   type OrderItem, type InsertOrderItem,
+  type OrderStatusHistory, type InsertOrderStatusHistory,
   type Payment, type InsertPayment,
+  type SplitSession, type InsertSplitSession,
+  type SplitShare, type InsertSplitShare,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 
@@ -19,42 +31,61 @@ export interface IStorage {
   // Users
   getUser(id: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
-  getUsersByTenant(tenantId: string): Promise<User[]>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: string, user: Partial<InsertUser>): Promise<User | undefined>;
   
-  // Tenants
-  getTenant(id: string): Promise<Tenant | undefined>;
-  getTenantBySlug(slug: string): Promise<Tenant | undefined>;
-  getAllTenants(): Promise<Tenant[]>;
-  createTenant(tenant: InsertTenant): Promise<Tenant>;
-  updateTenant(id: string, tenant: Partial<InsertTenant>): Promise<Tenant | undefined>;
+  // Restaurants
+  getRestaurant(id: string): Promise<Restaurant | undefined>;
+  getRestaurantBySlug(slug: string): Promise<Restaurant | undefined>;
+  getAllRestaurants(): Promise<Restaurant[]>;
+  createRestaurant(restaurant: InsertRestaurant): Promise<Restaurant>;
+  updateRestaurant(id: string, restaurant: Partial<InsertRestaurant>): Promise<Restaurant | undefined>;
+  
+  // Restaurant Users (staff)
+  getRestaurantUsers(restaurantId: string): Promise<RestaurantUser[]>;
+  createRestaurantUser(restaurantUser: InsertRestaurantUser): Promise<RestaurantUser>;
+  
+  // Roles
+  getRole(id: string): Promise<Role | undefined>;
+  getRolesByRestaurant(restaurantId: string): Promise<Role[]>;
+  createRole(role: InsertRole): Promise<Role>;
+  
+  // Menus
+  getMenu(id: string): Promise<Menu | undefined>;
+  getMenusByRestaurant(restaurantId: string): Promise<Menu[]>;
+  createMenu(menu: InsertMenu): Promise<Menu>;
+  updateMenu(id: string, menu: Partial<InsertMenu>): Promise<Menu | undefined>;
   
   // Categories
   getCategory(id: string): Promise<Category | undefined>;
-  getCategoriesByTenant(tenantId: string): Promise<Category[]>;
+  getCategoriesByRestaurant(restaurantId: string): Promise<Category[]>;
   createCategory(category: InsertCategory): Promise<Category>;
   updateCategory(id: string, category: Partial<InsertCategory>): Promise<Category | undefined>;
   deleteCategory(id: string): Promise<boolean>;
   
   // Menu Items
   getMenuItem(id: string): Promise<MenuItem | undefined>;
-  getMenuItemsByTenant(tenantId: string): Promise<MenuItem[]>;
+  getMenuItemsByRestaurant(restaurantId: string): Promise<MenuItem[]>;
   getMenuItemsByCategory(categoryId: string): Promise<MenuItem[]>;
   createMenuItem(item: InsertMenuItem): Promise<MenuItem>;
   updateMenuItem(id: string, item: Partial<InsertMenuItem>): Promise<MenuItem | undefined>;
   deleteMenuItem(id: string): Promise<boolean>;
   
-  // Tables
-  getTable(id: string): Promise<Table | undefined>;
-  getTablesByTenant(tenantId: string): Promise<Table[]>;
-  createTable(table: InsertTable): Promise<Table>;
-  updateTable(id: string, table: Partial<InsertTable>): Promise<Table | undefined>;
-  deleteTable(id: string): Promise<boolean>;
+  // Dining Tables
+  getDiningTable(id: string): Promise<DiningTable | undefined>;
+  getDiningTablesByRestaurant(restaurantId: string): Promise<DiningTable[]>;
+  createDiningTable(table: InsertDiningTable): Promise<DiningTable>;
+  updateDiningTable(id: string, table: Partial<InsertDiningTable>): Promise<DiningTable | undefined>;
+  deleteDiningTable(id: string): Promise<boolean>;
+  
+  // QR Tokens
+  getQrToken(id: string): Promise<QrToken | undefined>;
+  getQrTokenByToken(token: string): Promise<QrToken | undefined>;
+  createQrToken(qrToken: InsertQrToken): Promise<QrToken>;
   
   // Orders
   getOrder(id: string): Promise<Order | undefined>;
-  getOrdersByTenant(tenantId: string): Promise<Order[]>;
+  getOrdersByRestaurant(restaurantId: string): Promise<Order[]>;
   getOrdersByTable(tableId: string): Promise<Order[]>;
   createOrder(order: InsertOrder): Promise<Order>;
   updateOrder(id: string, order: Partial<InsertOrder>): Promise<Order | undefined>;
@@ -79,20 +110,28 @@ export interface IStorage {
 
 export class MemStorage implements IStorage {
   private users: Map<string, User>;
-  private tenants: Map<string, Tenant>;
+  private restaurants: Map<string, Restaurant>;
+  private restaurantUsers: Map<string, RestaurantUser>;
+  private roles: Map<string, Role>;
+  private menus: Map<string, Menu>;
   private categories: Map<string, Category>;
   private menuItems: Map<string, MenuItem>;
-  private tables: Map<string, Table>;
+  private diningTables: Map<string, DiningTable>;
+  private qrTokens: Map<string, QrToken>;
   private orders: Map<string, Order>;
   private orderItems: Map<string, OrderItem>;
   private payments: Map<string, Payment>;
 
   constructor() {
     this.users = new Map();
-    this.tenants = new Map();
+    this.restaurants = new Map();
+    this.restaurantUsers = new Map();
+    this.roles = new Map();
+    this.menus = new Map();
     this.categories = new Map();
     this.menuItems = new Map();
-    this.tables = new Map();
+    this.diningTables = new Map();
+    this.qrTokens = new Map();
     this.orders = new Map();
     this.orderItems = new Map();
     this.payments = new Map();
@@ -107,24 +146,23 @@ export class MemStorage implements IStorage {
     return Array.from(this.users.values()).find(user => user.email === email);
   }
 
-  async getUsersByTenant(tenantId: string): Promise<User[]> {
-    return Array.from(this.users.values()).filter(user => user.tenantId === tenantId);
-  }
-
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = randomUUID();
+    const now = new Date();
     const user: User = { 
       id,
-      tenantId: insertUser.tenantId ?? null,
-      username: insertUser.username,
       email: insertUser.email,
       password: insertUser.password,
-      role: insertUser.role ?? "staff",
       firstName: insertUser.firstName ?? null,
       lastName: insertUser.lastName ?? null,
+      phone: insertUser.phone ?? null,
+      avatarUrl: insertUser.avatarUrl ?? null,
+      isSuperAdmin: insertUser.isSuperAdmin ?? false,
       isActive: insertUser.isActive ?? true,
-      lastLogin: null,
-      createdAt: new Date(),
+      emailVerifiedAt: null,
+      lastLoginAt: null,
+      createdAt: now,
+      updatedAt: now,
     };
     this.users.set(id, user);
     return user;
@@ -133,49 +171,144 @@ export class MemStorage implements IStorage {
   async updateUser(id: string, updates: Partial<InsertUser>): Promise<User | undefined> {
     const user = this.users.get(id);
     if (!user) return undefined;
-    const updated = { ...user, ...updates } as User;
+    const updated = { ...user, ...updates, updatedAt: new Date() } as User;
     this.users.set(id, updated);
     return updated;
   }
 
-  // Tenants
-  async getTenant(id: string): Promise<Tenant | undefined> {
-    return this.tenants.get(id);
+  // Restaurants
+  async getRestaurant(id: string): Promise<Restaurant | undefined> {
+    return this.restaurants.get(id);
   }
 
-  async getTenantBySlug(slug: string): Promise<Tenant | undefined> {
-    return Array.from(this.tenants.values()).find(tenant => tenant.slug === slug);
+  async getRestaurantBySlug(slug: string): Promise<Restaurant | undefined> {
+    return Array.from(this.restaurants.values()).find(r => r.slug === slug);
   }
 
-  async getAllTenants(): Promise<Tenant[]> {
-    return Array.from(this.tenants.values());
+  async getAllRestaurants(): Promise<Restaurant[]> {
+    return Array.from(this.restaurants.values());
   }
 
-  async createTenant(insertTenant: InsertTenant): Promise<Tenant> {
+  async createRestaurant(insertRestaurant: InsertRestaurant): Promise<Restaurant> {
     const id = randomUUID();
-    const tenant: Tenant = { 
+    const now = new Date();
+    const restaurant: Restaurant = { 
       id,
-      name: insertTenant.name,
-      slug: insertTenant.slug,
-      logoUrl: insertTenant.logoUrl ?? null,
-      address: insertTenant.address ?? null,
-      phone: insertTenant.phone ?? null,
-      email: insertTenant.email ?? null,
-      timezone: insertTenant.timezone ?? "UTC",
-      currency: insertTenant.currency ?? "USD",
-      isActive: insertTenant.isActive ?? true,
-      settings: insertTenant.settings ?? {},
-      createdAt: new Date(),
+      name: insertRestaurant.name,
+      slug: insertRestaurant.slug,
+      logoUrl: insertRestaurant.logoUrl ?? null,
+      address: insertRestaurant.address ?? null,
+      city: insertRestaurant.city ?? null,
+      state: insertRestaurant.state ?? null,
+      country: insertRestaurant.country ?? "US",
+      postalCode: insertRestaurant.postalCode ?? null,
+      phone: insertRestaurant.phone ?? null,
+      email: insertRestaurant.email ?? null,
+      timezone: insertRestaurant.timezone ?? "UTC",
+      currency: insertRestaurant.currency ?? "USD",
+      taxRate: insertRestaurant.taxRate ?? "0.0000",
+      isActive: insertRestaurant.isActive ?? true,
+      createdAt: now,
+      updatedAt: now,
     };
-    this.tenants.set(id, tenant);
-    return tenant;
+    this.restaurants.set(id, restaurant);
+    return restaurant;
   }
 
-  async updateTenant(id: string, updates: Partial<InsertTenant>): Promise<Tenant | undefined> {
-    const tenant = this.tenants.get(id);
-    if (!tenant) return undefined;
-    const updated = { ...tenant, ...updates } as Tenant;
-    this.tenants.set(id, updated);
+  async updateRestaurant(id: string, updates: Partial<InsertRestaurant>): Promise<Restaurant | undefined> {
+    const restaurant = this.restaurants.get(id);
+    if (!restaurant) return undefined;
+    const updated = { ...restaurant, ...updates, updatedAt: new Date() } as Restaurant;
+    this.restaurants.set(id, updated);
+    return updated;
+  }
+
+  // Restaurant Users
+  async getRestaurantUsers(restaurantId: string): Promise<RestaurantUser[]> {
+    return Array.from(this.restaurantUsers.values()).filter(ru => ru.restaurantId === restaurantId);
+  }
+
+  async createRestaurantUser(insertRU: InsertRestaurantUser): Promise<RestaurantUser> {
+    const id = randomUUID();
+    const now = new Date();
+    const ru: RestaurantUser = {
+      id,
+      restaurantId: insertRU.restaurantId,
+      userId: insertRU.userId,
+      roleId: insertRU.roleId,
+      pin: insertRU.pin ?? null,
+      isActive: insertRU.isActive ?? true,
+      hiredAt: insertRU.hiredAt ?? null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.restaurantUsers.set(id, ru);
+    return ru;
+  }
+
+  // Roles
+  async getRole(id: string): Promise<Role | undefined> {
+    return this.roles.get(id);
+  }
+
+  async getRolesByRestaurant(restaurantId: string): Promise<Role[]> {
+    return Array.from(this.roles.values()).filter(r => r.restaurantId === restaurantId);
+  }
+
+  async createRole(insertRole: InsertRole): Promise<Role> {
+    const id = randomUUID();
+    const now = new Date();
+    const role: Role = {
+      id,
+      restaurantId: insertRole.restaurantId,
+      name: insertRole.name,
+      description: insertRole.description ?? null,
+      permissions: insertRole.permissions ?? [],
+      isSystemRole: insertRole.isSystemRole ?? false,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.roles.set(id, role);
+    return role;
+  }
+
+  // Menus
+  async getMenu(id: string): Promise<Menu | undefined> {
+    return this.menus.get(id);
+  }
+
+  async getMenusByRestaurant(restaurantId: string): Promise<Menu[]> {
+    return Array.from(this.menus.values())
+      .filter(m => m.restaurantId === restaurantId)
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+  }
+
+  async createMenu(insertMenu: InsertMenu): Promise<Menu> {
+    const id = randomUUID();
+    const now = new Date();
+    const menu: Menu = {
+      id,
+      restaurantId: insertMenu.restaurantId,
+      name: insertMenu.name,
+      description: insertMenu.description ?? null,
+      isActive: insertMenu.isActive ?? true,
+      isDefault: insertMenu.isDefault ?? false,
+      availableFrom: insertMenu.availableFrom ?? null,
+      availableTo: insertMenu.availableTo ?? null,
+      availableDays: insertMenu.availableDays ?? [0, 1, 2, 3, 4, 5, 6],
+      sortOrder: insertMenu.sortOrder ?? 0,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.menus.set(id, menu);
+    return menu;
+  }
+
+  async updateMenu(id: string, updates: Partial<InsertMenu>): Promise<Menu | undefined> {
+    const menu = this.menus.get(id);
+    if (!menu) return undefined;
+    const updated = { ...menu, ...updates, updatedAt: new Date() } as Menu;
+    this.menus.set(id, updated);
     return updated;
   }
 
@@ -184,22 +317,26 @@ export class MemStorage implements IStorage {
     return this.categories.get(id);
   }
 
-  async getCategoriesByTenant(tenantId: string): Promise<Category[]> {
+  async getCategoriesByRestaurant(restaurantId: string): Promise<Category[]> {
     return Array.from(this.categories.values())
-      .filter(cat => cat.tenantId === tenantId)
-      .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+      .filter(cat => cat.restaurantId === restaurantId)
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
   }
 
   async createCategory(insertCategory: InsertCategory): Promise<Category> {
     const id = randomUUID();
+    const now = new Date();
     const category: Category = { 
       id,
-      tenantId: insertCategory.tenantId,
+      restaurantId: insertCategory.restaurantId,
+      menuId: insertCategory.menuId ?? null,
       name: insertCategory.name,
       description: insertCategory.description ?? null,
       imageUrl: insertCategory.imageUrl ?? null,
-      sortOrder: insertCategory.sortOrder ?? 0,
       isActive: insertCategory.isActive ?? true,
+      sortOrder: insertCategory.sortOrder ?? 0,
+      createdAt: now,
+      updatedAt: now,
     };
     this.categories.set(id, category);
     return category;
@@ -208,7 +345,7 @@ export class MemStorage implements IStorage {
   async updateCategory(id: string, updates: Partial<InsertCategory>): Promise<Category | undefined> {
     const category = this.categories.get(id);
     if (!category) return undefined;
-    const updated = { ...category, ...updates } as Category;
+    const updated = { ...category, ...updates, updatedAt: new Date() } as Category;
     this.categories.set(id, updated);
     return updated;
   }
@@ -222,34 +359,43 @@ export class MemStorage implements IStorage {
     return this.menuItems.get(id);
   }
 
-  async getMenuItemsByTenant(tenantId: string): Promise<MenuItem[]> {
+  async getMenuItemsByRestaurant(restaurantId: string): Promise<MenuItem[]> {
     return Array.from(this.menuItems.values())
-      .filter(item => item.tenantId === tenantId)
-      .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+      .filter(item => item.restaurantId === restaurantId)
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
   }
 
   async getMenuItemsByCategory(categoryId: string): Promise<MenuItem[]> {
     return Array.from(this.menuItems.values())
       .filter(item => item.categoryId === categoryId)
-      .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
   }
 
   async createMenuItem(insertItem: InsertMenuItem): Promise<MenuItem> {
     const id = randomUUID();
+    const now = new Date();
     const item: MenuItem = { 
       id,
-      tenantId: insertItem.tenantId,
+      restaurantId: insertItem.restaurantId,
       categoryId: insertItem.categoryId ?? null,
       name: insertItem.name,
       description: insertItem.description ?? null,
       price: insertItem.price,
+      compareAtPrice: insertItem.compareAtPrice ?? null,
+      cost: insertItem.cost ?? null,
       imageUrl: insertItem.imageUrl ?? null,
+      sku: insertItem.sku ?? null,
+      barcode: insertItem.barcode ?? null,
       isAvailable: insertItem.isAvailable ?? true,
+      isPopular: insertItem.isPopular ?? false,
+      isNew: insertItem.isNew ?? false,
       preparationTime: insertItem.preparationTime ?? null,
+      calories: insertItem.calories ?? null,
       allergens: insertItem.allergens ?? null,
       tags: insertItem.tags ?? null,
       sortOrder: insertItem.sortOrder ?? 0,
-      createdAt: new Date(),
+      createdAt: now,
+      updatedAt: now,
     };
     this.menuItems.set(id, item);
     return item;
@@ -258,7 +404,7 @@ export class MemStorage implements IStorage {
   async updateMenuItem(id: string, updates: Partial<InsertMenuItem>): Promise<MenuItem | undefined> {
     const item = this.menuItems.get(id);
     if (!item) return undefined;
-    const updated = { ...item, ...updates } as MenuItem;
+    const updated = { ...item, ...updates, updatedAt: new Date() } as MenuItem;
     this.menuItems.set(id, updated);
     return updated;
   }
@@ -267,40 +413,76 @@ export class MemStorage implements IStorage {
     return this.menuItems.delete(id);
   }
 
-  // Tables
-  async getTable(id: string): Promise<Table | undefined> {
-    return this.tables.get(id);
+  // Dining Tables
+  async getDiningTable(id: string): Promise<DiningTable | undefined> {
+    return this.diningTables.get(id);
   }
 
-  async getTablesByTenant(tenantId: string): Promise<Table[]> {
-    return Array.from(this.tables.values()).filter(table => table.tenantId === tenantId);
+  async getDiningTablesByRestaurant(restaurantId: string): Promise<DiningTable[]> {
+    return Array.from(this.diningTables.values()).filter(t => t.restaurantId === restaurantId);
   }
 
-  async createTable(insertTable: InsertTable): Promise<Table> {
+  async createDiningTable(insertTable: InsertDiningTable): Promise<DiningTable> {
     const id = randomUUID();
-    const table: Table = { 
+    const now = new Date();
+    const table: DiningTable = { 
       id,
-      tenantId: insertTable.tenantId,
+      restaurantId: insertTable.restaurantId,
       number: insertTable.number,
+      name: insertTable.name ?? null,
       capacity: insertTable.capacity ?? 4,
-      qrCode: insertTable.qrCode ?? null,
+      section: insertTable.section ?? null,
       status: insertTable.status ?? "available",
       isActive: insertTable.isActive ?? true,
+      positionX: insertTable.positionX ?? null,
+      positionY: insertTable.positionY ?? null,
+      createdAt: now,
+      updatedAt: now,
     };
-    this.tables.set(id, table);
+    this.diningTables.set(id, table);
     return table;
   }
 
-  async updateTable(id: string, updates: Partial<InsertTable>): Promise<Table | undefined> {
-    const table = this.tables.get(id);
+  async updateDiningTable(id: string, updates: Partial<InsertDiningTable>): Promise<DiningTable | undefined> {
+    const table = this.diningTables.get(id);
     if (!table) return undefined;
-    const updated = { ...table, ...updates } as Table;
-    this.tables.set(id, updated);
+    const updated = { ...table, ...updates, updatedAt: new Date() } as DiningTable;
+    this.diningTables.set(id, updated);
     return updated;
   }
 
-  async deleteTable(id: string): Promise<boolean> {
-    return this.tables.delete(id);
+  async deleteDiningTable(id: string): Promise<boolean> {
+    return this.diningTables.delete(id);
+  }
+
+  // QR Tokens
+  async getQrToken(id: string): Promise<QrToken | undefined> {
+    return this.qrTokens.get(id);
+  }
+
+  async getQrTokenByToken(token: string): Promise<QrToken | undefined> {
+    return Array.from(this.qrTokens.values()).find(t => t.token === token);
+  }
+
+  async createQrToken(insertToken: InsertQrToken): Promise<QrToken> {
+    const id = randomUUID();
+    const now = new Date();
+    const qrToken: QrToken = {
+      id,
+      restaurantId: insertToken.restaurantId,
+      tableId: insertToken.tableId ?? null,
+      token: insertToken.token,
+      qrCodeUrl: insertToken.qrCodeUrl ?? null,
+      tokenType: insertToken.tokenType ?? "table",
+      isActive: insertToken.isActive ?? true,
+      scansCount: insertToken.scansCount ?? 0,
+      lastScannedAt: null,
+      expiresAt: insertToken.expiresAt ?? null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.qrTokens.set(id, qrToken);
+    return qrToken;
   }
 
   // Orders
@@ -308,16 +490,16 @@ export class MemStorage implements IStorage {
     return this.orders.get(id);
   }
 
-  async getOrdersByTenant(tenantId: string): Promise<Order[]> {
+  async getOrdersByRestaurant(restaurantId: string): Promise<Order[]> {
     return Array.from(this.orders.values())
-      .filter(order => order.tenantId === tenantId)
-      .sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime());
+      .filter(order => order.restaurantId === restaurantId)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }
 
   async getOrdersByTable(tableId: string): Promise<Order[]> {
     return Array.from(this.orders.values())
       .filter(order => order.tableId === tableId)
-      .sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime());
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }
 
   async createOrder(insertOrder: InsertOrder): Promise<Order> {
@@ -325,18 +507,30 @@ export class MemStorage implements IStorage {
     const now = new Date();
     const order: Order = { 
       id,
-      tenantId: insertOrder.tenantId,
+      restaurantId: insertOrder.restaurantId,
       tableId: insertOrder.tableId ?? null,
-      userId: insertOrder.userId ?? null,
+      serverId: insertOrder.serverId ?? null,
+      qrTokenId: insertOrder.qrTokenId ?? null,
       orderNumber: insertOrder.orderNumber,
+      displayNumber: insertOrder.displayNumber ?? null,
       status: insertOrder.status ?? "pending",
       orderType: insertOrder.orderType ?? "dine_in",
-      subtotal: insertOrder.subtotal ?? "0",
-      tax: insertOrder.tax ?? "0",
-      total: insertOrder.total ?? "0",
+      source: insertOrder.source ?? "pos",
+      subtotal: insertOrder.subtotal ?? "0.00",
+      taxAmount: insertOrder.taxAmount ?? "0.00",
+      tipAmount: insertOrder.tipAmount ?? "0.00",
+      discountAmount: insertOrder.discountAmount ?? "0.00",
+      total: insertOrder.total ?? "0.00",
+      paidAmount: insertOrder.paidAmount ?? "0.00",
       notes: insertOrder.notes ?? null,
       customerName: insertOrder.customerName ?? null,
       customerPhone: insertOrder.customerPhone ?? null,
+      customerEmail: insertOrder.customerEmail ?? null,
+      guestCount: insertOrder.guestCount ?? 1,
+      estimatedReadyAt: insertOrder.estimatedReadyAt ?? null,
+      completedAt: null,
+      cancelledAt: null,
+      cancelReason: insertOrder.cancelReason ?? null,
       createdAt: now,
       updatedAt: now,
     };
@@ -359,15 +553,24 @@ export class MemStorage implements IStorage {
 
   async createOrderItem(insertItem: InsertOrderItem): Promise<OrderItem> {
     const id = randomUUID();
+    const now = new Date();
     const item: OrderItem = { 
       id,
       orderId: insertItem.orderId,
-      menuItemId: insertItem.menuItemId,
+      menuItemId: insertItem.menuItemId ?? null,
+      name: insertItem.name,
       quantity: insertItem.quantity ?? 1,
       unitPrice: insertItem.unitPrice,
+      modifiersPrice: insertItem.modifiersPrice ?? "0.00",
       totalPrice: insertItem.totalPrice,
+      modifiers: insertItem.modifiers ?? [],
       notes: insertItem.notes ?? null,
       status: insertItem.status ?? "pending",
+      sentToKitchenAt: null,
+      preparedAt: null,
+      servedAt: null,
+      createdAt: now,
+      updatedAt: now,
     };
     this.orderItems.set(id, item);
     return item;
@@ -376,7 +579,7 @@ export class MemStorage implements IStorage {
   async updateOrderItem(id: string, updates: Partial<InsertOrderItem>): Promise<OrderItem | undefined> {
     const item = this.orderItems.get(id);
     if (!item) return undefined;
-    const updated = { ...item, ...updates } as OrderItem;
+    const updated = { ...item, ...updates, updatedAt: new Date() } as OrderItem;
     this.orderItems.set(id, updated);
     return updated;
   }
@@ -396,15 +599,26 @@ export class MemStorage implements IStorage {
 
   async createPayment(insertPayment: InsertPayment): Promise<Payment> {
     const id = randomUUID();
+    const now = new Date();
     const payment: Payment = { 
       id,
       orderId: insertPayment.orderId,
-      tenantId: insertPayment.tenantId,
+      restaurantId: insertPayment.restaurantId,
+      splitSessionId: insertPayment.splitSessionId ?? null,
       amount: insertPayment.amount,
+      tipAmount: insertPayment.tipAmount ?? "0.00",
       method: insertPayment.method,
       status: insertPayment.status ?? "pending",
       transactionId: insertPayment.transactionId ?? null,
-      createdAt: new Date(),
+      cardLastFour: insertPayment.cardLastFour ?? null,
+      cardBrand: insertPayment.cardBrand ?? null,
+      receiptUrl: insertPayment.receiptUrl ?? null,
+      refundedAmount: insertPayment.refundedAmount ?? "0.00",
+      metadata: insertPayment.metadata ?? {},
+      processedAt: null,
+      refundedAt: null,
+      createdAt: now,
+      updatedAt: now,
     };
     this.payments.set(id, payment);
     return payment;
@@ -413,7 +627,7 @@ export class MemStorage implements IStorage {
   async updatePayment(id: string, updates: Partial<InsertPayment>): Promise<Payment | undefined> {
     const payment = this.payments.get(id);
     if (!payment) return undefined;
-    const updated = { ...payment, ...updates } as Payment;
+    const updated = { ...payment, ...updates, updatedAt: new Date() } as Payment;
     this.payments.set(id, updated);
     return updated;
   }
