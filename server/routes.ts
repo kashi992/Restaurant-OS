@@ -32,6 +32,14 @@ import {
   resolveTenantFromToken,
   loadFullUser,
 } from "./auth/middleware";
+import {
+  requireFeature,
+  requireSoftToggle,
+  requirePaymentMethodEnabled,
+  requireFeatureAndSoftToggle,
+  getRestaurantFeatures,
+  clearFeatureCache,
+} from "./auth/feature-gating";
 import { z } from "zod";
 
 export async function registerRoutes(
@@ -954,11 +962,166 @@ export async function registerRoutes(
   });
 
   // ============================================================================
+  // Feature Gating Test Endpoints
+  // ============================================================================
+
+  app.get(
+    "/api/restaurants/:restaurantId/features",
+    authenticate,
+    requireRestaurantAccess,
+    async (req, res) => {
+      try {
+        const { features, settings } = await getRestaurantFeatures(req.params.restaurantId);
+        res.json({ features, settings });
+      } catch (error) {
+        console.error("Get features error:", error);
+        res.status(500).json({ error: "Internal Server Error" });
+      }
+    }
+  );
+
+  app.post(
+    "/api/restaurants/:restaurantId/features/cache/clear",
+    authenticate,
+    requireSuperAdmin,
+    async (req, res) => {
+      clearFeatureCache(req.params.restaurantId);
+      res.json({ message: "Feature cache cleared" });
+    }
+  );
+
+  app.get(
+    "/api/test/feature/pos",
+    authenticate,
+    resolveTenantFromToken,
+    requireFeature("pos"),
+    async (req, res) => {
+      res.json({
+        success: true,
+        message: "POS feature is enabled for this restaurant",
+        restaurantId: req.tenantId,
+      });
+    }
+  );
+
+  app.get(
+    "/api/test/feature/qr",
+    authenticate,
+    resolveTenantFromToken,
+    requireFeature("qr"),
+    async (req, res) => {
+      res.json({
+        success: true,
+        message: "QR feature is enabled for this restaurant",
+        restaurantId: req.tenantId,
+      });
+    }
+  );
+
+  app.get(
+    "/api/test/feature/reservations",
+    authenticate,
+    resolveTenantFromToken,
+    requireFeature("table_reservations"),
+    async (req, res) => {
+      res.json({
+        success: true,
+        message: "Table reservations feature is enabled",
+        restaurantId: req.tenantId,
+      });
+    }
+  );
+
+  app.get(
+    "/api/test/soft-toggle/split-billing",
+    authenticate,
+    resolveTenantFromToken,
+    requireSoftToggle("split_billing"),
+    async (req, res) => {
+      res.json({
+        success: true,
+        message: "Split billing is enabled for this restaurant",
+        restaurantId: req.tenantId,
+      });
+    }
+  );
+
+  app.get(
+    "/api/test/soft-toggle/tips",
+    authenticate,
+    resolveTenantFromToken,
+    requireSoftToggle("enable_tips"),
+    async (req, res) => {
+      res.json({
+        success: true,
+        message: "Tips are enabled for this restaurant",
+        restaurantId: req.tenantId,
+      });
+    }
+  );
+
+  app.get(
+    "/api/test/soft-toggle/kitchen-printer",
+    authenticate,
+    resolveTenantFromToken,
+    requireSoftToggle("kitchen_printer"),
+    async (req, res) => {
+      res.json({
+        success: true,
+        message: "Kitchen printer is enabled",
+        restaurantId: req.tenantId,
+      });
+    }
+  );
+
+  app.get(
+    "/api/test/payment-method/apple-pay",
+    authenticate,
+    resolveTenantFromToken,
+    requirePaymentMethodEnabled("apple_pay"),
+    async (req, res) => {
+      res.json({
+        success: true,
+        message: "Apple Pay is enabled for this restaurant",
+        restaurantId: req.tenantId,
+      });
+    }
+  );
+
+  app.get(
+    "/api/test/payment-method/crypto",
+    authenticate,
+    resolveTenantFromToken,
+    requirePaymentMethodEnabled("crypto"),
+    async (req, res) => {
+      res.json({
+        success: true,
+        message: "Crypto payments are enabled",
+        restaurantId: req.tenantId,
+      });
+    }
+  );
+
+  app.get(
+    "/api/test/combined/split-payments",
+    authenticate,
+    resolveTenantFromToken,
+    requireFeatureAndSoftToggle("split_payments", "split_billing"),
+    async (req, res) => {
+      res.json({
+        success: true,
+        message: "Split payments feature AND split billing toggle are both enabled",
+        restaurantId: req.tenantId,
+      });
+    }
+  );
+
+  // ============================================================================
   // Placeholder Endpoints (to be implemented in future phases)
   // ============================================================================
 
   app.get("/api/:tenantSlug/menu", resolveTenantBySlug, async (req, res) => {
-    res.status(501).json({ message: "Menu endpoints coming in Phase 3" });
+    res.status(501).json({ message: "Menu endpoints coming in Phase 4" });
   });
 
   app.get("/api/:tenantSlug/categories", resolveTenantBySlug, async (req, res) => {

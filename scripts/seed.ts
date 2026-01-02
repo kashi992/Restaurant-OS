@@ -74,6 +74,8 @@ async function seed() {
   console.log("\nSetting up feature allowlist...");
   
   const features = [
+    { featureKey: "pos", isEnabled: true },
+    { featureKey: "qr", isEnabled: true },
     { featureKey: "online_ordering", isEnabled: true },
     { featureKey: "qr_ordering", isEnabled: true },
     { featureKey: "split_payments", isEnabled: true },
@@ -99,11 +101,13 @@ async function seed() {
   
   const settings = [
     { settingKey: "enable_tips", settingValue: { enabled: true, presets: [15, 18, 20, 25] } },
+    { settingKey: "split_billing", settingValue: { enabled: true, max_ways: 8 } },
     { settingKey: "require_customer_phone", settingValue: { enabled: false } },
     { settingKey: "auto_accept_orders", settingValue: { enabled: true } },
     { settingKey: "order_ready_notification", settingValue: { enabled: true, method: "sms" } },
     { settingKey: "kitchen_printer", settingValue: { enabled: false } },
     { settingKey: "receipt_footer", settingValue: { text: "Thank you for dining with us!" } },
+    { settingKey: "payment_methods", settingValue: { enabled_methods: ["cash", "card", "apple_pay", "google_pay"] } },
   ];
 
   for (const setting of settings) {

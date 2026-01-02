@@ -136,6 +136,16 @@ Running `npx tsx scripts/seed.ts` creates:
   - 10 dining tables with QR codes
 
 ## Recent Changes
+- **2026-01-02**: Phase 3 - Feature Gating Engine complete
+  - Feature gating middleware with 60-second cache for performance
+  - requireFeature() - Hard permissions from restaurant_feature_allowlist (pos, qr, split_payments, etc)
+  - requireSoftToggle() - Soft toggles from restaurant_settings with nested path support
+  - requirePaymentMethodEnabled() - Payment method validation
+  - requireFeatureAndSoftToggle() - Combined check for features that need both
+  - Helper functions: getRestaurantFeatures(), checkFeature(), checkSoftToggle(), checkPaymentMethod()
+  - Test endpoints at /api/test/feature/*, /api/test/soft-toggle/*, /api/test/payment-method/*
+  - Features endpoint: GET /api/restaurants/:restaurantId/features
+
 - **2026-01-02**: Phase 2 - Auth + RBAC + Tenant Resolution complete
   - JWT access tokens (15m expiry) + refresh tokens (7d expiry)
   - Refresh token storage in database with revocation support
