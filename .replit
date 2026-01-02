@@ -37,3 +37,9 @@ author = "agent"
 task = "shell.exec"
 args = "npm run dev"
 waitForPort = 5000
+
+[userenv]
+
+[userenv.development]
+JWT_SECRET = "dev-jwt-secret-for-testing-only"
+JWT_EXPIRES_IN = "7d"
