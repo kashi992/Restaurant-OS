@@ -448,6 +448,24 @@ export const splitShares = pgTable("split_shares", {
 ]);
 
 // ============================================================================
+// REFRESH TOKENS (for JWT refresh token storage)
+// ============================================================================
+
+export const refreshTokens = pgTable("refresh_tokens", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tokenId: varchar("token_id").notNull().unique(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  restaurantId: varchar("restaurant_id").references(() => restaurants.id, { onDelete: "cascade" }),
+  expiresAt: timestamp("expires_at").notNull(),
+  revokedAt: timestamp("revoked_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("refresh_tokens_token_id_idx").on(table.tokenId),
+  index("refresh_tokens_user_id_idx").on(table.userId),
+  index("refresh_tokens_expires_at_idx").on(table.expiresAt),
+]);
+
+// ============================================================================
 // INSERT SCHEMAS (for validation with Zod)
 // ============================================================================
 
@@ -581,6 +599,12 @@ export const insertSplitShareSchema = createInsertSchema(splitShares).omit({
   paidAt: true,
 });
 
+export const insertRefreshTokenSchema = createInsertSchema(refreshTokens).omit({
+  id: true,
+  createdAt: true,
+  revokedAt: true,
+});
+
 // ============================================================================
 // TYPES - Export all insert and select types
 // ============================================================================
@@ -650,6 +674,9 @@ export type SplitSession = typeof splitSessions.$inferSelect;
 
 export type InsertSplitShare = z.infer<typeof insertSplitShareSchema>;
 export type SplitShare = typeof splitShares.$inferSelect;
+
+export type InsertRefreshToken = z.infer<typeof insertRefreshTokenSchema>;
+export type RefreshToken = typeof refreshTokens.$inferSelect;
 
 // ============================================================================
 // AUTH SCHEMAS

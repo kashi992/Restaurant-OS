@@ -71,20 +71,38 @@ A full-stack, multi-tenant restaurant Point of Sale (POS) system with QR code or
 
 ## API Endpoints
 
-### Currently Implemented
+### Health & Status
 - `GET /api` - API info
 - `GET /api/health` - Server health check
 - `GET /api/health/db` - Database connection test
 
-### Stubbed (Not Implemented Yet)
-- `POST /api/auth/register` - User registration
-- `POST /api/auth/login` - User login
-- `POST /api/auth/logout` - User logout
-- `GET /api/auth/me` - Current user
-- `GET /api/tenants` - List tenants
-- `GET /api/:tenantSlug/menu` - Get tenant menu
-- `GET /api/:tenantSlug/orders` - Get orders
-- `POST /api/:tenantSlug/orders` - Create order
+### Authentication (Implemented)
+- `POST /api/auth/login` - User login (returns access + refresh tokens)
+- `POST /api/auth/logout` - Revoke refresh token (requires auth)
+- `POST /api/auth/refresh` - Exchange refresh token for new access token
+- `GET /api/auth/me` - Get current user with restaurant associations (requires auth)
+- `POST /api/auth/switch-restaurant` - Get new access token for different restaurant context
+
+### Super Admin (Implemented)
+- `GET /api/admin/restaurants` - List all restaurants
+- `GET /api/admin/users` - List all users
+- `POST /api/admin/restaurants` - Create new restaurant
+
+### Restaurant Staff Management (Implemented)
+- `GET /api/restaurants/:restaurantId/staff` - List staff (requires staff:read)
+- `POST /api/restaurants/:restaurantId/staff` - Add staff (requires staff:create)
+- `PATCH /api/restaurants/:restaurantId/staff/:staffId` - Update staff (requires staff:update)
+- `DELETE /api/restaurants/:restaurantId/staff/:staffId` - Remove staff (requires staff:delete)
+- `GET /api/restaurants/:restaurantId/roles` - List roles
+
+### Public Endpoints
+- `GET /api/restaurants/:tenantSlug` - Get restaurant by slug (public)
+
+### Stubbed (Coming in Future Phases)
+- `GET /api/:tenantSlug/menu` - Get tenant menu (Phase 3)
+- `GET /api/:tenantSlug/orders` - Get orders (Phase 4)
+- `POST /api/:tenantSlug/orders` - Create order (Phase 4)
+- `GET /api/:tenantSlug/tables` - Get tables (Phase 5)
 
 ## Socket.IO Events
 - `join-tenant` - Join tenant room for real-time updates
@@ -118,6 +136,17 @@ Running `npx tsx scripts/seed.ts` creates:
   - 10 dining tables with QR codes
 
 ## Recent Changes
+- **2026-01-02**: Phase 2 - Auth + RBAC + Tenant Resolution complete
+  - JWT access tokens (15m expiry) + refresh tokens (7d expiry)
+  - Refresh token storage in database with revocation support
+  - Auth middleware: authenticate, optionalAuth, loadFullUser
+  - RBAC middleware: requireSuperAdmin, requireRestaurantAccess, requirePermission, requireRole
+  - Tenant resolution: by domain header, by URL slug, by token context
+  - Auth endpoints: login, logout, refresh, me, switch-restaurant
+  - Super admin endpoints: list restaurants, list users, create restaurant
+  - Staff management: list, create, update, delete restaurant staff
+  - Role listing endpoint per restaurant
+
 - **2026-01-02**: Phase 1 - Database schema complete
   - Created comprehensive multi-tenant PostgreSQL schema (20+ tables)
   - Implemented restaurant_feature_allowlist (hard permissions)
