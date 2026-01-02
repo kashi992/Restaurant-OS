@@ -223,6 +223,15 @@ export async function registerRoutes(
         }
       }
 
+      // Revoke all existing refresh tokens for this user (single active session)
+      await db
+        .update(refreshTokens)
+        .set({ revokedAt: new Date() })
+        .where(and(
+          eq(refreshTokens.userId, user.id),
+          isNull(refreshTokens.revokedAt)
+        ));
+
       // Generate tokens
       const accessPayload: AccessTokenPayload = {
         userId: user.id,
