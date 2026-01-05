@@ -85,8 +85,18 @@ A full-stack, multi-tenant restaurant Point of Sale (POS) system with QR code or
 
 ### Super Admin (Implemented)
 - `GET /api/admin/restaurants` - List all restaurants
-- `GET /api/admin/users` - List all users
+- `GET /api/admin/restaurants/:restaurantId` - View restaurant details with features, settings, domains
 - `POST /api/admin/restaurants` - Create new restaurant
+- `PATCH /api/admin/restaurants/:restaurantId` - Update restaurant
+- `POST /api/admin/restaurants/:restaurantId/domains` - Add domain to restaurant
+- `DELETE /api/admin/restaurants/:restaurantId/domains/:domainId` - Remove domain
+- `POST /api/admin/restaurants/:restaurantId/features` - Set/update features (POS, QR, SPLIT, etc)
+- `POST /api/admin/restaurants/:restaurantId/settings` - Set/update settings (payment methods, etc)
+- `POST /api/admin/restaurants/:restaurantId/suspend` - Suspend restaurant
+- `POST /api/admin/restaurants/:restaurantId/restore` - Restore suspended restaurant
+- `POST /api/admin/restaurants/:restaurantId/admin` - Create admin user for restaurant
+- `GET /api/admin/users` - List all users
+- `GET /api/admin/audit-logs` - View audit logs (with filtering)
 
 ### Restaurant Staff Management (Implemented)
 - `GET /api/restaurants/:restaurantId/staff` - List staff (requires staff:read)
@@ -136,6 +146,20 @@ Running `npx tsx scripts/seed.ts` creates:
   - 10 dining tables with QR codes
 
 ## Recent Changes
+- **2026-01-05**: Phase 4 - Master Company Dashboard APIs complete
+  - Added suspendedAt/suspendedReason fields to restaurants table
+  - Created admin_audit_logs table for tracking all super admin actions
+  - Implemented audit logging helper with action constants
+  - Super admin endpoints for complete restaurant management:
+    - View restaurant details with features, settings, domains, staff count
+    - Update restaurant settings
+    - Add/remove custom domains
+    - Set/update hard feature permissions (POS, QR, SPLIT, etc)
+    - Set/update soft settings (payment methods, etc)
+    - Suspend/restore restaurants with reason tracking
+    - Create admin users for restaurants (with auto role creation)
+    - View audit logs with filtering
+
 - **2026-01-02**: Phase 3 - Feature Gating Engine complete
   - Feature gating middleware with 60-second cache for performance
   - requireFeature() - Hard permissions from restaurant_feature_allowlist (pos, qr, split_payments, etc)

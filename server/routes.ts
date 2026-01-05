@@ -12,6 +12,10 @@ import {
   roles, 
   refreshTokens,
   loginSchema,
+  restaurantDomains,
+  restaurantFeatureAllowlist,
+  restaurantSettings,
+  adminAuditLogs,
 } from "@shared/schema";
 import { 
   generateAccessToken, 
@@ -40,7 +44,9 @@ import {
   getRestaurantFeatures,
   clearFeatureCache,
 } from "./auth/feature-gating";
+import { createAuditLog, AUDIT_ACTIONS } from "./auth/audit";
 import { z } from "zod";
+import { desc } from "drizzle-orm";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -625,12 +631,733 @@ export async function registerRoutes(
         .values({ name, slug, ...rest })
         .returning();
 
+      await createAuditLog({
+        adminUserId: req.user!.userId,
+        action: AUDIT_ACTIONS.RESTAURANT_CREATE,
+        targetType: "restaurant",
+        targetId: restaurant.id,
+        targetName: restaurant.name,
+        newValue: restaurant,
+        req,
+      });
+
       res.status(201).json({ restaurant });
     } catch (error) {
       console.error("Create restaurant error:", error);
       res.status(500).json({ 
         error: "Internal Server Error", 
         message: "Failed to create restaurant" 
+      });
+    }
+  });
+
+  // Get restaurant details with features, settings, domains (super admin only)
+  app.get("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdmin, async (req, res) => {
+    try {
+      const { restaurantId } = req.params;
+
+      const [restaurant] = await db
+        .select()
+        .from(restaurants)
+        .where(eq(restaurants.id, restaurantId))
+        .limit(1);
+
+      if (!restaurant) {
+        return res.status(404).json({ 
+          error: "Not Found", 
+          message: "Restaurant not found" 
+        });
+      }
+
+      const [domains, features, settings, staffCount] = await Promise.all([
+        db.select().from(restaurantDomains).where(eq(restaurantDomains.restaurantId, restaurantId)),
+        db.select().from(restaurantFeatureAllowlist).where(eq(restaurantFeatureAllowlist.restaurantId, restaurantId)),
+        db.select().from(restaurantSettings).where(eq(restaurantSettings.restaurantId, restaurantId)),
+        db.select({ id: restaurantUsers.id }).from(restaurantUsers).where(eq(restaurantUsers.restaurantId, restaurantId)),
+      ]);
+
+      res.json({
+        restaurant,
+        domains,
+        features: features.reduce((acc, f) => ({ ...acc, [f.featureKey]: { isEnabled: f.isEnabled, expiresAt: f.expiresAt } }), {}),
+        settings: settings.reduce((acc, s) => ({ ...acc, [s.settingKey]: s.settingValue }), {}),
+        staffCount: staffCount.length,
+      });
+    } catch (error) {
+      console.error("Get restaurant details error:", error);
+      res.status(500).json({ 
+        error: "Internal Server Error", 
+        message: "Failed to get restaurant details" 
+      });
+    }
+  });
+
+  // Update restaurant (super admin only)
+  app.patch("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdmin, async (req, res) => {
+    try {
+      const { restaurantId } = req.params;
+      const updates = req.body;
+
+      const [existing] = await db
+        .select()
+        .from(restaurants)
+        .where(eq(restaurants.id, restaurantId))
+        .limit(1);
+
+      if (!existing) {
+        return res.status(404).json({ 
+          error: "Not Found", 
+          message: "Restaurant not found" 
+        });
+      }
+
+      // Don't allow updating id or certain fields
+      delete updates.id;
+      delete updates.createdAt;
+      delete updates.suspendedAt;
+      delete updates.suspendedReason;
+      updates.updatedAt = new Date();
+
+      const [restaurant] = await db
+        .update(restaurants)
+        .set(updates)
+        .where(eq(restaurants.id, restaurantId))
+        .returning();
+
+      await createAuditLog({
+        adminUserId: req.user!.userId,
+        action: AUDIT_ACTIONS.RESTAURANT_UPDATE,
+        targetType: "restaurant",
+        targetId: restaurant.id,
+        targetName: restaurant.name,
+        previousValue: existing,
+        newValue: restaurant,
+        req,
+      });
+
+      res.json({ restaurant });
+    } catch (error) {
+      console.error("Update restaurant error:", error);
+      res.status(500).json({ 
+        error: "Internal Server Error", 
+        message: "Failed to update restaurant" 
+      });
+    }
+  });
+
+  // Add domain to restaurant (super admin only)
+  app.post("/api/admin/restaurants/:restaurantId/domains", authenticate, requireSuperAdmin, async (req, res) => {
+    try {
+      const { restaurantId } = req.params;
+      const { domain, isPrimary = false } = req.body;
+
+      if (!domain) {
+        return res.status(400).json({ 
+          error: "Bad Request", 
+          message: "Domain is required" 
+        });
+      }
+
+      const [restaurant] = await db
+        .select()
+        .from(restaurants)
+        .where(eq(restaurants.id, restaurantId))
+        .limit(1);
+
+      if (!restaurant) {
+        return res.status(404).json({ 
+          error: "Not Found", 
+          message: "Restaurant not found" 
+        });
+      }
+
+      // Check domain uniqueness
+      const [existingDomain] = await db
+        .select()
+        .from(restaurantDomains)
+        .where(eq(restaurantDomains.domain, domain))
+        .limit(1);
+
+      if (existingDomain) {
+        return res.status(409).json({ 
+          error: "Conflict", 
+          message: "Domain is already in use" 
+        });
+      }
+
+      const [newDomain] = await db
+        .insert(restaurantDomains)
+        .values({ restaurantId, domain, isPrimary })
+        .returning();
+
+      await createAuditLog({
+        adminUserId: req.user!.userId,
+        action: AUDIT_ACTIONS.DOMAIN_CREATE,
+        targetType: "domain",
+        targetId: newDomain.id,
+        targetName: domain,
+        newValue: newDomain,
+        metadata: { restaurantId, restaurantName: restaurant.name },
+        req,
+      });
+
+      res.status(201).json({ domain: newDomain });
+    } catch (error) {
+      console.error("Add domain error:", error);
+      res.status(500).json({ 
+        error: "Internal Server Error", 
+        message: "Failed to add domain" 
+      });
+    }
+  });
+
+  // Remove domain from restaurant (super admin only)
+  app.delete("/api/admin/restaurants/:restaurantId/domains/:domainId", authenticate, requireSuperAdmin, async (req, res) => {
+    try {
+      const { restaurantId, domainId } = req.params;
+
+      const [existingDomain] = await db
+        .select()
+        .from(restaurantDomains)
+        .where(and(
+          eq(restaurantDomains.id, domainId),
+          eq(restaurantDomains.restaurantId, restaurantId)
+        ))
+        .limit(1);
+
+      if (!existingDomain) {
+        return res.status(404).json({ 
+          error: "Not Found", 
+          message: "Domain not found" 
+        });
+      }
+
+      await db
+        .delete(restaurantDomains)
+        .where(eq(restaurantDomains.id, domainId));
+
+      await createAuditLog({
+        adminUserId: req.user!.userId,
+        action: AUDIT_ACTIONS.DOMAIN_DELETE,
+        targetType: "domain",
+        targetId: domainId,
+        targetName: existingDomain.domain,
+        previousValue: existingDomain,
+        metadata: { restaurantId },
+        req,
+      });
+
+      res.json({ message: "Domain removed successfully" });
+    } catch (error) {
+      console.error("Remove domain error:", error);
+      res.status(500).json({ 
+        error: "Internal Server Error", 
+        message: "Failed to remove domain" 
+      });
+    }
+  });
+
+  // Set/update restaurant features (super admin only)
+  app.post("/api/admin/restaurants/:restaurantId/features", authenticate, requireSuperAdmin, async (req, res) => {
+    try {
+      const { restaurantId } = req.params;
+      const { features } = req.body; // { featureKey: { isEnabled: boolean, expiresAt?: string } }
+
+      if (!features || typeof features !== 'object') {
+        return res.status(400).json({ 
+          error: "Bad Request", 
+          message: "Features object is required" 
+        });
+      }
+
+      const [restaurant] = await db
+        .select()
+        .from(restaurants)
+        .where(eq(restaurants.id, restaurantId))
+        .limit(1);
+
+      if (!restaurant) {
+        return res.status(404).json({ 
+          error: "Not Found", 
+          message: "Restaurant not found" 
+        });
+      }
+
+      const existingFeatures = await db
+        .select()
+        .from(restaurantFeatureAllowlist)
+        .where(eq(restaurantFeatureAllowlist.restaurantId, restaurantId));
+
+      const existingMap = new Map(existingFeatures.map(f => [f.featureKey, f]));
+      const results: Record<string, unknown> = {};
+
+      for (const [featureKey, config] of Object.entries(features)) {
+        const { isEnabled, expiresAt } = config as { isEnabled: boolean; expiresAt?: string };
+        const existing = existingMap.get(featureKey);
+
+        if (existing) {
+          const [updated] = await db
+            .update(restaurantFeatureAllowlist)
+            .set({ 
+              isEnabled, 
+              expiresAt: expiresAt ? new Date(expiresAt) : null,
+              updatedAt: new Date()
+            })
+            .where(eq(restaurantFeatureAllowlist.id, existing.id))
+            .returning();
+          results[featureKey] = updated;
+
+          await createAuditLog({
+            adminUserId: req.user!.userId,
+            action: AUDIT_ACTIONS.FEATURE_UPDATE,
+            targetType: "feature",
+            targetId: existing.id,
+            targetName: featureKey,
+            previousValue: existing,
+            newValue: updated,
+            metadata: { restaurantId, restaurantName: restaurant.name },
+            req,
+          });
+        } else {
+          const [created] = await db
+            .insert(restaurantFeatureAllowlist)
+            .values({ 
+              restaurantId, 
+              featureKey, 
+              isEnabled,
+              expiresAt: expiresAt ? new Date(expiresAt) : null
+            })
+            .returning();
+          results[featureKey] = created;
+
+          await createAuditLog({
+            adminUserId: req.user!.userId,
+            action: AUDIT_ACTIONS.FEATURE_CREATE,
+            targetType: "feature",
+            targetId: created.id,
+            targetName: featureKey,
+            newValue: created,
+            metadata: { restaurantId, restaurantName: restaurant.name },
+            req,
+          });
+        }
+      }
+
+      clearFeatureCache(restaurantId);
+
+      res.json({ features: results });
+    } catch (error) {
+      console.error("Set features error:", error);
+      res.status(500).json({ 
+        error: "Internal Server Error", 
+        message: "Failed to set features" 
+      });
+    }
+  });
+
+  // Set/update restaurant settings including payment methods (super admin only)
+  app.post("/api/admin/restaurants/:restaurantId/settings", authenticate, requireSuperAdmin, async (req, res) => {
+    try {
+      const { restaurantId } = req.params;
+      const { settings } = req.body; // { settingKey: settingValue }
+
+      if (!settings || typeof settings !== 'object') {
+        return res.status(400).json({ 
+          error: "Bad Request", 
+          message: "Settings object is required" 
+        });
+      }
+
+      const [restaurant] = await db
+        .select()
+        .from(restaurants)
+        .where(eq(restaurants.id, restaurantId))
+        .limit(1);
+
+      if (!restaurant) {
+        return res.status(404).json({ 
+          error: "Not Found", 
+          message: "Restaurant not found" 
+        });
+      }
+
+      const existingSettings = await db
+        .select()
+        .from(restaurantSettings)
+        .where(eq(restaurantSettings.restaurantId, restaurantId));
+
+      const existingMap = new Map(existingSettings.map(s => [s.settingKey, s]));
+      const results: Record<string, unknown> = {};
+
+      for (const [settingKey, settingValue] of Object.entries(settings)) {
+        const existing = existingMap.get(settingKey);
+
+        if (existing) {
+          const [updated] = await db
+            .update(restaurantSettings)
+            .set({ 
+              settingValue,
+              updatedAt: new Date()
+            })
+            .where(eq(restaurantSettings.id, existing.id))
+            .returning();
+          results[settingKey] = updated.settingValue;
+
+          await createAuditLog({
+            adminUserId: req.user!.userId,
+            action: AUDIT_ACTIONS.SETTING_UPDATE,
+            targetType: "setting",
+            targetId: existing.id,
+            targetName: settingKey,
+            previousValue: existing.settingValue,
+            newValue: settingValue,
+            metadata: { restaurantId, restaurantName: restaurant.name },
+            req,
+          });
+        } else {
+          const [created] = await db
+            .insert(restaurantSettings)
+            .values({ restaurantId, settingKey, settingValue })
+            .returning();
+          results[settingKey] = created.settingValue;
+
+          await createAuditLog({
+            adminUserId: req.user!.userId,
+            action: AUDIT_ACTIONS.SETTING_CREATE,
+            targetType: "setting",
+            targetId: created.id,
+            targetName: settingKey,
+            newValue: settingValue,
+            metadata: { restaurantId, restaurantName: restaurant.name },
+            req,
+          });
+        }
+      }
+
+      clearFeatureCache(restaurantId);
+
+      res.json({ settings: results });
+    } catch (error) {
+      console.error("Set settings error:", error);
+      res.status(500).json({ 
+        error: "Internal Server Error", 
+        message: "Failed to set settings" 
+      });
+    }
+  });
+
+  // Suspend restaurant (super admin only)
+  app.post("/api/admin/restaurants/:restaurantId/suspend", authenticate, requireSuperAdmin, async (req, res) => {
+    try {
+      const { restaurantId } = req.params;
+      const { reason } = req.body;
+
+      const [existing] = await db
+        .select()
+        .from(restaurants)
+        .where(eq(restaurants.id, restaurantId))
+        .limit(1);
+
+      if (!existing) {
+        return res.status(404).json({ 
+          error: "Not Found", 
+          message: "Restaurant not found" 
+        });
+      }
+
+      if (existing.suspendedAt) {
+        return res.status(400).json({ 
+          error: "Bad Request", 
+          message: "Restaurant is already suspended" 
+        });
+      }
+
+      const [restaurant] = await db
+        .update(restaurants)
+        .set({ 
+          suspendedAt: new Date(),
+          suspendedReason: reason || "Suspended by administrator",
+          updatedAt: new Date()
+        })
+        .where(eq(restaurants.id, restaurantId))
+        .returning();
+
+      await createAuditLog({
+        adminUserId: req.user!.userId,
+        action: AUDIT_ACTIONS.RESTAURANT_SUSPEND,
+        targetType: "restaurant",
+        targetId: restaurant.id,
+        targetName: restaurant.name,
+        previousValue: { suspendedAt: null, suspendedReason: null },
+        newValue: { suspendedAt: restaurant.suspendedAt, suspendedReason: restaurant.suspendedReason },
+        metadata: { reason },
+        req,
+      });
+
+      res.json({ restaurant, message: "Restaurant suspended successfully" });
+    } catch (error) {
+      console.error("Suspend restaurant error:", error);
+      res.status(500).json({ 
+        error: "Internal Server Error", 
+        message: "Failed to suspend restaurant" 
+      });
+    }
+  });
+
+  // Restore restaurant (super admin only)
+  app.post("/api/admin/restaurants/:restaurantId/restore", authenticate, requireSuperAdmin, async (req, res) => {
+    try {
+      const { restaurantId } = req.params;
+
+      const [existing] = await db
+        .select()
+        .from(restaurants)
+        .where(eq(restaurants.id, restaurantId))
+        .limit(1);
+
+      if (!existing) {
+        return res.status(404).json({ 
+          error: "Not Found", 
+          message: "Restaurant not found" 
+        });
+      }
+
+      if (!existing.suspendedAt) {
+        return res.status(400).json({ 
+          error: "Bad Request", 
+          message: "Restaurant is not suspended" 
+        });
+      }
+
+      const [restaurant] = await db
+        .update(restaurants)
+        .set({ 
+          suspendedAt: null,
+          suspendedReason: null,
+          updatedAt: new Date()
+        })
+        .where(eq(restaurants.id, restaurantId))
+        .returning();
+
+      await createAuditLog({
+        adminUserId: req.user!.userId,
+        action: AUDIT_ACTIONS.RESTAURANT_RESTORE,
+        targetType: "restaurant",
+        targetId: restaurant.id,
+        targetName: restaurant.name,
+        previousValue: { suspendedAt: existing.suspendedAt, suspendedReason: existing.suspendedReason },
+        newValue: { suspendedAt: null, suspendedReason: null },
+        req,
+      });
+
+      res.json({ restaurant, message: "Restaurant restored successfully" });
+    } catch (error) {
+      console.error("Restore restaurant error:", error);
+      res.status(500).json({ 
+        error: "Internal Server Error", 
+        message: "Failed to restore restaurant" 
+      });
+    }
+  });
+
+  // Create restaurant admin user (super admin only)
+  app.post("/api/admin/restaurants/:restaurantId/admin", authenticate, requireSuperAdmin, async (req, res) => {
+    try {
+      const { restaurantId } = req.params;
+      const { email, password, firstName, lastName, phone } = req.body;
+
+      if (!email || !password) {
+        return res.status(400).json({ 
+          error: "Bad Request", 
+          message: "Email and password are required" 
+        });
+      }
+
+      const [restaurant] = await db
+        .select()
+        .from(restaurants)
+        .where(eq(restaurants.id, restaurantId))
+        .limit(1);
+
+      if (!restaurant) {
+        return res.status(404).json({ 
+          error: "Not Found", 
+          message: "Restaurant not found" 
+        });
+      }
+
+      // Check if user already exists
+      const [existingUser] = await db
+        .select()
+        .from(users)
+        .where(eq(users.email, email.toLowerCase()))
+        .limit(1);
+
+      let user;
+      if (existingUser) {
+        // Check if already associated with this restaurant
+        const [existingAssoc] = await db
+          .select()
+          .from(restaurantUsers)
+          .where(and(
+            eq(restaurantUsers.userId, existingUser.id),
+            eq(restaurantUsers.restaurantId, restaurantId)
+          ))
+          .limit(1);
+
+        if (existingAssoc) {
+          return res.status(409).json({ 
+            error: "Conflict", 
+            message: "User is already associated with this restaurant" 
+          });
+        }
+        user = existingUser;
+      } else {
+        // Create new user
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const [newUser] = await db
+          .insert(users)
+          .values({
+            email: email.toLowerCase(),
+            password: hashedPassword,
+            firstName,
+            lastName,
+            phone,
+          })
+          .returning();
+        user = newUser;
+
+        await createAuditLog({
+          adminUserId: req.user!.userId,
+          action: AUDIT_ACTIONS.USER_CREATE,
+          targetType: "user",
+          targetId: user.id,
+          targetName: user.email,
+          newValue: { email: user.email, firstName, lastName },
+          metadata: { restaurantId, restaurantName: restaurant.name },
+          req,
+        });
+      }
+
+      // Find or create admin role for this restaurant
+      let [adminRole] = await db
+        .select()
+        .from(roles)
+        .where(and(
+          eq(roles.restaurantId, restaurantId),
+          eq(roles.name, "admin")
+        ))
+        .limit(1);
+
+      if (!adminRole) {
+        // Create admin role
+        [adminRole] = await db
+          .insert(roles)
+          .values({
+            restaurantId,
+            name: "admin",
+            description: "Restaurant Administrator",
+            permissions: [
+              "menu:read", "menu:create", "menu:update", "menu:delete",
+              "orders:read", "orders:create", "orders:update", "orders:delete",
+              "tables:read", "tables:create", "tables:update", "tables:delete",
+              "staff:read", "staff:create", "staff:update", "staff:delete",
+              "reports:read", "settings:read", "settings:update"
+            ],
+            isSystemRole: true,
+          })
+          .returning();
+      }
+
+      // Create restaurant user association
+      const [restaurantUser] = await db
+        .insert(restaurantUsers)
+        .values({
+          restaurantId,
+          userId: user.id,
+          roleId: adminRole.id,
+        })
+        .returning();
+
+      await createAuditLog({
+        adminUserId: req.user!.userId,
+        action: AUDIT_ACTIONS.ADMIN_CREATE,
+        targetType: "user",
+        targetId: user.id,
+        targetName: user.email,
+        newValue: { restaurantUser, role: "admin" },
+        metadata: { restaurantId, restaurantName: restaurant.name },
+        req,
+      });
+
+      res.status(201).json({
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+        },
+        restaurantUser: {
+          id: restaurantUser.id,
+          roleId: adminRole.id,
+          roleName: adminRole.name,
+        },
+        message: "Restaurant admin created successfully"
+      });
+    } catch (error) {
+      console.error("Create restaurant admin error:", error);
+      res.status(500).json({ 
+        error: "Internal Server Error", 
+        message: "Failed to create restaurant admin" 
+      });
+    }
+  });
+
+  // Get audit logs (super admin only)
+  app.get("/api/admin/audit-logs", authenticate, requireSuperAdmin, async (req, res) => {
+    try {
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+      const offset = parseInt(req.query.offset as string) || 0;
+      const targetType = req.query.targetType as string;
+      const targetId = req.query.targetId as string;
+
+      // Build conditions array for filtering
+      const conditions = [];
+      if (targetType) {
+        conditions.push(eq(adminAuditLogs.targetType, targetType));
+      }
+      if (targetId) {
+        conditions.push(eq(adminAuditLogs.targetId, targetId));
+      }
+
+      const baseQuery = db
+        .select({
+          id: adminAuditLogs.id,
+          adminUserId: adminAuditLogs.adminUserId,
+          adminEmail: users.email,
+          action: adminAuditLogs.action,
+          targetType: adminAuditLogs.targetType,
+          targetId: adminAuditLogs.targetId,
+          targetName: adminAuditLogs.targetName,
+          previousValue: adminAuditLogs.previousValue,
+          newValue: adminAuditLogs.newValue,
+          metadata: adminAuditLogs.metadata,
+          ipAddress: adminAuditLogs.ipAddress,
+          createdAt: adminAuditLogs.createdAt,
+        })
+        .from(adminAuditLogs)
+        .leftJoin(users, eq(adminAuditLogs.adminUserId, users.id));
+
+      const logs = conditions.length > 0
+        ? await baseQuery.where(and(...conditions)).orderBy(desc(adminAuditLogs.createdAt)).limit(limit).offset(offset)
+        : await baseQuery.orderBy(desc(adminAuditLogs.createdAt)).limit(limit).offset(offset);
+
+      res.json({ logs, limit, offset });
+    } catch (error) {
+      console.error("Get audit logs error:", error);
+      res.status(500).json({ 
+        error: "Internal Server Error", 
+        message: "Failed to get audit logs" 
       });
     }
   });
