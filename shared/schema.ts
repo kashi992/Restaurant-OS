@@ -41,6 +41,8 @@ export const restaurants = pgTable("restaurants", {
   currency: text("currency").default("USD"),
   taxRate: decimal("tax_rate", { precision: 5, scale: 4 }).default("0.0000"),
   isActive: boolean("is_active").default(true),
+  suspendedAt: timestamp("suspended_at"),
+  suspendedReason: text("suspended_reason"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
@@ -697,6 +699,39 @@ export const registerSchema = insertUserSchema.extend({
 
 export type LoginInput = z.infer<typeof loginSchema>;
 export type RegisterInput = z.infer<typeof registerSchema>;
+
+// ============================================================================
+// ADMIN AUDIT LOGS - Track super admin actions
+// ============================================================================
+
+export const adminAuditLogs = pgTable("admin_audit_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  adminUserId: varchar("admin_user_id").notNull().references(() => users.id),
+  action: text("action").notNull(), // e.g., "restaurant.create", "restaurant.suspend", "feature.update"
+  targetType: text("target_type").notNull(), // "restaurant", "user", "feature", "setting", "domain"
+  targetId: varchar("target_id").notNull(),
+  targetName: text("target_name"), // Human-readable name for reference
+  previousValue: jsonb("previous_value"),
+  newValue: jsonb("new_value"),
+  metadata: jsonb("metadata").default({}), // Additional context
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("admin_audit_logs_admin_user_id_idx").on(table.adminUserId),
+  index("admin_audit_logs_target_type_idx").on(table.targetType),
+  index("admin_audit_logs_target_id_idx").on(table.targetId),
+  index("admin_audit_logs_action_idx").on(table.action),
+  index("admin_audit_logs_created_at_idx").on(table.createdAt),
+]);
+
+export const insertAdminAuditLogSchema = createInsertSchema(adminAuditLogs).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertAdminAuditLog = z.infer<typeof insertAdminAuditLogSchema>;
+export type AdminAuditLog = typeof adminAuditLogs.$inferSelect;
 
 // ============================================================================
 // CONSTANTS - Enums for reference
