@@ -28,6 +28,7 @@ import {
   orders,
   orderItems,
   orderStatusHistory,
+  payments,
 } from "@shared/schema";
 import { 
   generateAccessToken, 
@@ -4083,6 +4084,1128 @@ export async function registerRoutes(
       } catch (error) {
         console.error("Get order status error:", error);
         res.status(500).json({ error: "Failed to get order status" });
+      }
+    }
+  );
+
+  // ============================================================================
+  // POS ORDER MANAGEMENT (Staff) - Phase 7
+  // ============================================================================
+
+  // Helper function to record status change in history (POS)
+  async function recordOrderStatusChange(
+    orderId: string,
+    userId: string | null,
+    fromStatus: string | null,
+    toStatus: string,
+    notes?: string
+  ) {
+    await db.insert(orderStatusHistory).values({
+      orderId,
+      userId,
+      fromStatus,
+      toStatus,
+      notes,
+    });
+  }
+
+  // Helper function to generate POS order number
+  async function generatePosOrderNumber(restaurantId: string): Promise<{ orderNumber: string; displayNumber: number }> {
+    const today = new Date();
+    const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
+    
+    // Get today's order count for display number
+    const startOfDay = new Date(today);
+    startOfDay.setHours(0, 0, 0, 0);
+    const [countResult] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(orders)
+      .where(and(
+        eq(orders.restaurantId, restaurantId),
+        gt(orders.createdAt, startOfDay)
+      ));
+    
+    const displayNumber = (countResult?.count || 0) + 1;
+    const orderNumber = `POS-${dateStr}-${displayNumber.toString().padStart(4, '0')}`;
+    
+    return { orderNumber, displayNumber };
+  }
+
+  // Get all orders for a restaurant (with filters)
+  app.get(
+    "/api/restaurants/:restaurantId/orders",
+    authenticate,
+    requireRestaurantAccess,
+    requireFeature("pos"),
+    requirePermission("orders:read"),
+    async (req, res) => {
+      try {
+        const { restaurantId } = req.params;
+        const { status, tableId, date, source } = req.query;
+
+        let query = db
+          .select({
+            id: orders.id,
+            orderNumber: orders.orderNumber,
+            displayNumber: orders.displayNumber,
+            status: orders.status,
+            orderType: orders.orderType,
+            source: orders.source,
+            tableId: orders.tableId,
+            tableName: diningTables.name,
+            tableNumber: diningTables.number,
+            serverId: orders.serverId,
+            subtotal: orders.subtotal,
+            taxAmount: orders.taxAmount,
+            total: orders.total,
+            paidAmount: orders.paidAmount,
+            customerName: orders.customerName,
+            guestCount: orders.guestCount,
+            notes: orders.notes,
+            createdAt: orders.createdAt,
+            updatedAt: orders.updatedAt,
+          })
+          .from(orders)
+          .leftJoin(diningTables, eq(orders.tableId, diningTables.id))
+          .where(eq(orders.restaurantId, restaurantId))
+          .orderBy(desc(orders.createdAt))
+          .$dynamic();
+
+        // Apply filters
+        const conditions = [eq(orders.restaurantId, restaurantId)];
+        
+        if (status && typeof status === 'string') {
+          conditions.push(eq(orders.status, status));
+        }
+        if (tableId && typeof tableId === 'string') {
+          conditions.push(eq(orders.tableId, tableId));
+        }
+        if (source && typeof source === 'string') {
+          conditions.push(eq(orders.source, source));
+        }
+        if (date && typeof date === 'string') {
+          const startOfDay = new Date(date);
+          startOfDay.setHours(0, 0, 0, 0);
+          const endOfDay = new Date(date);
+          endOfDay.setHours(23, 59, 59, 999);
+          conditions.push(gt(orders.createdAt, startOfDay));
+        }
+
+        const result = await db
+          .select({
+            id: orders.id,
+            orderNumber: orders.orderNumber,
+            displayNumber: orders.displayNumber,
+            status: orders.status,
+            orderType: orders.orderType,
+            source: orders.source,
+            tableId: orders.tableId,
+            tableName: diningTables.name,
+            tableNumber: diningTables.number,
+            serverId: orders.serverId,
+            subtotal: orders.subtotal,
+            taxAmount: orders.taxAmount,
+            total: orders.total,
+            paidAmount: orders.paidAmount,
+            customerName: orders.customerName,
+            guestCount: orders.guestCount,
+            notes: orders.notes,
+            createdAt: orders.createdAt,
+            updatedAt: orders.updatedAt,
+          })
+          .from(orders)
+          .leftJoin(diningTables, eq(orders.tableId, diningTables.id))
+          .where(and(...conditions))
+          .orderBy(desc(orders.createdAt));
+
+        res.json({ orders: result });
+      } catch (error) {
+        console.error("Get orders error:", error);
+        res.status(500).json({ error: "Failed to fetch orders" });
+      }
+    }
+  );
+
+  // Get live orders (active orders not completed/cancelled)
+  app.get(
+    "/api/restaurants/:restaurantId/orders/live",
+    authenticate,
+    requireRestaurantAccess,
+    requireFeature("pos"),
+    requirePermission("orders:read"),
+    async (req, res) => {
+      try {
+        const { restaurantId } = req.params;
+
+        const liveOrders = await db
+          .select({
+            id: orders.id,
+            orderNumber: orders.orderNumber,
+            displayNumber: orders.displayNumber,
+            status: orders.status,
+            orderType: orders.orderType,
+            source: orders.source,
+            tableId: orders.tableId,
+            tableName: diningTables.name,
+            tableNumber: diningTables.number,
+            serverId: orders.serverId,
+            subtotal: orders.subtotal,
+            taxAmount: orders.taxAmount,
+            total: orders.total,
+            paidAmount: orders.paidAmount,
+            customerName: orders.customerName,
+            guestCount: orders.guestCount,
+            notes: orders.notes,
+            estimatedReadyAt: orders.estimatedReadyAt,
+            createdAt: orders.createdAt,
+          })
+          .from(orders)
+          .leftJoin(diningTables, eq(orders.tableId, diningTables.id))
+          .where(and(
+            eq(orders.restaurantId, restaurantId),
+            sql`${orders.status} NOT IN ('completed', 'cancelled')`
+          ))
+          .orderBy(orders.createdAt);
+
+        res.json({ orders: liveOrders });
+      } catch (error) {
+        console.error("Get live orders error:", error);
+        res.status(500).json({ error: "Failed to fetch live orders" });
+      }
+    }
+  );
+
+  // Get orders by table
+  app.get(
+    "/api/restaurants/:restaurantId/tables/:tableId/orders",
+    authenticate,
+    requireRestaurantAccess,
+    requireFeature("pos"),
+    requirePermission("orders:read"),
+    async (req, res) => {
+      try {
+        const { restaurantId, tableId } = req.params;
+        const { activeOnly } = req.query;
+
+        const conditions = [
+          eq(orders.restaurantId, restaurantId),
+          eq(orders.tableId, tableId),
+        ];
+
+        if (activeOnly === 'true') {
+          conditions.push(sql`${orders.status} NOT IN ('completed', 'cancelled')`);
+        }
+
+        const tableOrders = await db
+          .select({
+            id: orders.id,
+            orderNumber: orders.orderNumber,
+            displayNumber: orders.displayNumber,
+            status: orders.status,
+            orderType: orders.orderType,
+            source: orders.source,
+            subtotal: orders.subtotal,
+            taxAmount: orders.taxAmount,
+            total: orders.total,
+            paidAmount: orders.paidAmount,
+            customerName: orders.customerName,
+            guestCount: orders.guestCount,
+            notes: orders.notes,
+            createdAt: orders.createdAt,
+          })
+          .from(orders)
+          .where(and(...conditions))
+          .orderBy(desc(orders.createdAt));
+
+        res.json({ orders: tableOrders });
+      } catch (error) {
+        console.error("Get table orders error:", error);
+        res.status(500).json({ error: "Failed to fetch table orders" });
+      }
+    }
+  );
+
+  // Get single order with items
+  app.get(
+    "/api/restaurants/:restaurantId/orders/:orderId",
+    authenticate,
+    requireRestaurantAccess,
+    requireFeature("pos"),
+    requirePermission("orders:read"),
+    async (req, res) => {
+      try {
+        const { restaurantId, orderId } = req.params;
+
+        const [order] = await db
+          .select({
+            id: orders.id,
+            orderNumber: orders.orderNumber,
+            displayNumber: orders.displayNumber,
+            status: orders.status,
+            orderType: orders.orderType,
+            source: orders.source,
+            tableId: orders.tableId,
+            tableName: diningTables.name,
+            tableNumber: diningTables.number,
+            serverId: orders.serverId,
+            subtotal: orders.subtotal,
+            taxAmount: orders.taxAmount,
+            tipAmount: orders.tipAmount,
+            discountAmount: orders.discountAmount,
+            total: orders.total,
+            paidAmount: orders.paidAmount,
+            customerName: orders.customerName,
+            customerPhone: orders.customerPhone,
+            customerEmail: orders.customerEmail,
+            guestCount: orders.guestCount,
+            notes: orders.notes,
+            estimatedReadyAt: orders.estimatedReadyAt,
+            completedAt: orders.completedAt,
+            cancelledAt: orders.cancelledAt,
+            cancelReason: orders.cancelReason,
+            createdAt: orders.createdAt,
+            updatedAt: orders.updatedAt,
+          })
+          .from(orders)
+          .leftJoin(diningTables, eq(orders.tableId, diningTables.id))
+          .where(and(
+            eq(orders.id, orderId),
+            eq(orders.restaurantId, restaurantId)
+          ));
+
+        if (!order) {
+          return res.status(404).json({ error: "Order not found" });
+        }
+
+        // Get order items
+        const items = await db
+          .select()
+          .from(orderItems)
+          .where(eq(orderItems.orderId, orderId))
+          .orderBy(orderItems.createdAt);
+
+        // Get status history
+        const history = await db
+          .select({
+            id: orderStatusHistory.id,
+            fromStatus: orderStatusHistory.fromStatus,
+            toStatus: orderStatusHistory.toStatus,
+            notes: orderStatusHistory.notes,
+            userId: orderStatusHistory.userId,
+            createdAt: orderStatusHistory.createdAt,
+          })
+          .from(orderStatusHistory)
+          .where(eq(orderStatusHistory.orderId, orderId))
+          .orderBy(desc(orderStatusHistory.createdAt));
+
+        res.json({ order, items, statusHistory: history });
+      } catch (error) {
+        console.error("Get order error:", error);
+        res.status(500).json({ error: "Failed to fetch order" });
+      }
+    }
+  );
+
+  // Create POS order
+  app.post(
+    "/api/restaurants/:restaurantId/orders",
+    authenticate,
+    requireRestaurantAccess,
+    requireFeature("pos"),
+    requirePermission("orders:create"),
+    async (req, res) => {
+      try {
+        const { restaurantId } = req.params;
+        const userId = req.user!.userId;
+        const {
+          tableId,
+          orderType = "dine_in",
+          customerName,
+          customerPhone,
+          customerEmail,
+          guestCount = 1,
+          notes,
+          items = [],
+        } = req.body;
+
+        // Validate table if provided
+        if (tableId) {
+          const [table] = await db
+            .select({ id: diningTables.id })
+            .from(diningTables)
+            .where(and(
+              eq(diningTables.id, tableId),
+              eq(diningTables.restaurantId, restaurantId)
+            ));
+          if (!table) {
+            return res.status(400).json({ error: "Invalid table" });
+          }
+        }
+
+        // Generate order number
+        const { orderNumber, displayNumber } = await generatePosOrderNumber(restaurantId);
+
+        // Get restaurant tax rate
+        const [restaurant] = await db
+          .select({ taxRate: restaurants.taxRate })
+          .from(restaurants)
+          .where(eq(restaurants.id, restaurantId));
+        const taxRate = parseFloat(restaurant?.taxRate || "0");
+
+        // Calculate totals from items
+        let subtotal = 0;
+        const orderItemsData: any[] = [];
+
+        for (const item of items) {
+          // Get menu item details
+          const [menuItem] = await db
+            .select({
+              id: menuItems.id,
+              name: menuItems.name,
+              price: menuItems.price,
+            })
+            .from(menuItems)
+            .where(eq(menuItems.id, item.menuItemId));
+
+          if (!menuItem) {
+            return res.status(400).json({ error: `Menu item ${item.menuItemId} not found` });
+          }
+
+          const unitPrice = parseFloat(menuItem.price);
+          const quantity = item.quantity || 1;
+          let modifiersPrice = 0;
+
+          // Calculate modifiers price if provided
+          if (item.modifiers && Array.isArray(item.modifiers)) {
+            for (const mod of item.modifiers) {
+              modifiersPrice += parseFloat(mod.price || "0");
+            }
+          }
+
+          const totalPrice = (unitPrice + modifiersPrice) * quantity;
+          subtotal += totalPrice;
+
+          orderItemsData.push({
+            menuItemId: menuItem.id,
+            name: menuItem.name,
+            quantity,
+            unitPrice: unitPrice.toFixed(2),
+            modifiersPrice: modifiersPrice.toFixed(2),
+            totalPrice: totalPrice.toFixed(2),
+            modifiers: item.modifiers || [],
+            notes: item.notes,
+            status: "pending",
+          });
+        }
+
+        const taxAmount = subtotal * (taxRate / 100);
+        const total = subtotal + taxAmount;
+
+        // Create order
+        const [newOrder] = await db
+          .insert(orders)
+          .values({
+            restaurantId,
+            tableId: tableId || null,
+            serverId: userId,
+            orderNumber,
+            displayNumber,
+            status: "pending",
+            orderType,
+            source: "pos",
+            subtotal: subtotal.toFixed(2),
+            taxAmount: taxAmount.toFixed(2),
+            total: total.toFixed(2),
+            customerName,
+            customerPhone,
+            customerEmail,
+            guestCount,
+            notes,
+          })
+          .returning();
+
+        // Create order items
+        if (orderItemsData.length > 0) {
+          await db.insert(orderItems).values(
+            orderItemsData.map(item => ({
+              ...item,
+              orderId: newOrder.id,
+            }))
+          );
+        }
+
+        // Record status history
+        await recordOrderStatusChange(newOrder.id, userId, null, "pending", "Order created via POS");
+
+        // Emit socket event
+        const io = app.get("io") as SocketIOServer;
+        io.to(`tenant:${restaurantId}`).emit("order:created", {
+          orderId: newOrder.id,
+          orderNumber: newOrder.orderNumber,
+          displayNumber: newOrder.displayNumber,
+          source: "pos",
+          tableId,
+        });
+        io.to(`kitchen:${restaurantId}`).emit("order:new", {
+          orderId: newOrder.id,
+          displayNumber: newOrder.displayNumber,
+        });
+
+        // Update table status if assigned
+        if (tableId) {
+          await db
+            .update(diningTables)
+            .set({ status: "occupied", updatedAt: new Date() })
+            .where(eq(diningTables.id, tableId));
+        }
+
+        res.status(201).json({ 
+          message: "Order created",
+          order: newOrder,
+        });
+      } catch (error) {
+        console.error("Create POS order error:", error);
+        res.status(500).json({ error: "Failed to create order" });
+      }
+    }
+  );
+
+  // Add items to order
+  app.post(
+    "/api/restaurants/:restaurantId/orders/:orderId/items",
+    authenticate,
+    requireRestaurantAccess,
+    requireFeature("pos"),
+    requirePermission("orders:update"),
+    async (req, res) => {
+      try {
+        const { restaurantId, orderId } = req.params;
+        const { items } = req.body;
+
+        if (!items || !Array.isArray(items) || items.length === 0) {
+          return res.status(400).json({ error: "Items array is required" });
+        }
+
+        // Verify order exists and belongs to restaurant
+        const [order] = await db
+          .select({ id: orders.id, status: orders.status, subtotal: orders.subtotal, taxAmount: orders.taxAmount, total: orders.total })
+          .from(orders)
+          .where(and(eq(orders.id, orderId), eq(orders.restaurantId, restaurantId)));
+
+        if (!order) {
+          return res.status(404).json({ error: "Order not found" });
+        }
+
+        if (['completed', 'cancelled'].includes(order.status || '')) {
+          return res.status(400).json({ error: "Cannot modify completed or cancelled order" });
+        }
+
+        // Get restaurant tax rate
+        const [restaurant] = await db
+          .select({ taxRate: restaurants.taxRate })
+          .from(restaurants)
+          .where(eq(restaurants.id, restaurantId));
+        const taxRate = parseFloat(restaurant?.taxRate || "0");
+
+        let addedSubtotal = 0;
+        const newItems: any[] = [];
+
+        for (const item of items) {
+          const [menuItem] = await db
+            .select({ id: menuItems.id, name: menuItems.name, price: menuItems.price })
+            .from(menuItems)
+            .where(eq(menuItems.id, item.menuItemId));
+
+          if (!menuItem) {
+            return res.status(400).json({ error: `Menu item ${item.menuItemId} not found` });
+          }
+
+          const unitPrice = parseFloat(menuItem.price);
+          const quantity = item.quantity || 1;
+          let modifiersPrice = 0;
+
+          if (item.modifiers && Array.isArray(item.modifiers)) {
+            for (const mod of item.modifiers) {
+              modifiersPrice += parseFloat(mod.price || "0");
+            }
+          }
+
+          const totalPrice = (unitPrice + modifiersPrice) * quantity;
+          addedSubtotal += totalPrice;
+
+          newItems.push({
+            orderId,
+            menuItemId: menuItem.id,
+            name: menuItem.name,
+            quantity,
+            unitPrice: unitPrice.toFixed(2),
+            modifiersPrice: modifiersPrice.toFixed(2),
+            totalPrice: totalPrice.toFixed(2),
+            modifiers: item.modifiers || [],
+            notes: item.notes,
+            status: "pending",
+          });
+        }
+
+        // Insert new items
+        const insertedItems = await db.insert(orderItems).values(newItems).returning();
+
+        // Update order totals
+        const newSubtotal = parseFloat(order.subtotal || "0") + addedSubtotal;
+        const newTaxAmount = newSubtotal * (taxRate / 100);
+        const newTotal = newSubtotal + newTaxAmount;
+
+        await db.update(orders).set({
+          subtotal: newSubtotal.toFixed(2),
+          taxAmount: newTaxAmount.toFixed(2),
+          total: newTotal.toFixed(2),
+          updatedAt: new Date(),
+        }).where(eq(orders.id, orderId));
+
+        // Emit socket event
+        const io = app.get("io") as SocketIOServer;
+        io.to(`kitchen:${restaurantId}`).emit("order:items-added", {
+          orderId,
+          items: insertedItems,
+        });
+
+        res.status(201).json({ message: "Items added", items: insertedItems });
+      } catch (error) {
+        console.error("Add order items error:", error);
+        res.status(500).json({ error: "Failed to add items" });
+      }
+    }
+  );
+
+  // Update order item
+  app.patch(
+    "/api/restaurants/:restaurantId/orders/:orderId/items/:itemId",
+    authenticate,
+    requireRestaurantAccess,
+    requireFeature("pos"),
+    requirePermission("orders:update"),
+    async (req, res) => {
+      try {
+        const { restaurantId, orderId, itemId } = req.params;
+        const { quantity, notes, status } = req.body;
+
+        // Verify order exists
+        const [order] = await db
+          .select({ id: orders.id, status: orders.status })
+          .from(orders)
+          .where(and(eq(orders.id, orderId), eq(orders.restaurantId, restaurantId)));
+
+        if (!order) {
+          return res.status(404).json({ error: "Order not found" });
+        }
+
+        if (['completed', 'cancelled'].includes(order.status || '')) {
+          return res.status(400).json({ error: "Cannot modify completed or cancelled order" });
+        }
+
+        // Get the item
+        const [item] = await db
+          .select()
+          .from(orderItems)
+          .where(and(eq(orderItems.id, itemId), eq(orderItems.orderId, orderId)));
+
+        if (!item) {
+          return res.status(404).json({ error: "Item not found" });
+        }
+
+        const updates: any = { updatedAt: new Date() };
+        
+        if (quantity !== undefined) {
+          updates.quantity = quantity;
+          const unitPrice = parseFloat(item.unitPrice);
+          const modifiersPrice = parseFloat(item.modifiersPrice || "0");
+          updates.totalPrice = ((unitPrice + modifiersPrice) * quantity).toFixed(2);
+        }
+        if (notes !== undefined) updates.notes = notes;
+        if (status !== undefined) {
+          updates.status = status;
+          if (status === 'preparing') updates.sentToKitchenAt = new Date();
+          if (status === 'ready') updates.preparedAt = new Date();
+          if (status === 'served') updates.servedAt = new Date();
+        }
+
+        const [updatedItem] = await db
+          .update(orderItems)
+          .set(updates)
+          .where(eq(orderItems.id, itemId))
+          .returning();
+
+        // Recalculate order totals if quantity changed
+        if (quantity !== undefined) {
+          const allItems = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+          const newSubtotal = allItems.reduce((sum, i) => sum + parseFloat(i.totalPrice), 0);
+          
+          const [restaurant] = await db.select({ taxRate: restaurants.taxRate }).from(restaurants).where(eq(restaurants.id, restaurantId));
+          const taxRate = parseFloat(restaurant?.taxRate || "0");
+          const newTaxAmount = newSubtotal * (taxRate / 100);
+          const newTotal = newSubtotal + newTaxAmount;
+
+          await db.update(orders).set({
+            subtotal: newSubtotal.toFixed(2),
+            taxAmount: newTaxAmount.toFixed(2),
+            total: newTotal.toFixed(2),
+            updatedAt: new Date(),
+          }).where(eq(orders.id, orderId));
+        }
+
+        res.json({ message: "Item updated", item: updatedItem });
+      } catch (error) {
+        console.error("Update order item error:", error);
+        res.status(500).json({ error: "Failed to update item" });
+      }
+    }
+  );
+
+  // Remove item from order
+  app.delete(
+    "/api/restaurants/:restaurantId/orders/:orderId/items/:itemId",
+    authenticate,
+    requireRestaurantAccess,
+    requireFeature("pos"),
+    requirePermission("orders:update"),
+    async (req, res) => {
+      try {
+        const { restaurantId, orderId, itemId } = req.params;
+
+        // Verify order exists
+        const [order] = await db
+          .select({ id: orders.id, status: orders.status })
+          .from(orders)
+          .where(and(eq(orders.id, orderId), eq(orders.restaurantId, restaurantId)));
+
+        if (!order) {
+          return res.status(404).json({ error: "Order not found" });
+        }
+
+        if (['completed', 'cancelled'].includes(order.status || '')) {
+          return res.status(400).json({ error: "Cannot modify completed or cancelled order" });
+        }
+
+        // Delete the item
+        const [deletedItem] = await db
+          .delete(orderItems)
+          .where(and(eq(orderItems.id, itemId), eq(orderItems.orderId, orderId)))
+          .returning();
+
+        if (!deletedItem) {
+          return res.status(404).json({ error: "Item not found" });
+        }
+
+        // Recalculate order totals
+        const allItems = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+        const newSubtotal = allItems.reduce((sum, i) => sum + parseFloat(i.totalPrice), 0);
+        
+        const [restaurant] = await db.select({ taxRate: restaurants.taxRate }).from(restaurants).where(eq(restaurants.id, restaurantId));
+        const taxRate = parseFloat(restaurant?.taxRate || "0");
+        const newTaxAmount = newSubtotal * (taxRate / 100);
+        const newTotal = newSubtotal + newTaxAmount;
+
+        await db.update(orders).set({
+          subtotal: newSubtotal.toFixed(2),
+          taxAmount: newTaxAmount.toFixed(2),
+          total: newTotal.toFixed(2),
+          updatedAt: new Date(),
+        }).where(eq(orders.id, orderId));
+
+        // Emit socket event
+        const io = app.get("io") as SocketIOServer;
+        io.to(`kitchen:${restaurantId}`).emit("order:item-removed", {
+          orderId,
+          itemId,
+        });
+
+        res.json({ message: "Item removed" });
+      } catch (error) {
+        console.error("Remove order item error:", error);
+        res.status(500).json({ error: "Failed to remove item" });
+      }
+    }
+  );
+
+  // Update order status
+  app.patch(
+    "/api/restaurants/:restaurantId/orders/:orderId/status",
+    authenticate,
+    requireRestaurantAccess,
+    requireFeature("pos"),
+    requirePermission("orders:update"),
+    async (req, res) => {
+      try {
+        const { restaurantId, orderId } = req.params;
+        const userId = req.user!.userId;
+        const { status, notes } = req.body;
+
+        const validStatuses = ['pending', 'confirmed', 'preparing', 'ready', 'served', 'completed', 'cancelled'];
+        if (!status || !validStatuses.includes(status)) {
+          return res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` });
+        }
+
+        const [order] = await db
+          .select({ id: orders.id, status: orders.status, tableId: orders.tableId })
+          .from(orders)
+          .where(and(eq(orders.id, orderId), eq(orders.restaurantId, restaurantId)));
+
+        if (!order) {
+          return res.status(404).json({ error: "Order not found" });
+        }
+
+        const fromStatus = order.status;
+
+        // Prevent status changes on completed/cancelled orders
+        if (['completed', 'cancelled'].includes(fromStatus || '') && status !== fromStatus) {
+          return res.status(400).json({ error: "Cannot change status of completed or cancelled order" });
+        }
+
+        const updates: any = { status, updatedAt: new Date() };
+        
+        if (status === 'completed') {
+          updates.completedAt = new Date();
+          // Free up the table
+          if (order.tableId) {
+            await db.update(diningTables).set({ status: 'available', updatedAt: new Date() }).where(eq(diningTables.id, order.tableId));
+          }
+        }
+        if (status === 'cancelled') {
+          updates.cancelledAt = new Date();
+          updates.cancelReason = notes || null;
+          // Free up the table
+          if (order.tableId) {
+            await db.update(diningTables).set({ status: 'available', updatedAt: new Date() }).where(eq(diningTables.id, order.tableId));
+          }
+        }
+
+        const [updatedOrder] = await db.update(orders).set(updates).where(eq(orders.id, orderId)).returning();
+
+        // Record status history
+        await recordOrderStatusChange(orderId, userId, fromStatus, status, notes);
+
+        // Emit socket event
+        const io = app.get("io") as SocketIOServer;
+        io.to(`tenant:${restaurantId}`).emit("order:status-changed", {
+          orderId,
+          fromStatus,
+          toStatus: status,
+        });
+        io.to(`kitchen:${restaurantId}`).emit("order:status-changed", {
+          orderId,
+          fromStatus,
+          toStatus: status,
+        });
+
+        res.json({ message: "Status updated", order: updatedOrder });
+      } catch (error) {
+        console.error("Update order status error:", error);
+        res.status(500).json({ error: "Failed to update status" });
+      }
+    }
+  );
+
+  // Move order to different table
+  app.patch(
+    "/api/restaurants/:restaurantId/orders/:orderId/table",
+    authenticate,
+    requireRestaurantAccess,
+    requireFeature("pos"),
+    requirePermission("orders:update"),
+    async (req, res) => {
+      try {
+        const { restaurantId, orderId } = req.params;
+        const { tableId } = req.body;
+
+        if (!tableId) {
+          return res.status(400).json({ error: "tableId is required" });
+        }
+
+        // Verify new table exists
+        const [newTable] = await db
+          .select({ id: diningTables.id, number: diningTables.number })
+          .from(diningTables)
+          .where(and(eq(diningTables.id, tableId), eq(diningTables.restaurantId, restaurantId)));
+
+        if (!newTable) {
+          return res.status(404).json({ error: "Table not found" });
+        }
+
+        // Get current order
+        const [order] = await db
+          .select({ id: orders.id, tableId: orders.tableId, status: orders.status })
+          .from(orders)
+          .where(and(eq(orders.id, orderId), eq(orders.restaurantId, restaurantId)));
+
+        if (!order) {
+          return res.status(404).json({ error: "Order not found" });
+        }
+
+        if (['completed', 'cancelled'].includes(order.status || '')) {
+          return res.status(400).json({ error: "Cannot move completed or cancelled order" });
+        }
+
+        const oldTableId = order.tableId;
+
+        // Update order table
+        await db.update(orders).set({ tableId, updatedAt: new Date() }).where(eq(orders.id, orderId));
+
+        // Update table statuses
+        if (oldTableId) {
+          // Check if old table has other active orders
+          const [otherOrders] = await db
+            .select({ count: sql<number>`count(*)` })
+            .from(orders)
+            .where(and(
+              eq(orders.tableId, oldTableId),
+              sql`${orders.status} NOT IN ('completed', 'cancelled')`,
+              sql`${orders.id} != ${orderId}`
+            ));
+          
+          if (!otherOrders || otherOrders.count === 0) {
+            await db.update(diningTables).set({ status: 'available', updatedAt: new Date() }).where(eq(diningTables.id, oldTableId));
+          }
+        }
+
+        await db.update(diningTables).set({ status: 'occupied', updatedAt: new Date() }).where(eq(diningTables.id, tableId));
+
+        res.json({ message: "Order moved to table", tableNumber: newTable.number });
+      } catch (error) {
+        console.error("Move order table error:", error);
+        res.status(500).json({ error: "Failed to move order" });
+      }
+    }
+  );
+
+  // Merge orders (combine multiple orders into one)
+  app.post(
+    "/api/restaurants/:restaurantId/orders/merge",
+    authenticate,
+    requireRestaurantAccess,
+    requireFeature("pos"),
+    requirePermission("orders:update"),
+    async (req, res) => {
+      try {
+        const { restaurantId } = req.params;
+        const { sourceOrderIds, targetOrderId } = req.body;
+
+        if (!sourceOrderIds || !Array.isArray(sourceOrderIds) || sourceOrderIds.length === 0) {
+          return res.status(400).json({ error: "sourceOrderIds array is required" });
+        }
+        if (!targetOrderId) {
+          return res.status(400).json({ error: "targetOrderId is required" });
+        }
+
+        // Verify target order exists
+        const [targetOrder] = await db
+          .select()
+          .from(orders)
+          .where(and(eq(orders.id, targetOrderId), eq(orders.restaurantId, restaurantId)));
+
+        if (!targetOrder) {
+          return res.status(404).json({ error: "Target order not found" });
+        }
+
+        if (['completed', 'cancelled'].includes(targetOrder.status || '')) {
+          return res.status(400).json({ error: "Cannot merge into completed or cancelled order" });
+        }
+
+        // Get restaurant tax rate
+        const [restaurant] = await db.select({ taxRate: restaurants.taxRate }).from(restaurants).where(eq(restaurants.id, restaurantId));
+        const taxRate = parseFloat(restaurant?.taxRate || "0");
+
+        let addedSubtotal = 0;
+
+        for (const sourceOrderId of sourceOrderIds) {
+          if (sourceOrderId === targetOrderId) continue;
+
+          // Get source order
+          const [sourceOrder] = await db
+            .select()
+            .from(orders)
+            .where(and(eq(orders.id, sourceOrderId), eq(orders.restaurantId, restaurantId)));
+
+          if (!sourceOrder || ['completed', 'cancelled'].includes(sourceOrder.status || '')) {
+            continue;
+          }
+
+          // Move items to target order
+          await db.update(orderItems).set({ orderId: targetOrderId, updatedAt: new Date() }).where(eq(orderItems.orderId, sourceOrderId));
+
+          addedSubtotal += parseFloat(sourceOrder.subtotal || "0");
+
+          // Cancel source order
+          await db.update(orders).set({
+            status: 'cancelled',
+            cancelledAt: new Date(),
+            cancelReason: `Merged into order ${targetOrder.orderNumber}`,
+            updatedAt: new Date(),
+          }).where(eq(orders.id, sourceOrderId));
+
+          // Free up table if any
+          if (sourceOrder.tableId && sourceOrder.tableId !== targetOrder.tableId) {
+            const [otherOrders] = await db
+              .select({ count: sql<number>`count(*)` })
+              .from(orders)
+              .where(and(
+                eq(orders.tableId, sourceOrder.tableId),
+                sql`${orders.status} NOT IN ('completed', 'cancelled')`
+              ));
+            
+            if (!otherOrders || otherOrders.count === 0) {
+              await db.update(diningTables).set({ status: 'available', updatedAt: new Date() }).where(eq(diningTables.id, sourceOrder.tableId));
+            }
+          }
+        }
+
+        // Update target order totals
+        const newSubtotal = parseFloat(targetOrder.subtotal || "0") + addedSubtotal;
+        const newTaxAmount = newSubtotal * (taxRate / 100);
+        const newTotal = newSubtotal + newTaxAmount;
+
+        await db.update(orders).set({
+          subtotal: newSubtotal.toFixed(2),
+          taxAmount: newTaxAmount.toFixed(2),
+          total: newTotal.toFixed(2),
+          updatedAt: new Date(),
+        }).where(eq(orders.id, targetOrderId));
+
+        res.json({ message: "Orders merged successfully" });
+      } catch (error) {
+        console.error("Merge orders error:", error);
+        res.status(500).json({ error: "Failed to merge orders" });
+      }
+    }
+  );
+
+  // Record payment
+  app.post(
+    "/api/restaurants/:restaurantId/orders/:orderId/payments",
+    authenticate,
+    requireRestaurantAccess,
+    requireFeature("pos"),
+    requirePermission("orders:update"),
+    async (req, res) => {
+      try {
+        const { restaurantId, orderId } = req.params;
+        const { amount, tipAmount = 0, method, transactionId, cardLastFour, cardBrand } = req.body;
+
+        if (!amount || amount <= 0) {
+          return res.status(400).json({ error: "Valid amount is required" });
+        }
+        if (!method) {
+          return res.status(400).json({ error: "Payment method is required" });
+        }
+
+        const validMethods = ['cash', 'card', 'mobile', 'gift_card', 'other'];
+        if (!validMethods.includes(method)) {
+          return res.status(400).json({ error: `Invalid method. Must be one of: ${validMethods.join(', ')}` });
+        }
+
+        // Verify order exists
+        const [order] = await db
+          .select({ id: orders.id, total: orders.total, paidAmount: orders.paidAmount, status: orders.status })
+          .from(orders)
+          .where(and(eq(orders.id, orderId), eq(orders.restaurantId, restaurantId)));
+
+        if (!order) {
+          return res.status(404).json({ error: "Order not found" });
+        }
+
+        // Create payment record
+        const [payment] = await db.insert(payments).values({
+          orderId,
+          restaurantId,
+          amount: amount.toFixed(2),
+          tipAmount: tipAmount.toFixed(2),
+          method,
+          status: 'completed',
+          transactionId,
+          cardLastFour,
+          cardBrand,
+          processedAt: new Date(),
+        }).returning();
+
+        // Update order paid amount
+        const newPaidAmount = parseFloat(order.paidAmount || "0") + amount + tipAmount;
+        const orderTotal = parseFloat(order.total || "0");
+
+        const orderUpdates: any = {
+          paidAmount: newPaidAmount.toFixed(2),
+          tipAmount: sql`COALESCE(${orders.tipAmount}, 0) + ${tipAmount.toFixed(2)}::decimal`,
+          updatedAt: new Date(),
+        };
+
+        // Auto-complete order if fully paid
+        if (newPaidAmount >= orderTotal) {
+          orderUpdates.status = 'completed';
+          orderUpdates.completedAt = new Date();
+        }
+
+        await db.update(orders).set(orderUpdates).where(eq(orders.id, orderId));
+
+        // Free table if order completed
+        if (newPaidAmount >= orderTotal && order.status !== 'completed') {
+          const [updatedOrder] = await db.select({ tableId: orders.tableId }).from(orders).where(eq(orders.id, orderId));
+          if (updatedOrder?.tableId) {
+            const [otherOrders] = await db
+              .select({ count: sql<number>`count(*)` })
+              .from(orders)
+              .where(and(
+                eq(orders.tableId, updatedOrder.tableId),
+                sql`${orders.status} NOT IN ('completed', 'cancelled')`,
+                sql`${orders.id} != ${orderId}`
+              ));
+            
+            if (!otherOrders || otherOrders.count === 0) {
+              await db.update(diningTables).set({ status: 'available', updatedAt: new Date() }).where(eq(diningTables.id, updatedOrder.tableId));
+            }
+          }
+        }
+
+        res.status(201).json({ 
+          message: "Payment recorded",
+          payment,
+          isFullyPaid: newPaidAmount >= orderTotal,
+        });
+      } catch (error) {
+        console.error("Record payment error:", error);
+        res.status(500).json({ error: "Failed to record payment" });
+      }
+    }
+  );
+
+  // Get payments for order
+  app.get(
+    "/api/restaurants/:restaurantId/orders/:orderId/payments",
+    authenticate,
+    requireRestaurantAccess,
+    requireFeature("pos"),
+    requirePermission("orders:read"),
+    async (req, res) => {
+      try {
+        const { restaurantId, orderId } = req.params;
+
+        // Verify order exists
+        const [order] = await db
+          .select({ id: orders.id })
+          .from(orders)
+          .where(and(eq(orders.id, orderId), eq(orders.restaurantId, restaurantId)));
+
+        if (!order) {
+          return res.status(404).json({ error: "Order not found" });
+        }
+
+        const orderPayments = await db
+          .select()
+          .from(payments)
+          .where(eq(payments.orderId, orderId))
+          .orderBy(desc(payments.createdAt));
+
+        res.json({ payments: orderPayments });
+      } catch (error) {
+        console.error("Get payments error:", error);
+        res.status(500).json({ error: "Failed to get payments" });
       }
     }
   );
