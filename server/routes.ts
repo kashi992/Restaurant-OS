@@ -4,7 +4,8 @@ import { Server as SocketIOServer } from "socket.io";
 import { db, pool, testConnection } from "./db";
 import { log } from "./index";
 import bcrypt from "bcryptjs";
-import { eq, and, isNull, gt, sql } from "drizzle-orm";
+import rateLimit from "express-rate-limit";
+import { eq, and, isNull, gt, sql, or } from "drizzle-orm";
 import { 
   users, 
   restaurants, 
@@ -24,6 +25,9 @@ import {
   menuItemModifierGroups,
   diningTables,
   qrTokens,
+  orders,
+  orderItems,
+  orderStatusHistory,
 } from "@shared/schema";
 import { 
   generateAccessToken, 
@@ -3272,20 +3276,841 @@ export async function registerRoutes(
   );
 
   // ============================================================================
-  // Placeholder Endpoints (to be implemented in future phases)
+  // PUBLIC QR ORDERING ENDPOINTS (Phase 6)
+  // No authentication required - rate limited
   // ============================================================================
 
-  // Public menu endpoint (no auth required)
+  // Rate limiter for public endpoints (more restrictive)
+  const publicRateLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 30, // 30 requests per minute per IP
+    message: { error: "Too many requests, please try again later" },
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+
+  // Rate limiter for order creation (more restrictive)
+  const orderCreationRateLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 10, // 10 order attempts per minute per IP
+    message: { error: "Too many order attempts, please try again later" },
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+
+  // Helper function to get QR ordering settings for a restaurant
+  async function getQrOrderingSettings(restaurantId: string): Promise<{
+    enabled: boolean;
+    mode: "auto" | "manual";
+    manualInputType: "dropdown" | "text";
+  }> {
+    const [setting] = await db
+      .select()
+      .from(restaurantSettings)
+      .where(and(
+        eq(restaurantSettings.restaurantId, restaurantId),
+        eq(restaurantSettings.settingKey, "qr_ordering")
+      ));
+
+    if (setting?.settingValue) {
+      const value = setting.settingValue as any;
+      return {
+        enabled: value.enabled ?? true,
+        mode: value.mode ?? "auto",
+        manualInputType: value.manualInputType ?? "dropdown",
+      };
+    }
+
+    // Default settings
+    return {
+      enabled: true,
+      mode: "auto",
+      manualInputType: "dropdown",
+    };
+  }
+
+  // Helper to generate unique order number
+  function generateOrderNumber(): string {
+    const timestamp = Date.now().toString(36).toUpperCase();
+    const random = Math.random().toString(36).substring(2, 6).toUpperCase();
+    return `QR-${timestamp}-${random}`;
+  }
+
+  // Helper to generate short display number for kitchen
+  async function generateDisplayNumber(restaurantId: string): Promise<number> {
+    // Get the max display number for today and increment
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const [result] = await db
+      .select({ maxDisplay: sql<number>`COALESCE(MAX(${orders.displayNumber}), 0)` })
+      .from(orders)
+      .where(and(
+        eq(orders.restaurantId, restaurantId),
+        gt(orders.createdAt, today)
+      ));
+    
+    return (result?.maxDisplay ?? 0) + 1;
+  }
+
+  // ============================================================================
+  // QR Token Resolution - Scan QR code to get restaurant + table context
+  // ============================================================================
+  app.get(
+    "/api/order/:token",
+    publicRateLimiter,
+    async (req, res) => {
+      try {
+        const { token } = req.params;
+
+        // Find the QR token
+        const [qrToken] = await db
+          .select({
+            id: qrTokens.id,
+            restaurantId: qrTokens.restaurantId,
+            tableId: qrTokens.tableId,
+            token: qrTokens.token,
+            tokenType: qrTokens.tokenType,
+            isActive: qrTokens.isActive,
+            expiresAt: qrTokens.expiresAt,
+          })
+          .from(qrTokens)
+          .where(eq(qrTokens.token, token));
+
+        if (!qrToken) {
+          return res.status(404).json({ 
+            error: "Invalid QR Code",
+            message: "This QR code is not valid or has been removed"
+          });
+        }
+
+        if (!qrToken.isActive) {
+          return res.status(410).json({ 
+            error: "QR Code Expired",
+            message: "This QR code is no longer active. Please ask staff for assistance."
+          });
+        }
+
+        if (qrToken.expiresAt && new Date(qrToken.expiresAt) < new Date()) {
+          return res.status(410).json({ 
+            error: "QR Code Expired",
+            message: "This QR code has expired. Please ask staff for assistance."
+          });
+        }
+
+        // Update scan count
+        await db
+          .update(qrTokens)
+          .set({ 
+            scansCount: sql`${qrTokens.scansCount} + 1`,
+            lastScannedAt: new Date(),
+            updatedAt: new Date()
+          })
+          .where(eq(qrTokens.id, qrToken.id));
+
+        // Get restaurant info
+        const [restaurant] = await db
+          .select({
+            id: restaurants.id,
+            name: restaurants.name,
+            slug: restaurants.slug,
+            logoUrl: restaurants.logoUrl,
+            currency: restaurants.currency,
+            taxRate: restaurants.taxRate,
+            suspendedAt: restaurants.suspendedAt,
+          })
+          .from(restaurants)
+          .where(eq(restaurants.id, qrToken.restaurantId));
+
+        if (!restaurant) {
+          return res.status(404).json({ 
+            error: "Restaurant Not Found",
+            message: "The restaurant associated with this QR code was not found"
+          });
+        }
+
+        if (restaurant.suspendedAt) {
+          return res.status(403).json({ 
+            error: "Restaurant Unavailable",
+            message: "This restaurant is currently not accepting orders"
+          });
+        }
+
+        // Check if QR ordering feature is enabled
+        const hasQrFeature = await checkFeature(qrToken.restaurantId, "qr");
+        if (!hasQrFeature) {
+          return res.status(403).json({ 
+            error: "QR Ordering Unavailable",
+            message: "QR ordering is not available for this restaurant"
+          });
+        }
+
+        // Get QR ordering settings
+        const qrSettings = await getQrOrderingSettings(qrToken.restaurantId);
+
+        if (!qrSettings.enabled) {
+          return res.status(403).json({ 
+            error: "QR Ordering Disabled",
+            message: "QR ordering is currently disabled for this restaurant"
+          });
+        }
+
+        // Get table info if this is a table-specific QR (AUTO mode)
+        let tableInfo = null;
+        if (qrToken.tableId) {
+          const [table] = await db
+            .select({
+              id: diningTables.id,
+              number: diningTables.number,
+              name: diningTables.name,
+              capacity: diningTables.capacity,
+              isActive: diningTables.isActive,
+            })
+            .from(diningTables)
+            .where(eq(diningTables.id, qrToken.tableId));
+
+          if (table && table.isActive) {
+            tableInfo = {
+              ...table,
+              label: table.name || `Table ${table.number}`,
+            };
+          }
+        }
+
+        // Build response based on mode
+        const response: any = {
+          restaurant: {
+            id: restaurant.id,
+            name: restaurant.name,
+            slug: restaurant.slug,
+            logoUrl: restaurant.logoUrl,
+            currency: restaurant.currency,
+            taxRate: restaurant.taxRate,
+          },
+          qrToken: {
+            id: qrToken.id,
+            type: qrToken.tokenType,
+          },
+          orderingMode: qrSettings.mode,
+        };
+
+        if (qrSettings.mode === "auto" && tableInfo) {
+          // AUTO mode with table-specific QR
+          response.table = tableInfo;
+          response.requiresTableSelection = false;
+        } else {
+          // MANUAL mode or no table linked
+          response.requiresTableSelection = true;
+          response.tableInputType = qrSettings.manualInputType;
+        }
+
+        res.json(response);
+      } catch (error) {
+        console.error("QR token resolution error:", error);
+        res.status(500).json({ error: "Failed to resolve QR code" });
+      }
+    }
+  );
+
+  // ============================================================================
+  // Get tables list for MANUAL mode (dropdown selection)
+  // ============================================================================
+  app.get(
+    "/api/order/:token/tables",
+    publicRateLimiter,
+    async (req, res) => {
+      try {
+        const { token } = req.params;
+
+        // Validate token first
+        const [qrToken] = await db
+          .select({ restaurantId: qrTokens.restaurantId, isActive: qrTokens.isActive })
+          .from(qrTokens)
+          .where(eq(qrTokens.token, token));
+
+        if (!qrToken || !qrToken.isActive) {
+          return res.status(404).json({ error: "Invalid or inactive QR code" });
+        }
+
+        // Get QR ordering settings
+        const qrSettings = await getQrOrderingSettings(qrToken.restaurantId);
+
+        // Only return tables if manual mode with dropdown
+        if (qrSettings.mode !== "manual") {
+          return res.status(400).json({ 
+            error: "Table selection not required in auto mode" 
+          });
+        }
+
+        // Get active tables
+        const rawTables = await db
+          .select({
+            id: diningTables.id,
+            number: diningTables.number,
+            name: diningTables.name,
+            capacity: diningTables.capacity,
+          })
+          .from(diningTables)
+          .where(and(
+            eq(diningTables.restaurantId, qrToken.restaurantId),
+            eq(diningTables.isActive, true)
+          ))
+          .orderBy(diningTables.number);
+
+        // Transform to include label
+        const tables = rawTables.map(t => ({
+          ...t,
+          label: t.name || `Table ${t.number}`,
+        }));
+
+        res.json({ 
+          tables,
+          inputType: qrSettings.manualInputType,
+        });
+      } catch (error) {
+        console.error("Get tables error:", error);
+        res.status(500).json({ error: "Failed to get tables" });
+      }
+    }
+  );
+
+  // ============================================================================
+  // Public menu endpoint - Get restaurant menu for ordering
+  // ============================================================================
+  app.get(
+    "/api/order/:token/menu",
+    publicRateLimiter,
+    async (req, res) => {
+      try {
+        const { token } = req.params;
+
+        // Validate token
+        const [qrToken] = await db
+          .select({ restaurantId: qrTokens.restaurantId, isActive: qrTokens.isActive })
+          .from(qrTokens)
+          .where(eq(qrTokens.token, token));
+
+        if (!qrToken || !qrToken.isActive) {
+          return res.status(404).json({ error: "Invalid or inactive QR code" });
+        }
+
+        const restaurantId = qrToken.restaurantId;
+
+        // Get restaurant timezone for proper time comparisons
+        const [restaurant] = await db
+          .select({ timezone: restaurants.timezone })
+          .from(restaurants)
+          .where(eq(restaurants.id, restaurantId));
+        
+        const restaurantTimezone = restaurant?.timezone || 'America/New_York';
+
+        // Get active menus with their categories and items
+        const activeMenus = await db
+          .select()
+          .from(menus)
+          .where(and(
+            eq(menus.restaurantId, restaurantId),
+            eq(menus.isActive, true)
+          ))
+          .orderBy(menus.sortOrder);
+
+        // Build full menu structure
+        const menuData = [];
+        
+        for (const menu of activeMenus) {
+          // Check time availability if specified (using restaurant's timezone)
+          if (menu.availableFrom && menu.availableTo) {
+            const now = new Date();
+            // Convert to restaurant's local time using Intl.DateTimeFormat
+            const localTime = new Intl.DateTimeFormat('en-US', {
+              timeZone: restaurantTimezone,
+              hour: '2-digit',
+              minute: '2-digit',
+              hour12: false
+            }).format(now);
+            // localTime format is "HH:MM"
+            if (localTime < menu.availableFrom || localTime > menu.availableTo) {
+              continue; // Skip this menu if outside availability window
+            }
+          }
+
+          // Get categories for this menu
+          const menuCategories = await db
+            .select()
+            .from(categories)
+            .where(and(
+              eq(categories.menuId, menu.id),
+              eq(categories.isActive, true)
+            ))
+            .orderBy(categories.sortOrder);
+
+          const categoriesWithItems = [];
+
+          for (const category of menuCategories) {
+            // Get items for this category
+            const items = await db
+              .select({
+                id: menuItems.id,
+                name: menuItems.name,
+                description: menuItems.description,
+                price: menuItems.price,
+                imageUrl: menuItems.imageUrl,
+                allergens: menuItems.allergens,
+                tags: menuItems.tags,
+                preparationTime: menuItems.preparationTime,
+                isPopular: menuItems.isPopular,
+                isNew: menuItems.isNew,
+              })
+              .from(menuItems)
+              .where(and(
+                eq(menuItems.categoryId, category.id),
+                eq(menuItems.isAvailable, true)
+              ))
+              .orderBy(menuItems.sortOrder);
+
+            // Get modifier groups for each item
+            const itemsWithModifiers = [];
+            for (const item of items) {
+              const itemModifierGroups = await db
+                .select({
+                  groupId: modifierGroups.id,
+                  groupName: modifierGroups.name,
+                  minSelections: modifierGroups.minSelections,
+                  maxSelections: modifierGroups.maxSelections,
+                  isRequired: modifierGroups.isRequired,
+                })
+                .from(menuItemModifierGroups)
+                .innerJoin(modifierGroups, eq(menuItemModifierGroups.modifierGroupId, modifierGroups.id))
+                .where(eq(menuItemModifierGroups.menuItemId, item.id));
+
+              const modifierGroupsWithOptions = [];
+              for (const group of itemModifierGroups) {
+                const options = await db
+                  .select({
+                    id: modifiers.id,
+                    name: modifiers.name,
+                    price: modifiers.price,
+                    isDefault: modifiers.isDefault,
+                    isAvailable: modifiers.isAvailable,
+                  })
+                  .from(modifiers)
+                  .where(and(
+                    eq(modifiers.modifierGroupId, group.groupId),
+                    eq(modifiers.isAvailable, true)
+                  ))
+                  .orderBy(modifiers.sortOrder);
+
+                modifierGroupsWithOptions.push({
+                  id: group.groupId,
+                  name: group.groupName,
+                  minSelections: group.minSelections,
+                  maxSelections: group.maxSelections,
+                  isRequired: group.isRequired,
+                  modifiers: options,
+                });
+              }
+
+              itemsWithModifiers.push({
+                ...item,
+                modifierGroups: modifierGroupsWithOptions,
+              });
+            }
+
+            if (itemsWithModifiers.length > 0) {
+              categoriesWithItems.push({
+                id: category.id,
+                name: category.name,
+                description: category.description,
+                imageUrl: category.imageUrl,
+                items: itemsWithModifiers,
+              });
+            }
+          }
+
+          if (categoriesWithItems.length > 0) {
+            menuData.push({
+              id: menu.id,
+              name: menu.name,
+              description: menu.description,
+              categories: categoriesWithItems,
+            });
+          }
+        }
+
+        res.json({ menus: menuData });
+      } catch (error) {
+        console.error("Get public menu error:", error);
+        res.status(500).json({ error: "Failed to get menu" });
+      }
+    }
+  );
+
+  // ============================================================================
+  // Create Order - Cart submission
+  // ============================================================================
+  const createOrderSchema = z.object({
+    qrTokenId: z.string().min(1),
+    tableId: z.string().optional(), // For AUTO mode or dropdown MANUAL mode
+    tableLabel: z.string().optional(), // For TEXT input MANUAL mode
+    customerName: z.string().optional(),
+    customerPhone: z.string().optional(),
+    customerEmail: z.string().email().optional().or(z.literal("")),
+    guestCount: z.number().int().min(1).default(1),
+    notes: z.string().optional(),
+    items: z.array(z.object({
+      menuItemId: z.string(),
+      name: z.string(),
+      quantity: z.number().int().min(1),
+      unitPrice: z.string(), // Decimal as string
+      modifiers: z.array(z.object({
+        id: z.string(),
+        name: z.string(),
+        price: z.string(),
+      })).optional().default([]),
+      notes: z.string().optional(),
+    })).min(1),
+  });
+
+  app.post(
+    "/api/order",
+    orderCreationRateLimiter,
+    async (req, res) => {
+      try {
+        const validation = createOrderSchema.safeParse(req.body);
+        if (!validation.success) {
+          return res.status(400).json({ 
+            error: "Invalid order data",
+            details: validation.error.flatten().fieldErrors
+          });
+        }
+
+        const orderData = validation.data;
+
+        // Validate QR token
+        const [qrToken] = await db
+          .select()
+          .from(qrTokens)
+          .where(eq(qrTokens.id, orderData.qrTokenId));
+
+        if (!qrToken || !qrToken.isActive) {
+          return res.status(400).json({ error: "Invalid or inactive QR code" });
+        }
+
+        if (qrToken.expiresAt && new Date(qrToken.expiresAt) < new Date()) {
+          return res.status(400).json({ error: "QR code has expired" });
+        }
+
+        const restaurantId = qrToken.restaurantId;
+
+        // Check if restaurant is active
+        const [restaurant] = await db
+          .select({ id: restaurants.id, taxRate: restaurants.taxRate, suspendedAt: restaurants.suspendedAt })
+          .from(restaurants)
+          .where(eq(restaurants.id, restaurantId));
+
+        if (!restaurant || restaurant.suspendedAt) {
+          return res.status(400).json({ error: "Restaurant is not accepting orders" });
+        }
+
+        // Check QR feature and settings
+        const hasQrFeature = await checkFeature(restaurantId, "qr");
+        if (!hasQrFeature) {
+          return res.status(400).json({ error: "QR ordering is not available" });
+        }
+
+        const qrSettings = await getQrOrderingSettings(restaurantId);
+        if (!qrSettings.enabled) {
+          return res.status(400).json({ error: "QR ordering is currently disabled" });
+        }
+
+        // Determine table context
+        let finalTableId: string | null = null;
+        let finalTableLabel: string | null = null;
+
+        if (qrSettings.mode === "auto") {
+          // AUTO mode - table comes from QR token
+          if (qrToken.tableId) {
+            finalTableId = qrToken.tableId;
+            // Get table name for display
+            const [table] = await db
+              .select({ name: diningTables.name, number: diningTables.number })
+              .from(diningTables)
+              .where(eq(diningTables.id, qrToken.tableId));
+            finalTableLabel = table?.name || `Table ${table?.number}`;
+          }
+        } else {
+          // MANUAL mode
+          if (qrSettings.manualInputType === "dropdown") {
+            // Validate tableId from dropdown
+            if (!orderData.tableId) {
+              return res.status(400).json({ error: "Please select a table" });
+            }
+            // Verify table exists and belongs to restaurant
+            const [table] = await db
+              .select()
+              .from(diningTables)
+              .where(and(
+                eq(diningTables.id, orderData.tableId),
+                eq(diningTables.restaurantId, restaurantId),
+                eq(diningTables.isActive, true)
+              ));
+            if (!table) {
+              return res.status(400).json({ error: "Invalid table selection" });
+            }
+            finalTableId = table.id;
+            finalTableLabel = table.name || `Table ${table.number}`;
+          } else {
+            // TEXT input - just use the label
+            if (!orderData.tableLabel) {
+              return res.status(400).json({ error: "Please enter your table number" });
+            }
+            finalTableLabel = orderData.tableLabel;
+            // Try to match to existing table by name or number (as text)
+            const [matchedTable] = await db
+              .select()
+              .from(diningTables)
+              .where(and(
+                eq(diningTables.restaurantId, restaurantId),
+                eq(diningTables.isActive, true),
+                or(
+                  eq(diningTables.name, orderData.tableLabel),
+                  eq(diningTables.number, orderData.tableLabel)
+                )
+              ));
+            if (matchedTable) {
+              finalTableId = matchedTable.id;
+            }
+          }
+        }
+
+        // Calculate totals
+        let subtotal = 0;
+        const processedItems = [];
+
+        for (const item of orderData.items) {
+          const unitPrice = parseFloat(item.unitPrice);
+          const modifiersTotal = item.modifiers.reduce(
+            (sum, mod) => sum + parseFloat(mod.price), 
+            0
+          );
+          const itemTotal = (unitPrice + modifiersTotal) * item.quantity;
+          subtotal += itemTotal;
+
+          processedItems.push({
+            menuItemId: item.menuItemId,
+            name: item.name,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            modifiersPrice: modifiersTotal.toFixed(2),
+            totalPrice: itemTotal.toFixed(2),
+            modifiers: item.modifiers,
+            notes: item.notes,
+            status: "pending",
+          });
+        }
+
+        const taxRate = parseFloat(restaurant.taxRate || "0") / 100;
+        const taxAmount = subtotal * taxRate;
+        const total = subtotal + taxAmount;
+
+        // Generate order identifiers
+        const orderNumber = generateOrderNumber();
+        const displayNumber = await generateDisplayNumber(restaurantId);
+
+        // Create order
+        const [order] = await db
+          .insert(orders)
+          .values({
+            restaurantId,
+            tableId: finalTableId,
+            qrTokenId: qrToken.id,
+            orderNumber,
+            displayNumber,
+            status: "pending", // Maps to OPEN as per requirements
+            orderType: "dine_in",
+            source: "qr",
+            subtotal: subtotal.toFixed(2),
+            taxAmount: taxAmount.toFixed(2),
+            total: total.toFixed(2),
+            customerName: orderData.customerName,
+            customerPhone: orderData.customerPhone,
+            customerEmail: orderData.customerEmail || null,
+            guestCount: orderData.guestCount,
+            notes: orderData.notes ? `${orderData.notes}${finalTableLabel && !finalTableId ? ` | Table: ${finalTableLabel}` : ''}` : (finalTableLabel && !finalTableId ? `Table: ${finalTableLabel}` : null),
+          })
+          .returning();
+
+        // Create order items
+        for (const item of processedItems) {
+          await db
+            .insert(orderItems)
+            .values({
+              orderId: order.id,
+              ...item,
+            });
+        }
+
+        // Create initial status history
+        await db
+          .insert(orderStatusHistory)
+          .values({
+            orderId: order.id,
+            fromStatus: null,
+            toStatus: "pending",
+            notes: "Order placed via QR code",
+          });
+
+        // Emit socket event for real-time updates
+        const io = req.app.get("io") as SocketIOServer;
+        io.to(`tenant:${restaurantId}`).emit("new-order", {
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          displayNumber: order.displayNumber,
+          tableLabel: finalTableLabel,
+          source: "qr",
+        });
+        io.to(`kitchen:${restaurantId}`).emit("new-order", {
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          displayNumber: order.displayNumber,
+          tableLabel: finalTableLabel,
+          itemCount: processedItems.length,
+        });
+
+        res.status(201).json({
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          displayNumber: order.displayNumber,
+          status: order.status,
+          table: finalTableLabel,
+          subtotal: order.subtotal,
+          taxAmount: order.taxAmount,
+          total: order.total,
+          itemCount: processedItems.length,
+          message: "Order placed successfully!",
+        });
+      } catch (error) {
+        console.error("Create order error:", error);
+        res.status(500).json({ error: "Failed to create order" });
+      }
+    }
+  );
+
+  // ============================================================================
+  // Get Order Status - For customer tracking
+  // ============================================================================
+  app.get(
+    "/api/order/:orderId/status",
+    publicRateLimiter,
+    async (req, res) => {
+      try {
+        const { orderId } = req.params;
+
+        // Get order
+        const [order] = await db
+          .select({
+            id: orders.id,
+            orderNumber: orders.orderNumber,
+            displayNumber: orders.displayNumber,
+            status: orders.status,
+            total: orders.total,
+            tableId: orders.tableId,
+            estimatedReadyAt: orders.estimatedReadyAt,
+            createdAt: orders.createdAt,
+            source: orders.source,
+          })
+          .from(orders)
+          .where(eq(orders.id, orderId));
+
+        if (!order) {
+          return res.status(404).json({ error: "Order not found" });
+        }
+
+        // Only allow checking QR-sourced orders via this public endpoint
+        if (order.source !== "qr") {
+          return res.status(403).json({ error: "Access denied" });
+        }
+
+        // Get table info
+        let tableLabel = null;
+        if (order.tableId) {
+          const [table] = await db
+            .select({ number: diningTables.number, name: diningTables.name })
+            .from(diningTables)
+            .where(eq(diningTables.id, order.tableId));
+          tableLabel = table?.name || `Table ${table?.number}`;
+        }
+
+        // Get order items
+        const items = await db
+          .select({
+            id: orderItems.id,
+            name: orderItems.name,
+            quantity: orderItems.quantity,
+            totalPrice: orderItems.totalPrice,
+            status: orderItems.status,
+            modifiers: orderItems.modifiers,
+          })
+          .from(orderItems)
+          .where(eq(orderItems.orderId, orderId));
+
+        // Get status history
+        const history = await db
+          .select({
+            fromStatus: orderStatusHistory.fromStatus,
+            toStatus: orderStatusHistory.toStatus,
+            notes: orderStatusHistory.notes,
+            createdAt: orderStatusHistory.createdAt,
+          })
+          .from(orderStatusHistory)
+          .where(eq(orderStatusHistory.orderId, orderId))
+          .orderBy(desc(orderStatusHistory.createdAt));
+
+        res.json({
+          order: {
+            id: order.id,
+            orderNumber: order.orderNumber,
+            displayNumber: order.displayNumber,
+            status: order.status,
+            table: tableLabel,
+            total: order.total,
+            estimatedReadyAt: order.estimatedReadyAt,
+            createdAt: order.createdAt,
+          },
+          items,
+          statusHistory: history,
+        });
+      } catch (error) {
+        console.error("Get order status error:", error);
+        res.status(500).json({ error: "Failed to get order status" });
+      }
+    }
+  );
+
+  // ============================================================================
+  // Legacy slug-based endpoints (kept for backwards compatibility)
+  // ============================================================================
+  
+  // Public menu endpoint by slug (redirects to use token-based approach)
   app.get("/api/:tenantSlug/menu", resolveTenantBySlug, async (req, res) => {
-    res.status(501).json({ message: "Public menu endpoint coming in Phase 6" });
+    if (!req.restaurant) {
+      return res.status(404).json({ error: "Restaurant not found" });
+    }
+    res.status(400).json({ 
+      error: "Please use token-based menu access",
+      message: "Scan the QR code to access the menu"
+    });
   });
 
   app.get("/api/:tenantSlug/orders", authenticate, resolveTenantBySlug, async (req, res) => {
-    res.status(501).json({ message: "Order endpoints coming in Phase 6" });
+    res.status(501).json({ message: "Staff order management coming in future phase" });
   });
 
   app.post("/api/:tenantSlug/orders", resolveTenantBySlug, async (req, res) => {
-    res.status(501).json({ message: "Order endpoints coming in Phase 6" });
+    res.status(400).json({ 
+      error: "Please use token-based order creation",
+      message: "Use POST /api/order with a valid QR token"
+    });
   });
 
   log("API routes registered", "express");
