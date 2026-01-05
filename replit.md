@@ -108,11 +108,52 @@ A full-stack, multi-tenant restaurant Point of Sale (POS) system with QR code or
 ### Public Endpoints
 - `GET /api/restaurants/:tenantSlug` - Get restaurant by slug (public)
 
+### Restaurant Dashboard - Menu Management (Phase 5)
+- `GET /api/restaurants/:restaurantId/menus` - List menus (requires menu:read)
+- `POST /api/restaurants/:restaurantId/menus` - Create menu (requires menu:create)
+- `PATCH /api/restaurants/:restaurantId/menus/:menuId` - Update menu (requires menu:update)
+- `DELETE /api/restaurants/:restaurantId/menus/:menuId` - Delete menu (requires menu:delete)
+- `GET /api/restaurants/:restaurantId/categories` - List categories (requires menu:read)
+- `POST /api/restaurants/:restaurantId/categories` - Create category (requires menu:create)
+- `PATCH /api/restaurants/:restaurantId/categories/:categoryId` - Update category (requires menu:update)
+- `DELETE /api/restaurants/:restaurantId/categories/:categoryId` - Delete category (requires menu:delete)
+- `GET /api/restaurants/:restaurantId/menu-items` - List menu items (requires menu:read)
+- `POST /api/restaurants/:restaurantId/menu-items` - Create menu item (requires menu:create)
+- `GET /api/restaurants/:restaurantId/menu-items/:itemId` - Get item with modifiers (requires menu:read)
+- `PATCH /api/restaurants/:restaurantId/menu-items/:itemId` - Update item (requires menu:update)
+- `DELETE /api/restaurants/:restaurantId/menu-items/:itemId` - Delete item (requires menu:delete)
+
+### Restaurant Dashboard - Modifiers (Phase 5)
+- `GET /api/restaurants/:restaurantId/modifier-groups` - List modifier groups
+- `POST /api/restaurants/:restaurantId/modifier-groups` - Create modifier group
+- `PATCH /api/restaurants/:restaurantId/modifier-groups/:groupId` - Update modifier group
+- `DELETE /api/restaurants/:restaurantId/modifier-groups/:groupId` - Delete modifier group
+- `GET /api/restaurants/:restaurantId/modifier-groups/:groupId/modifiers` - List modifiers
+- `POST /api/restaurants/:restaurantId/modifier-groups/:groupId/modifiers` - Create modifier
+- `PATCH /api/restaurants/:restaurantId/modifier-groups/:groupId/modifiers/:modifierId` - Update modifier
+- `DELETE /api/restaurants/:restaurantId/modifier-groups/:groupId/modifiers/:modifierId` - Delete modifier
+- `POST /api/restaurants/:restaurantId/menu-items/:itemId/modifier-groups` - Link modifier group
+- `DELETE /api/restaurants/:restaurantId/menu-items/:itemId/modifier-groups/:groupId` - Unlink modifier group
+
+### Restaurant Dashboard - Tables & QR (Phase 5)
+- `GET /api/restaurants/:restaurantId/tables` - List tables (requires tables:read)
+- `POST /api/restaurants/:restaurantId/tables` - Create table (requires tables:create)
+- `PATCH /api/restaurants/:restaurantId/tables/:tableId` - Update table (requires tables:update)
+- `DELETE /api/restaurants/:restaurantId/tables/:tableId` - Delete table (requires tables:delete)
+- `GET /api/restaurants/:restaurantId/qr-tokens` - List QR tokens (requires qr feature + tables:read)
+- `POST /api/restaurants/:restaurantId/tables/:tableId/qr-token` - Generate QR for table
+- `POST /api/restaurants/:restaurantId/qr-tokens/bulk` - Generate QR for all tables
+- `DELETE /api/restaurants/:restaurantId/qr-tokens/:tokenId` - Deactivate QR token
+
+### Restaurant Dashboard - Settings (Phase 5)
+- `GET /api/restaurants/:restaurantId/settings` - Get settings & features (requires settings:read)
+- `PATCH /api/restaurants/:restaurantId/settings/:settingKey` - Update single setting
+- `PUT /api/restaurants/:restaurantId/settings` - Bulk update settings
+
 ### Stubbed (Coming in Future Phases)
-- `GET /api/:tenantSlug/menu` - Get tenant menu (Phase 3)
-- `GET /api/:tenantSlug/orders` - Get orders (Phase 4)
-- `POST /api/:tenantSlug/orders` - Create order (Phase 4)
-- `GET /api/:tenantSlug/tables` - Get tables (Phase 5)
+- `GET /api/:tenantSlug/menu` - Get tenant menu (Phase 6 - Public menu)
+- `GET /api/:tenantSlug/orders` - Get orders (Phase 6)
+- `POST /api/:tenantSlug/orders` - Create order (Phase 6)
 
 ## Socket.IO Events
 - `join-tenant` - Join tenant room for real-time updates
@@ -146,6 +187,18 @@ Running `npx tsx scripts/seed.ts` creates:
   - 10 dining tables with QR codes
 
 ## Recent Changes
+- **2026-01-05**: Phase 5 - Restaurant Dashboard APIs complete
+  - Menu CRUD: menus, categories, menu items (create, read, update, delete)
+  - Modifier system: modifier groups, modifiers, item-modifier linking
+  - Tables CRUD: dining tables with floor plan positions
+  - QR tokens: generate per-table, bulk generation, deactivation
+  - Settings API with feature gating validation:
+    - Payment methods soft toggle
+    - Split billing toggle (blocked if split_payments feature disabled)
+    - QR ordering mode: AUTO (table-specific QR) or MANUAL (customer enters table)
+    - For MANUAL mode: input type setting (DROPDOWN or TEXT)
+  - All settings respect master-level feature permissions
+
 - **2026-01-05**: Phase 4 - Master Company Dashboard APIs complete
   - Added suspendedAt/suspendedReason fields to restaurants table
   - Created admin_audit_logs table for tracking all super admin actions

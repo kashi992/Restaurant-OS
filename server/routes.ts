@@ -4,7 +4,7 @@ import { Server as SocketIOServer } from "socket.io";
 import { db, pool, testConnection } from "./db";
 import { log } from "./index";
 import bcrypt from "bcryptjs";
-import { eq, and, isNull, gt } from "drizzle-orm";
+import { eq, and, isNull, gt, sql } from "drizzle-orm";
 import { 
   users, 
   restaurants, 
@@ -16,6 +16,14 @@ import {
   restaurantFeatureAllowlist,
   restaurantSettings,
   adminAuditLogs,
+  menus,
+  categories,
+  menuItems,
+  modifierGroups,
+  modifiers,
+  menuItemModifierGroups,
+  diningTables,
+  qrTokens,
 } from "@shared/schema";
 import { 
   generateAccessToken, 
@@ -43,6 +51,7 @@ import {
   requireFeatureAndSoftToggle,
   getRestaurantFeatures,
   clearFeatureCache,
+  checkFeature,
 } from "./auth/feature-gating";
 import { createAuditLog, AUDIT_ACTIONS } from "./auth/audit";
 import { z } from "zod";
@@ -1844,27 +1853,1439 @@ export async function registerRoutes(
   );
 
   // ============================================================================
+  // PHASE 5: RESTAURANT DASHBOARD APIs (Admin)
+  // ============================================================================
+
+  // ----------------------------------------------------------------------------
+  // MENUS CRUD
+  // ----------------------------------------------------------------------------
+
+  // List all menus for a restaurant
+  app.get(
+    "/api/restaurants/:restaurantId/menus",
+    authenticate,
+    requireRestaurantAccess,
+    requirePermission("menu:read"),
+    async (req, res) => {
+      try {
+        const { restaurantId } = req.params;
+        const menuList = await db
+          .select()
+          .from(menus)
+          .where(eq(menus.restaurantId, restaurantId))
+          .orderBy(menus.sortOrder);
+        res.json(menuList);
+      } catch (error) {
+        console.error("List menus error:", error);
+        res.status(500).json({ error: "Failed to list menus" });
+      }
+    }
+  );
+
+  // Create a menu
+  app.post(
+    "/api/restaurants/:restaurantId/menus",
+    authenticate,
+    requireRestaurantAccess,
+    requirePermission("menu:create"),
+    async (req, res) => {
+      try {
+        const { restaurantId } = req.params;
+        const { name, description, isActive, isDefault, availableFrom, availableTo, availableDays, sortOrder } = req.body;
+
+        if (!name) {
+          return res.status(400).json({ error: "Menu name is required" });
+        }
+
+        const [menu] = await db
+          .insert(menus)
+          .values({
+            restaurantId,
+            name,
+            description,
+            isActive: isActive ?? true,
+            isDefault: isDefault ?? false,
+            availableFrom,
+            availableTo,
+            availableDays: availableDays ?? [0, 1, 2, 3, 4, 5, 6],
+            sortOrder: sortOrder ?? 0,
+          })
+          .returning();
+
+        res.status(201).json(menu);
+      } catch (error) {
+        console.error("Create menu error:", error);
+        res.status(500).json({ error: "Failed to create menu" });
+      }
+    }
+  );
+
+  // Update a menu
+  app.patch(
+    "/api/restaurants/:restaurantId/menus/:menuId",
+    authenticate,
+    requireRestaurantAccess,
+    requirePermission("menu:update"),
+    async (req, res) => {
+      try {
+        const { restaurantId, menuId } = req.params;
+        const updates = req.body;
+
+        const [existing] = await db
+          .select()
+          .from(menus)
+          .where(and(eq(menus.id, menuId), eq(menus.restaurantId, restaurantId)));
+
+        if (!existing) {
+          return res.status(404).json({ error: "Menu not found" });
+        }
+
+        const [updated] = await db
+          .update(menus)
+          .set({ ...updates, updatedAt: new Date() })
+          .where(eq(menus.id, menuId))
+          .returning();
+
+        res.json(updated);
+      } catch (error) {
+        console.error("Update menu error:", error);
+        res.status(500).json({ error: "Failed to update menu" });
+      }
+    }
+  );
+
+  // Delete a menu
+  app.delete(
+    "/api/restaurants/:restaurantId/menus/:menuId",
+    authenticate,
+    requireRestaurantAccess,
+    requirePermission("menu:delete"),
+    async (req, res) => {
+      try {
+        const { restaurantId, menuId } = req.params;
+
+        const [existing] = await db
+          .select()
+          .from(menus)
+          .where(and(eq(menus.id, menuId), eq(menus.restaurantId, restaurantId)));
+
+        if (!existing) {
+          return res.status(404).json({ error: "Menu not found" });
+        }
+
+        await db.delete(menus).where(eq(menus.id, menuId));
+        res.json({ message: "Menu deleted successfully" });
+      } catch (error) {
+        console.error("Delete menu error:", error);
+        res.status(500).json({ error: "Failed to delete menu" });
+      }
+    }
+  );
+
+  // ----------------------------------------------------------------------------
+  // CATEGORIES CRUD
+  // ----------------------------------------------------------------------------
+
+  // List all categories for a restaurant
+  app.get(
+    "/api/restaurants/:restaurantId/categories",
+    authenticate,
+    requireRestaurantAccess,
+    requirePermission("menu:read"),
+    async (req, res) => {
+      try {
+        const { restaurantId } = req.params;
+        const { menuId } = req.query;
+
+        const conditions = [eq(categories.restaurantId, restaurantId)];
+        if (menuId) {
+          conditions.push(eq(categories.menuId, menuId as string));
+        }
+
+        const categoryList = await db
+          .select()
+          .from(categories)
+          .where(and(...conditions))
+          .orderBy(categories.sortOrder);
+
+        res.json(categoryList);
+      } catch (error) {
+        console.error("List categories error:", error);
+        res.status(500).json({ error: "Failed to list categories" });
+      }
+    }
+  );
+
+  // Create a category
+  app.post(
+    "/api/restaurants/:restaurantId/categories",
+    authenticate,
+    requireRestaurantAccess,
+    requirePermission("menu:create"),
+    async (req, res) => {
+      try {
+        const { restaurantId } = req.params;
+        const { menuId, name, description, imageUrl, isActive, sortOrder } = req.body;
+
+        if (!name) {
+          return res.status(400).json({ error: "Category name is required" });
+        }
+
+        const [category] = await db
+          .insert(categories)
+          .values({
+            restaurantId,
+            menuId,
+            name,
+            description,
+            imageUrl,
+            isActive: isActive ?? true,
+            sortOrder: sortOrder ?? 0,
+          })
+          .returning();
+
+        res.status(201).json(category);
+      } catch (error) {
+        console.error("Create category error:", error);
+        res.status(500).json({ error: "Failed to create category" });
+      }
+    }
+  );
+
+  // Update a category
+  app.patch(
+    "/api/restaurants/:restaurantId/categories/:categoryId",
+    authenticate,
+    requireRestaurantAccess,
+    requirePermission("menu:update"),
+    async (req, res) => {
+      try {
+        const { restaurantId, categoryId } = req.params;
+        const updates = req.body;
+
+        const [existing] = await db
+          .select()
+          .from(categories)
+          .where(and(eq(categories.id, categoryId), eq(categories.restaurantId, restaurantId)));
+
+        if (!existing) {
+          return res.status(404).json({ error: "Category not found" });
+        }
+
+        const [updated] = await db
+          .update(categories)
+          .set({ ...updates, updatedAt: new Date() })
+          .where(eq(categories.id, categoryId))
+          .returning();
+
+        res.json(updated);
+      } catch (error) {
+        console.error("Update category error:", error);
+        res.status(500).json({ error: "Failed to update category" });
+      }
+    }
+  );
+
+  // Delete a category
+  app.delete(
+    "/api/restaurants/:restaurantId/categories/:categoryId",
+    authenticate,
+    requireRestaurantAccess,
+    requirePermission("menu:delete"),
+    async (req, res) => {
+      try {
+        const { restaurantId, categoryId } = req.params;
+
+        const [existing] = await db
+          .select()
+          .from(categories)
+          .where(and(eq(categories.id, categoryId), eq(categories.restaurantId, restaurantId)));
+
+        if (!existing) {
+          return res.status(404).json({ error: "Category not found" });
+        }
+
+        await db.delete(categories).where(eq(categories.id, categoryId));
+        res.json({ message: "Category deleted successfully" });
+      } catch (error) {
+        console.error("Delete category error:", error);
+        res.status(500).json({ error: "Failed to delete category" });
+      }
+    }
+  );
+
+  // ----------------------------------------------------------------------------
+  // MENU ITEMS CRUD
+  // ----------------------------------------------------------------------------
+
+  // List all menu items for a restaurant
+  app.get(
+    "/api/restaurants/:restaurantId/menu-items",
+    authenticate,
+    requireRestaurantAccess,
+    requirePermission("menu:read"),
+    async (req, res) => {
+      try {
+        const { restaurantId } = req.params;
+        const { categoryId } = req.query;
+
+        const conditions = [eq(menuItems.restaurantId, restaurantId)];
+        if (categoryId) {
+          conditions.push(eq(menuItems.categoryId, categoryId as string));
+        }
+
+        const items = await db
+          .select()
+          .from(menuItems)
+          .where(and(...conditions))
+          .orderBy(menuItems.sortOrder);
+
+        res.json(items);
+      } catch (error) {
+        console.error("List menu items error:", error);
+        res.status(500).json({ error: "Failed to list menu items" });
+      }
+    }
+  );
+
+  // Create a menu item
+  app.post(
+    "/api/restaurants/:restaurantId/menu-items",
+    authenticate,
+    requireRestaurantAccess,
+    requirePermission("menu:create"),
+    async (req, res) => {
+      try {
+        const { restaurantId } = req.params;
+        const {
+          categoryId, name, description, price, compareAtPrice, cost,
+          imageUrl, sku, barcode, isAvailable, isPopular, isNew,
+          preparationTime, calories, allergens, tags, sortOrder
+        } = req.body;
+
+        if (!name || price === undefined) {
+          return res.status(400).json({ error: "Name and price are required" });
+        }
+
+        const [item] = await db
+          .insert(menuItems)
+          .values({
+            restaurantId,
+            categoryId,
+            name,
+            description,
+            price: price.toString(),
+            compareAtPrice: compareAtPrice?.toString(),
+            cost: cost?.toString(),
+            imageUrl,
+            sku,
+            barcode,
+            isAvailable: isAvailable ?? true,
+            isPopular: isPopular ?? false,
+            isNew: isNew ?? false,
+            preparationTime,
+            calories,
+            allergens: allergens ?? [],
+            tags: tags ?? [],
+            sortOrder: sortOrder ?? 0,
+          })
+          .returning();
+
+        res.status(201).json(item);
+      } catch (error) {
+        console.error("Create menu item error:", error);
+        res.status(500).json({ error: "Failed to create menu item" });
+      }
+    }
+  );
+
+  // Get a single menu item with its modifier groups
+  app.get(
+    "/api/restaurants/:restaurantId/menu-items/:itemId",
+    authenticate,
+    requireRestaurantAccess,
+    requirePermission("menu:read"),
+    async (req, res) => {
+      try {
+        const { restaurantId, itemId } = req.params;
+
+        const [item] = await db
+          .select()
+          .from(menuItems)
+          .where(and(eq(menuItems.id, itemId), eq(menuItems.restaurantId, restaurantId)));
+
+        if (!item) {
+          return res.status(404).json({ error: "Menu item not found" });
+        }
+
+        // Get linked modifier groups
+        const linkedGroups = await db
+          .select({
+            linkId: menuItemModifierGroups.id,
+            sortOrder: menuItemModifierGroups.sortOrder,
+            group: modifierGroups,
+          })
+          .from(menuItemModifierGroups)
+          .innerJoin(modifierGroups, eq(menuItemModifierGroups.modifierGroupId, modifierGroups.id))
+          .where(eq(menuItemModifierGroups.menuItemId, itemId))
+          .orderBy(menuItemModifierGroups.sortOrder);
+
+        // Get modifiers for each group
+        const groupIds = linkedGroups.map(lg => lg.group.id);
+        const modifierList = groupIds.length > 0
+          ? await db
+              .select()
+              .from(modifiers)
+              .where(sql`${modifiers.modifierGroupId} IN (${sql.raw(groupIds.map(id => `'${id}'`).join(","))})`)
+              .orderBy(modifiers.sortOrder)
+          : [];
+
+        const modifiersByGroup = modifierList.reduce((acc, mod) => {
+          if (!acc[mod.modifierGroupId]) acc[mod.modifierGroupId] = [];
+          acc[mod.modifierGroupId].push(mod);
+          return acc;
+        }, {} as Record<string, typeof modifierList>);
+
+        res.json({
+          ...item,
+          modifierGroups: linkedGroups.map(lg => ({
+            ...lg.group,
+            linkSortOrder: lg.sortOrder,
+            modifiers: modifiersByGroup[lg.group.id] || [],
+          })),
+        });
+      } catch (error) {
+        console.error("Get menu item error:", error);
+        res.status(500).json({ error: "Failed to get menu item" });
+      }
+    }
+  );
+
+  // Update a menu item
+  app.patch(
+    "/api/restaurants/:restaurantId/menu-items/:itemId",
+    authenticate,
+    requireRestaurantAccess,
+    requirePermission("menu:update"),
+    async (req, res) => {
+      try {
+        const { restaurantId, itemId } = req.params;
+        const updates = { ...req.body };
+
+        // Convert price fields to strings if provided
+        if (updates.price !== undefined) updates.price = updates.price.toString();
+        if (updates.compareAtPrice !== undefined) updates.compareAtPrice = updates.compareAtPrice.toString();
+        if (updates.cost !== undefined) updates.cost = updates.cost.toString();
+
+        const [existing] = await db
+          .select()
+          .from(menuItems)
+          .where(and(eq(menuItems.id, itemId), eq(menuItems.restaurantId, restaurantId)));
+
+        if (!existing) {
+          return res.status(404).json({ error: "Menu item not found" });
+        }
+
+        const [updated] = await db
+          .update(menuItems)
+          .set({ ...updates, updatedAt: new Date() })
+          .where(eq(menuItems.id, itemId))
+          .returning();
+
+        res.json(updated);
+      } catch (error) {
+        console.error("Update menu item error:", error);
+        res.status(500).json({ error: "Failed to update menu item" });
+      }
+    }
+  );
+
+  // Delete a menu item
+  app.delete(
+    "/api/restaurants/:restaurantId/menu-items/:itemId",
+    authenticate,
+    requireRestaurantAccess,
+    requirePermission("menu:delete"),
+    async (req, res) => {
+      try {
+        const { restaurantId, itemId } = req.params;
+
+        const [existing] = await db
+          .select()
+          .from(menuItems)
+          .where(and(eq(menuItems.id, itemId), eq(menuItems.restaurantId, restaurantId)));
+
+        if (!existing) {
+          return res.status(404).json({ error: "Menu item not found" });
+        }
+
+        await db.delete(menuItems).where(eq(menuItems.id, itemId));
+        res.json({ message: "Menu item deleted successfully" });
+      } catch (error) {
+        console.error("Delete menu item error:", error);
+        res.status(500).json({ error: "Failed to delete menu item" });
+      }
+    }
+  );
+
+  // ----------------------------------------------------------------------------
+  // MODIFIER GROUPS CRUD
+  // ----------------------------------------------------------------------------
+
+  // List all modifier groups for a restaurant
+  app.get(
+    "/api/restaurants/:restaurantId/modifier-groups",
+    authenticate,
+    requireRestaurantAccess,
+    requirePermission("menu:read"),
+    async (req, res) => {
+      try {
+        const { restaurantId } = req.params;
+
+        const groups = await db
+          .select()
+          .from(modifierGroups)
+          .where(eq(modifierGroups.restaurantId, restaurantId))
+          .orderBy(modifierGroups.sortOrder);
+
+        res.json(groups);
+      } catch (error) {
+        console.error("List modifier groups error:", error);
+        res.status(500).json({ error: "Failed to list modifier groups" });
+      }
+    }
+  );
+
+  // Create a modifier group
+  app.post(
+    "/api/restaurants/:restaurantId/modifier-groups",
+    authenticate,
+    requireRestaurantAccess,
+    requirePermission("menu:create"),
+    async (req, res) => {
+      try {
+        const { restaurantId } = req.params;
+        const { name, description, isRequired, minSelections, maxSelections, sortOrder } = req.body;
+
+        if (!name) {
+          return res.status(400).json({ error: "Modifier group name is required" });
+        }
+
+        const [group] = await db
+          .insert(modifierGroups)
+          .values({
+            restaurantId,
+            name,
+            description,
+            isRequired: isRequired ?? false,
+            minSelections: minSelections ?? 0,
+            maxSelections: maxSelections ?? 1,
+            sortOrder: sortOrder ?? 0,
+          })
+          .returning();
+
+        res.status(201).json(group);
+      } catch (error) {
+        console.error("Create modifier group error:", error);
+        res.status(500).json({ error: "Failed to create modifier group" });
+      }
+    }
+  );
+
+  // Update a modifier group
+  app.patch(
+    "/api/restaurants/:restaurantId/modifier-groups/:groupId",
+    authenticate,
+    requireRestaurantAccess,
+    requirePermission("menu:update"),
+    async (req, res) => {
+      try {
+        const { restaurantId, groupId } = req.params;
+        const updates = req.body;
+
+        const [existing] = await db
+          .select()
+          .from(modifierGroups)
+          .where(and(eq(modifierGroups.id, groupId), eq(modifierGroups.restaurantId, restaurantId)));
+
+        if (!existing) {
+          return res.status(404).json({ error: "Modifier group not found" });
+        }
+
+        const [updated] = await db
+          .update(modifierGroups)
+          .set({ ...updates, updatedAt: new Date() })
+          .where(eq(modifierGroups.id, groupId))
+          .returning();
+
+        res.json(updated);
+      } catch (error) {
+        console.error("Update modifier group error:", error);
+        res.status(500).json({ error: "Failed to update modifier group" });
+      }
+    }
+  );
+
+  // Delete a modifier group
+  app.delete(
+    "/api/restaurants/:restaurantId/modifier-groups/:groupId",
+    authenticate,
+    requireRestaurantAccess,
+    requirePermission("menu:delete"),
+    async (req, res) => {
+      try {
+        const { restaurantId, groupId } = req.params;
+
+        const [existing] = await db
+          .select()
+          .from(modifierGroups)
+          .where(and(eq(modifierGroups.id, groupId), eq(modifierGroups.restaurantId, restaurantId)));
+
+        if (!existing) {
+          return res.status(404).json({ error: "Modifier group not found" });
+        }
+
+        await db.delete(modifierGroups).where(eq(modifierGroups.id, groupId));
+        res.json({ message: "Modifier group deleted successfully" });
+      } catch (error) {
+        console.error("Delete modifier group error:", error);
+        res.status(500).json({ error: "Failed to delete modifier group" });
+      }
+    }
+  );
+
+  // ----------------------------------------------------------------------------
+  // MODIFIERS CRUD (within a modifier group)
+  // ----------------------------------------------------------------------------
+
+  // List modifiers in a group
+  app.get(
+    "/api/restaurants/:restaurantId/modifier-groups/:groupId/modifiers",
+    authenticate,
+    requireRestaurantAccess,
+    requirePermission("menu:read"),
+    async (req, res) => {
+      try {
+        const { restaurantId, groupId } = req.params;
+
+        // Verify group belongs to restaurant
+        const [group] = await db
+          .select()
+          .from(modifierGroups)
+          .where(and(eq(modifierGroups.id, groupId), eq(modifierGroups.restaurantId, restaurantId)));
+
+        if (!group) {
+          return res.status(404).json({ error: "Modifier group not found" });
+        }
+
+        const modifierList = await db
+          .select()
+          .from(modifiers)
+          .where(eq(modifiers.modifierGroupId, groupId))
+          .orderBy(modifiers.sortOrder);
+
+        res.json(modifierList);
+      } catch (error) {
+        console.error("List modifiers error:", error);
+        res.status(500).json({ error: "Failed to list modifiers" });
+      }
+    }
+  );
+
+  // Create a modifier
+  app.post(
+    "/api/restaurants/:restaurantId/modifier-groups/:groupId/modifiers",
+    authenticate,
+    requireRestaurantAccess,
+    requirePermission("menu:create"),
+    async (req, res) => {
+      try {
+        const { restaurantId, groupId } = req.params;
+        const { name, price, isDefault, isAvailable, sortOrder } = req.body;
+
+        // Verify group belongs to restaurant
+        const [group] = await db
+          .select()
+          .from(modifierGroups)
+          .where(and(eq(modifierGroups.id, groupId), eq(modifierGroups.restaurantId, restaurantId)));
+
+        if (!group) {
+          return res.status(404).json({ error: "Modifier group not found" });
+        }
+
+        if (!name) {
+          return res.status(400).json({ error: "Modifier name is required" });
+        }
+
+        const [modifier] = await db
+          .insert(modifiers)
+          .values({
+            modifierGroupId: groupId,
+            name,
+            price: price?.toString() ?? "0.00",
+            isDefault: isDefault ?? false,
+            isAvailable: isAvailable ?? true,
+            sortOrder: sortOrder ?? 0,
+          })
+          .returning();
+
+        res.status(201).json(modifier);
+      } catch (error) {
+        console.error("Create modifier error:", error);
+        res.status(500).json({ error: "Failed to create modifier" });
+      }
+    }
+  );
+
+  // Update a modifier
+  app.patch(
+    "/api/restaurants/:restaurantId/modifier-groups/:groupId/modifiers/:modifierId",
+    authenticate,
+    requireRestaurantAccess,
+    requirePermission("menu:update"),
+    async (req, res) => {
+      try {
+        const { restaurantId, groupId, modifierId } = req.params;
+        const updates = { ...req.body };
+
+        if (updates.price !== undefined) updates.price = updates.price.toString();
+
+        // Verify group belongs to restaurant
+        const [group] = await db
+          .select()
+          .from(modifierGroups)
+          .where(and(eq(modifierGroups.id, groupId), eq(modifierGroups.restaurantId, restaurantId)));
+
+        if (!group) {
+          return res.status(404).json({ error: "Modifier group not found" });
+        }
+
+        const [existing] = await db
+          .select()
+          .from(modifiers)
+          .where(and(eq(modifiers.id, modifierId), eq(modifiers.modifierGroupId, groupId)));
+
+        if (!existing) {
+          return res.status(404).json({ error: "Modifier not found" });
+        }
+
+        const [updated] = await db
+          .update(modifiers)
+          .set({ ...updates, updatedAt: new Date() })
+          .where(eq(modifiers.id, modifierId))
+          .returning();
+
+        res.json(updated);
+      } catch (error) {
+        console.error("Update modifier error:", error);
+        res.status(500).json({ error: "Failed to update modifier" });
+      }
+    }
+  );
+
+  // Delete a modifier
+  app.delete(
+    "/api/restaurants/:restaurantId/modifier-groups/:groupId/modifiers/:modifierId",
+    authenticate,
+    requireRestaurantAccess,
+    requirePermission("menu:delete"),
+    async (req, res) => {
+      try {
+        const { restaurantId, groupId, modifierId } = req.params;
+
+        // Verify group belongs to restaurant
+        const [group] = await db
+          .select()
+          .from(modifierGroups)
+          .where(and(eq(modifierGroups.id, groupId), eq(modifierGroups.restaurantId, restaurantId)));
+
+        if (!group) {
+          return res.status(404).json({ error: "Modifier group not found" });
+        }
+
+        const [existing] = await db
+          .select()
+          .from(modifiers)
+          .where(and(eq(modifiers.id, modifierId), eq(modifiers.modifierGroupId, groupId)));
+
+        if (!existing) {
+          return res.status(404).json({ error: "Modifier not found" });
+        }
+
+        await db.delete(modifiers).where(eq(modifiers.id, modifierId));
+        res.json({ message: "Modifier deleted successfully" });
+      } catch (error) {
+        console.error("Delete modifier error:", error);
+        res.status(500).json({ error: "Failed to delete modifier" });
+      }
+    }
+  );
+
+  // ----------------------------------------------------------------------------
+  // MENU ITEM <-> MODIFIER GROUP LINKING
+  // ----------------------------------------------------------------------------
+
+  // Link a modifier group to a menu item
+  app.post(
+    "/api/restaurants/:restaurantId/menu-items/:itemId/modifier-groups",
+    authenticate,
+    requireRestaurantAccess,
+    requirePermission("menu:update"),
+    async (req, res) => {
+      try {
+        const { restaurantId, itemId } = req.params;
+        const { modifierGroupId, sortOrder } = req.body;
+
+        // Verify item belongs to restaurant
+        const [item] = await db
+          .select()
+          .from(menuItems)
+          .where(and(eq(menuItems.id, itemId), eq(menuItems.restaurantId, restaurantId)));
+
+        if (!item) {
+          return res.status(404).json({ error: "Menu item not found" });
+        }
+
+        // Verify group belongs to restaurant
+        const [group] = await db
+          .select()
+          .from(modifierGroups)
+          .where(and(eq(modifierGroups.id, modifierGroupId), eq(modifierGroups.restaurantId, restaurantId)));
+
+        if (!group) {
+          return res.status(404).json({ error: "Modifier group not found" });
+        }
+
+        const [link] = await db
+          .insert(menuItemModifierGroups)
+          .values({
+            menuItemId: itemId,
+            modifierGroupId,
+            sortOrder: sortOrder ?? 0,
+          })
+          .returning();
+
+        res.status(201).json(link);
+      } catch (error: any) {
+        if (error.code === "23505") {
+          return res.status(409).json({ error: "Modifier group already linked to this item" });
+        }
+        console.error("Link modifier group error:", error);
+        res.status(500).json({ error: "Failed to link modifier group" });
+      }
+    }
+  );
+
+  // Unlink a modifier group from a menu item
+  app.delete(
+    "/api/restaurants/:restaurantId/menu-items/:itemId/modifier-groups/:groupId",
+    authenticate,
+    requireRestaurantAccess,
+    requirePermission("menu:update"),
+    async (req, res) => {
+      try {
+        const { restaurantId, itemId, groupId } = req.params;
+
+        // Verify item belongs to restaurant
+        const [item] = await db
+          .select()
+          .from(menuItems)
+          .where(and(eq(menuItems.id, itemId), eq(menuItems.restaurantId, restaurantId)));
+
+        if (!item) {
+          return res.status(404).json({ error: "Menu item not found" });
+        }
+
+        const [existing] = await db
+          .select()
+          .from(menuItemModifierGroups)
+          .where(and(
+            eq(menuItemModifierGroups.menuItemId, itemId),
+            eq(menuItemModifierGroups.modifierGroupId, groupId)
+          ));
+
+        if (!existing) {
+          return res.status(404).json({ error: "Link not found" });
+        }
+
+        await db
+          .delete(menuItemModifierGroups)
+          .where(and(
+            eq(menuItemModifierGroups.menuItemId, itemId),
+            eq(menuItemModifierGroups.modifierGroupId, groupId)
+          ));
+
+        res.json({ message: "Modifier group unlinked successfully" });
+      } catch (error) {
+        console.error("Unlink modifier group error:", error);
+        res.status(500).json({ error: "Failed to unlink modifier group" });
+      }
+    }
+  );
+
+  // ----------------------------------------------------------------------------
+  // DINING TABLES CRUD
+  // ----------------------------------------------------------------------------
+
+  // List all dining tables for a restaurant
+  app.get(
+    "/api/restaurants/:restaurantId/tables",
+    authenticate,
+    requireRestaurantAccess,
+    requirePermission("tables:read"),
+    async (req, res) => {
+      try {
+        const { restaurantId } = req.params;
+
+        const tableList = await db
+          .select()
+          .from(diningTables)
+          .where(eq(diningTables.restaurantId, restaurantId))
+          .orderBy(diningTables.number);
+
+        res.json(tableList);
+      } catch (error) {
+        console.error("List tables error:", error);
+        res.status(500).json({ error: "Failed to list tables" });
+      }
+    }
+  );
+
+  // Create a dining table
+  app.post(
+    "/api/restaurants/:restaurantId/tables",
+    authenticate,
+    requireRestaurantAccess,
+    requirePermission("tables:create"),
+    async (req, res) => {
+      try {
+        const { restaurantId } = req.params;
+        const { number, name, capacity, section, status, isActive, positionX, positionY } = req.body;
+
+        if (!number) {
+          return res.status(400).json({ error: "Table number is required" });
+        }
+
+        const [table] = await db
+          .insert(diningTables)
+          .values({
+            restaurantId,
+            number,
+            name,
+            capacity: capacity ?? 4,
+            section,
+            status: status ?? "available",
+            isActive: isActive ?? true,
+            positionX,
+            positionY,
+          })
+          .returning();
+
+        res.status(201).json(table);
+      } catch (error: any) {
+        if (error.code === "23505") {
+          return res.status(409).json({ error: "Table number already exists" });
+        }
+        console.error("Create table error:", error);
+        res.status(500).json({ error: "Failed to create table" });
+      }
+    }
+  );
+
+  // Update a dining table
+  app.patch(
+    "/api/restaurants/:restaurantId/tables/:tableId",
+    authenticate,
+    requireRestaurantAccess,
+    requirePermission("tables:update"),
+    async (req, res) => {
+      try {
+        const { restaurantId, tableId } = req.params;
+        const updates = req.body;
+
+        const [existing] = await db
+          .select()
+          .from(diningTables)
+          .where(and(eq(diningTables.id, tableId), eq(diningTables.restaurantId, restaurantId)));
+
+        if (!existing) {
+          return res.status(404).json({ error: "Table not found" });
+        }
+
+        const [updated] = await db
+          .update(diningTables)
+          .set({ ...updates, updatedAt: new Date() })
+          .where(eq(diningTables.id, tableId))
+          .returning();
+
+        res.json(updated);
+      } catch (error: any) {
+        if (error.code === "23505") {
+          return res.status(409).json({ error: "Table number already exists" });
+        }
+        console.error("Update table error:", error);
+        res.status(500).json({ error: "Failed to update table" });
+      }
+    }
+  );
+
+  // Delete a dining table
+  app.delete(
+    "/api/restaurants/:restaurantId/tables/:tableId",
+    authenticate,
+    requireRestaurantAccess,
+    requirePermission("tables:delete"),
+    async (req, res) => {
+      try {
+        const { restaurantId, tableId } = req.params;
+
+        const [existing] = await db
+          .select()
+          .from(diningTables)
+          .where(and(eq(diningTables.id, tableId), eq(diningTables.restaurantId, restaurantId)));
+
+        if (!existing) {
+          return res.status(404).json({ error: "Table not found" });
+        }
+
+        await db.delete(diningTables).where(eq(diningTables.id, tableId));
+        res.json({ message: "Table deleted successfully" });
+      } catch (error) {
+        console.error("Delete table error:", error);
+        res.status(500).json({ error: "Failed to delete table" });
+      }
+    }
+  );
+
+  // ----------------------------------------------------------------------------
+  // QR TOKENS MANAGEMENT
+  // ----------------------------------------------------------------------------
+
+  // List all QR tokens for a restaurant
+  app.get(
+    "/api/restaurants/:restaurantId/qr-tokens",
+    authenticate,
+    requireRestaurantAccess,
+    requireFeature("qr"),
+    requirePermission("tables:read"),
+    async (req, res) => {
+      try {
+        const { restaurantId } = req.params;
+
+        const tokens = await db
+          .select({
+            id: qrTokens.id,
+            restaurantId: qrTokens.restaurantId,
+            tableId: qrTokens.tableId,
+            tableNumber: diningTables.number,
+            token: qrTokens.token,
+            qrCodeUrl: qrTokens.qrCodeUrl,
+            tokenType: qrTokens.tokenType,
+            isActive: qrTokens.isActive,
+            scansCount: qrTokens.scansCount,
+            lastScannedAt: qrTokens.lastScannedAt,
+            expiresAt: qrTokens.expiresAt,
+            createdAt: qrTokens.createdAt,
+          })
+          .from(qrTokens)
+          .leftJoin(diningTables, eq(qrTokens.tableId, diningTables.id))
+          .where(eq(qrTokens.restaurantId, restaurantId))
+          .orderBy(diningTables.number);
+
+        res.json(tokens);
+      } catch (error) {
+        console.error("List QR tokens error:", error);
+        res.status(500).json({ error: "Failed to list QR tokens" });
+      }
+    }
+  );
+
+  // Generate QR token for a table
+  app.post(
+    "/api/restaurants/:restaurantId/tables/:tableId/qr-token",
+    authenticate,
+    requireRestaurantAccess,
+    requireFeature("qr"),
+    requirePermission("tables:update"),
+    async (req, res) => {
+      try {
+        const { restaurantId, tableId } = req.params;
+        const { expiresAt, tokenType } = req.body;
+
+        // Verify table belongs to restaurant
+        const [table] = await db
+          .select()
+          .from(diningTables)
+          .where(and(eq(diningTables.id, tableId), eq(diningTables.restaurantId, restaurantId)));
+
+        if (!table) {
+          return res.status(404).json({ error: "Table not found" });
+        }
+
+        // Generate unique token
+        const token = `${restaurantId.slice(0, 8)}-${tableId.slice(0, 8)}-${Date.now().toString(36)}`;
+
+        // Deactivate any existing tokens for this table
+        await db
+          .update(qrTokens)
+          .set({ isActive: false, updatedAt: new Date() })
+          .where(and(eq(qrTokens.tableId, tableId), eq(qrTokens.isActive, true)));
+
+        const [qrToken] = await db
+          .insert(qrTokens)
+          .values({
+            restaurantId,
+            tableId,
+            token,
+            tokenType: tokenType ?? "table",
+            isActive: true,
+            expiresAt: expiresAt ? new Date(expiresAt) : undefined,
+          })
+          .returning();
+
+        res.status(201).json({
+          ...qrToken,
+          tableNumber: table.number,
+          qrUrl: `/order/${token}`, // Frontend will use this to generate QR code
+        });
+      } catch (error) {
+        console.error("Generate QR token error:", error);
+        res.status(500).json({ error: "Failed to generate QR token" });
+      }
+    }
+  );
+
+  // Generate QR tokens for all tables (bulk)
+  app.post(
+    "/api/restaurants/:restaurantId/qr-tokens/bulk",
+    authenticate,
+    requireRestaurantAccess,
+    requireFeature("qr"),
+    requirePermission("tables:update"),
+    async (req, res) => {
+      try {
+        const { restaurantId } = req.params;
+
+        // Get all active tables without active QR tokens
+        const tables = await db
+          .select()
+          .from(diningTables)
+          .where(and(eq(diningTables.restaurantId, restaurantId), eq(diningTables.isActive, true)));
+
+        const createdTokens = [];
+
+        for (const table of tables) {
+          // Deactivate existing tokens
+          await db
+            .update(qrTokens)
+            .set({ isActive: false, updatedAt: new Date() })
+            .where(and(eq(qrTokens.tableId, table.id), eq(qrTokens.isActive, true)));
+
+          const token = `${restaurantId.slice(0, 8)}-${table.id.slice(0, 8)}-${Date.now().toString(36)}`;
+
+          const [qrToken] = await db
+            .insert(qrTokens)
+            .values({
+              restaurantId,
+              tableId: table.id,
+              token,
+              tokenType: "table",
+              isActive: true,
+            })
+            .returning();
+
+          createdTokens.push({
+            ...qrToken,
+            tableNumber: table.number,
+            qrUrl: `/order/${token}`,
+          });
+        }
+
+        res.status(201).json({
+          message: `Generated ${createdTokens.length} QR tokens`,
+          tokens: createdTokens,
+        });
+      } catch (error) {
+        console.error("Bulk generate QR tokens error:", error);
+        res.status(500).json({ error: "Failed to generate QR tokens" });
+      }
+    }
+  );
+
+  // Deactivate a QR token
+  app.delete(
+    "/api/restaurants/:restaurantId/qr-tokens/:tokenId",
+    authenticate,
+    requireRestaurantAccess,
+    requireFeature("qr"),
+    requirePermission("tables:update"),
+    async (req, res) => {
+      try {
+        const { restaurantId, tokenId } = req.params;
+
+        const [existing] = await db
+          .select()
+          .from(qrTokens)
+          .where(and(eq(qrTokens.id, tokenId), eq(qrTokens.restaurantId, restaurantId)));
+
+        if (!existing) {
+          return res.status(404).json({ error: "QR token not found" });
+        }
+
+        await db
+          .update(qrTokens)
+          .set({ isActive: false, updatedAt: new Date() })
+          .where(eq(qrTokens.id, tokenId));
+
+        res.json({ message: "QR token deactivated successfully" });
+      } catch (error) {
+        console.error("Deactivate QR token error:", error);
+        res.status(500).json({ error: "Failed to deactivate QR token" });
+      }
+    }
+  );
+
+  // ----------------------------------------------------------------------------
+  // RESTAURANT SETTINGS (Soft Toggles) - Admin controlled
+  // ----------------------------------------------------------------------------
+
+  // Get restaurant settings
+  app.get(
+    "/api/restaurants/:restaurantId/settings",
+    authenticate,
+    requireRestaurantAccess,
+    requirePermission("settings:read"),
+    async (req, res) => {
+      try {
+        const { restaurantId } = req.params;
+
+        // Get all settings
+        const settings = await db
+          .select()
+          .from(restaurantSettings)
+          .where(eq(restaurantSettings.restaurantId, restaurantId));
+
+        // Get features to show what's allowed
+        const features = await db
+          .select()
+          .from(restaurantFeatureAllowlist)
+          .where(eq(restaurantFeatureAllowlist.restaurantId, restaurantId));
+
+        const settingsMap: Record<string, unknown> = {};
+        for (const s of settings) {
+          settingsMap[s.settingKey] = s.settingValue;
+        }
+
+        const featuresMap: Record<string, boolean> = {};
+        for (const f of features) {
+          const isExpired = f.expiresAt && f.expiresAt < new Date();
+          featuresMap[f.featureKey] = (f.isEnabled ?? false) && !isExpired;
+        }
+
+        res.json({ settings: settingsMap, features: featuresMap });
+      } catch (error) {
+        console.error("Get settings error:", error);
+        res.status(500).json({ error: "Failed to get settings" });
+      }
+    }
+  );
+
+  // Update a restaurant setting (with feature gating validation)
+  app.patch(
+    "/api/restaurants/:restaurantId/settings/:settingKey",
+    authenticate,
+    requireRestaurantAccess,
+    requirePermission("settings:update"),
+    async (req, res) => {
+      try {
+        const { restaurantId, settingKey } = req.params;
+        const { value } = req.body;
+
+        // Feature gating: validate that the setting change doesn't enable something not allowed
+        const featureRequirements: Record<string, string> = {
+          split_billing: "split_payments",
+          qr_ordering: "qr",
+          payment_methods: "pos", // Need POS feature for payment methods
+        };
+
+        const requiredFeature = featureRequirements[settingKey];
+        if (requiredFeature) {
+          const isAllowed = await checkFeature(restaurantId, requiredFeature);
+          if (!isAllowed) {
+            return res.status(403).json({
+              error: "Feature Not Allowed",
+              message: `Cannot update "${settingKey}" because the "${requiredFeature}" feature is not enabled for this restaurant`,
+            });
+          }
+        }
+
+        // For QR ordering settings, validate mode
+        if (settingKey === "qr_ordering" && value) {
+          const mode = value.mode;
+          if (mode && !["auto", "manual"].includes(mode)) {
+            return res.status(400).json({ error: "QR mode must be 'auto' or 'manual'" });
+          }
+          if (mode === "manual" && value.manualInputType) {
+            if (!["dropdown", "text"].includes(value.manualInputType)) {
+              return res.status(400).json({ error: "Manual input type must be 'dropdown' or 'text'" });
+            }
+          }
+        }
+
+        // Upsert the setting
+        const [existing] = await db
+          .select()
+          .from(restaurantSettings)
+          .where(and(
+            eq(restaurantSettings.restaurantId, restaurantId),
+            eq(restaurantSettings.settingKey, settingKey)
+          ));
+
+        let setting;
+        if (existing) {
+          [setting] = await db
+            .update(restaurantSettings)
+            .set({ settingValue: value, updatedAt: new Date() })
+            .where(eq(restaurantSettings.id, existing.id))
+            .returning();
+        } else {
+          [setting] = await db
+            .insert(restaurantSettings)
+            .values({
+              restaurantId,
+              settingKey,
+              settingValue: value,
+            })
+            .returning();
+        }
+
+        // Clear feature cache
+        clearFeatureCache(restaurantId);
+
+        res.json(setting);
+      } catch (error) {
+        console.error("Update setting error:", error);
+        res.status(500).json({ error: "Failed to update setting" });
+      }
+    }
+  );
+
+  // Bulk update restaurant settings
+  app.put(
+    "/api/restaurants/:restaurantId/settings",
+    authenticate,
+    requireRestaurantAccess,
+    requirePermission("settings:update"),
+    async (req, res) => {
+      try {
+        const { restaurantId } = req.params;
+        const { settings } = req.body;
+
+        if (!settings || typeof settings !== "object") {
+          return res.status(400).json({ error: "Settings object is required" });
+        }
+
+        // Get features for validation
+        const features = await db
+          .select()
+          .from(restaurantFeatureAllowlist)
+          .where(eq(restaurantFeatureAllowlist.restaurantId, restaurantId));
+
+        const enabledFeatures = new Set<string>();
+        for (const f of features) {
+          const isExpired = f.expiresAt && f.expiresAt < new Date();
+          if (f.isEnabled && !isExpired) {
+            enabledFeatures.add(f.featureKey);
+          }
+        }
+
+        // Feature gating validation
+        const featureRequirements: Record<string, string> = {
+          split_billing: "split_payments",
+          qr_ordering: "qr",
+          payment_methods: "pos",
+        };
+
+        for (const [key, value] of Object.entries(settings)) {
+          const requiredFeature = featureRequirements[key];
+          if (requiredFeature && !enabledFeatures.has(requiredFeature)) {
+            return res.status(403).json({
+              error: "Feature Not Allowed",
+              message: `Cannot update "${key}" because the "${requiredFeature}" feature is not enabled`,
+            });
+          }
+
+          // Validate QR ordering settings
+          if (key === "qr_ordering" && value) {
+            const qrSettings = value as { mode?: string; manualInputType?: string };
+            if (qrSettings.mode && !["auto", "manual"].includes(qrSettings.mode)) {
+              return res.status(400).json({ error: "QR mode must be 'auto' or 'manual'" });
+            }
+            if (qrSettings.mode === "manual" && qrSettings.manualInputType) {
+              if (!["dropdown", "text"].includes(qrSettings.manualInputType)) {
+                return res.status(400).json({ error: "Manual input type must be 'dropdown' or 'text'" });
+              }
+            }
+          }
+        }
+
+        // Upsert all settings
+        const results = [];
+        for (const [key, value] of Object.entries(settings)) {
+          const [existing] = await db
+            .select()
+            .from(restaurantSettings)
+            .where(and(
+              eq(restaurantSettings.restaurantId, restaurantId),
+              eq(restaurantSettings.settingKey, key)
+            ));
+
+          let setting;
+          if (existing) {
+            [setting] = await db
+              .update(restaurantSettings)
+              .set({ settingValue: value, updatedAt: new Date() })
+              .where(eq(restaurantSettings.id, existing.id))
+              .returning();
+          } else {
+            [setting] = await db
+              .insert(restaurantSettings)
+              .values({
+                restaurantId,
+                settingKey: key,
+                settingValue: value,
+              })
+              .returning();
+          }
+          results.push(setting);
+        }
+
+        // Clear feature cache
+        clearFeatureCache(restaurantId);
+
+        res.json({ updated: results.length, settings: results });
+      } catch (error) {
+        console.error("Bulk update settings error:", error);
+        res.status(500).json({ error: "Failed to update settings" });
+      }
+    }
+  );
+
+  // ============================================================================
   // Placeholder Endpoints (to be implemented in future phases)
   // ============================================================================
 
+  // Public menu endpoint (no auth required)
   app.get("/api/:tenantSlug/menu", resolveTenantBySlug, async (req, res) => {
-    res.status(501).json({ message: "Menu endpoints coming in Phase 4" });
-  });
-
-  app.get("/api/:tenantSlug/categories", resolveTenantBySlug, async (req, res) => {
-    res.status(501).json({ message: "Category endpoints coming in Phase 3" });
+    res.status(501).json({ message: "Public menu endpoint coming in Phase 6" });
   });
 
   app.get("/api/:tenantSlug/orders", authenticate, resolveTenantBySlug, async (req, res) => {
-    res.status(501).json({ message: "Order endpoints coming in Phase 4" });
+    res.status(501).json({ message: "Order endpoints coming in Phase 6" });
   });
 
   app.post("/api/:tenantSlug/orders", resolveTenantBySlug, async (req, res) => {
-    res.status(501).json({ message: "Order endpoints coming in Phase 4" });
-  });
-
-  app.get("/api/:tenantSlug/tables", authenticate, resolveTenantBySlug, async (req, res) => {
-    res.status(501).json({ message: "Table endpoints coming in Phase 5" });
+    res.status(501).json({ message: "Order endpoints coming in Phase 6" });
   });
 
   log("API routes registered", "express");
