@@ -84,16 +84,33 @@ A full-stack, multi-tenant restaurant Point of Sale (POS) system with integrated
 - `DELETE /api/restaurants/:restaurantId/orders/:orderId/split` - Cancel split session
 - `POST /api/restaurants/:restaurantId/orders/:orderId/split/shares/:shareId/pay` - Pay share (partial/full)
 
-## Socket.IO Events
-- `join-tenant` - Join tenant room for real-time updates
-- `join-kitchen` - Join kitchen room for order updates
-- `order:created` - New order created
+## Socket.IO Events (Phase 10)
+
+### Connection Authentication
+- Staff: Pass `auth: { token: accessToken }` on connect
+- Customer: Pass `auth: { customerToken: trackingToken }` on connect (signed JWT required)
+- Unauthenticated connections cannot join protected rooms
+
+### Room Events
+- `join-tenant` - Staff only: Join tenant room (requires JWT + restaurant access)
+- `join-kitchen` - Staff only: Join kitchen room (requires kitchen permissions)
+- `join-order` - Join order-specific room (authorized users only)
+
+### Order Events (emitted to tenant, kitchen, and order rooms)
+- `order:created` - New order created (POS or QR)
 - `order:new` - New order for kitchen display
-- `order:status-changed` - Order status updated
+- `order:status-changed` - Order status updated (customers receive via order room)
 - `order:items-added` - Items added to order
 - `order:item-removed` - Item removed from order
+
+### Payment Events
 - `payment:completed` - Payment marked as completed
 - `split:payment-completed` - Split share payment completed
+
+### Customer Order Tracking
+QR orders return a `trackingToken` JWT that customers can use to:
+1. Connect to Socket.IO with `auth: { customerToken }` 
+2. Auto-join their order room for real-time status updates
 
 ## Environment Variables
 - `DATABASE_URL` - PostgreSQL connection string
@@ -111,6 +128,16 @@ A full-stack, multi-tenant restaurant Point of Sale (POS) system with integrated
 - `npx tsx scripts/seed.ts` - Seed database with sample data
 
 ## Recent Changes
+- **2026-01-06**: Phase 10 - Real-time Socket.IO Sync
+  - Socket authentication for staff (JWT) and customers (tracking token)
+  - Room-based authorization: tenant, kitchen, and order rooms
+  - Staff can only join rooms for their restaurant
+  - Customers auto-join their order room on connection
+  - All events namespaced by restaurant to prevent data leaks
+  - QR orders return trackingToken JWT for customer socket auth
+  - Order status changes emit to customer order rooms
+  - Payment events emit to both staff and customer rooms
+
 - **2026-01-06**: Phase 9 - Split Billing Module
   - Three split modes: A (item-based), B (amount-based), C (equal split)
   - Feature gated: requires split_billing feature + soft toggle enabled

@@ -62,6 +62,18 @@ import {
   checkFeature,
 } from "./auth/feature-gating";
 import { createAuditLog, AUDIT_ACTIONS } from "./auth/audit";
+import {
+  authenticateSocket,
+  canJoinTenantRoom,
+  canJoinKitchenRoom,
+  canJoinOrderRoom,
+  getOrderRoom,
+  getTenantRoom,
+  getKitchenRoom,
+  getCustomerRoom,
+  generateCustomerTrackingToken,
+  SocketData,
+} from "./auth/socket-auth";
 import { z } from "zod";
 import { desc } from "drizzle-orm";
 
@@ -81,17 +93,68 @@ export async function registerRoutes(
     path: "/socket.io"
   });
 
-  io.on("connection", (socket) => {
+  io.on("connection", async (socket) => {
     log(`Socket connected: ${socket.id}`, "socket.io");
     
+    const socketData = await authenticateSocket(socket);
+    if (socketData) {
+      (socket as any).data = socketData;
+      log(`Socket ${socket.id} authenticated as ${socketData.type}`, "socket.io");
+      
+      if (socketData.type === "customer") {
+        socket.join(getOrderRoom(socketData.orderId));
+        socket.join(getCustomerRoom(socketData.restaurantId));
+        log(`Customer socket ${socket.id} joined order:${socketData.orderId}`, "socket.io");
+      }
+    }
+    
     socket.on("join-tenant", (tenantId: string) => {
-      socket.join(`tenant:${tenantId}`);
+      const data = (socket as any).data as SocketData | undefined;
+      if (!data) {
+        socket.emit("error", { message: "Authentication required for tenant room" });
+        return;
+      }
+      if (!canJoinTenantRoom(data, tenantId)) {
+        socket.emit("error", { message: "Not authorized for this restaurant" });
+        return;
+      }
+      socket.join(getTenantRoom(tenantId));
       log(`Socket ${socket.id} joined tenant: ${tenantId}`, "socket.io");
     });
 
     socket.on("join-kitchen", (tenantId: string) => {
-      socket.join(`kitchen:${tenantId}`);
+      const data = (socket as any).data as SocketData | undefined;
+      if (!data) {
+        socket.emit("error", { message: "Authentication required for kitchen room" });
+        return;
+      }
+      if (!canJoinKitchenRoom(data, tenantId)) {
+        socket.emit("error", { message: "Not authorized for kitchen access" });
+        return;
+      }
+      socket.join(getKitchenRoom(tenantId));
       log(`Socket ${socket.id} joined kitchen: ${tenantId}`, "socket.io");
+    });
+
+    socket.on("join-order", async (orderId: string) => {
+      const data = (socket as any).data as SocketData | undefined;
+      const order = await db
+        .select({ restaurantId: orders.restaurantId })
+        .from(orders)
+        .where(eq(orders.id, orderId))
+        .limit(1);
+      
+      if (order.length === 0) {
+        socket.emit("error", { message: "Order not found" });
+        return;
+      }
+      
+      if (data && canJoinOrderRoom(data, orderId, order[0].restaurantId)) {
+        socket.join(getOrderRoom(orderId));
+        log(`Socket ${socket.id} joined order: ${orderId}`, "socket.io");
+      } else {
+        socket.emit("error", { message: "Not authorized for this order" });
+      }
     });
 
     socket.on("disconnect", () => {
@@ -3966,20 +4029,27 @@ export async function registerRoutes(
 
         // Emit socket event for real-time updates
         const io = req.app.get("io") as SocketIOServer;
-        io.to(`tenant:${restaurantId}`).emit("new-order", {
+        io.to(getTenantRoom(restaurantId)).emit("order:created", {
           orderId: order.id,
           orderNumber: order.orderNumber,
           displayNumber: order.displayNumber,
           tableLabel: finalTableLabel,
           source: "qr",
         });
-        io.to(`kitchen:${restaurantId}`).emit("new-order", {
+        io.to(getKitchenRoom(restaurantId)).emit("order:new", {
           orderId: order.id,
           orderNumber: order.orderNumber,
           displayNumber: order.displayNumber,
           tableLabel: finalTableLabel,
           itemCount: processedItems.length,
         });
+
+        // Generate customer tracking token for real-time updates
+        const trackingToken = generateCustomerTrackingToken(
+          order.id, 
+          restaurantId, 
+          finalTableId || undefined
+        );
 
         res.status(201).json({
           orderId: order.id,
@@ -3991,6 +4061,7 @@ export async function registerRoutes(
           taxAmount: order.taxAmount,
           total: order.total,
           itemCount: processedItems.length,
+          trackingToken,
           message: "Order placed successfully!",
         });
       } catch (error) {
@@ -4542,14 +4613,14 @@ export async function registerRoutes(
 
         // Emit socket event
         const io = app.get("io") as SocketIOServer;
-        io.to(`tenant:${restaurantId}`).emit("order:created", {
+        io.to(getTenantRoom(restaurantId)).emit("order:created", {
           orderId: newOrder.id,
           orderNumber: newOrder.orderNumber,
           displayNumber: newOrder.displayNumber,
           source: "pos",
           tableId,
         });
-        io.to(`kitchen:${restaurantId}`).emit("order:new", {
+        io.to(getKitchenRoom(restaurantId)).emit("order:new", {
           orderId: newOrder.id,
           displayNumber: newOrder.displayNumber,
         });
@@ -4667,7 +4738,11 @@ export async function registerRoutes(
 
         // Emit socket event
         const io = app.get("io") as SocketIOServer;
-        io.to(`kitchen:${restaurantId}`).emit("order:items-added", {
+        io.to(getKitchenRoom(restaurantId)).emit("order:items-added", {
+          orderId,
+          items: insertedItems,
+        });
+        io.to(getOrderRoom(orderId)).emit("order:items-added", {
           orderId,
           items: insertedItems,
         });
@@ -4817,7 +4892,11 @@ export async function registerRoutes(
 
         // Emit socket event
         const io = app.get("io") as SocketIOServer;
-        io.to(`kitchen:${restaurantId}`).emit("order:item-removed", {
+        io.to(getKitchenRoom(restaurantId)).emit("order:item-removed", {
+          orderId,
+          itemId,
+        });
+        io.to(getOrderRoom(orderId)).emit("order:item-removed", {
           orderId,
           itemId,
         });
@@ -4887,18 +4966,17 @@ export async function registerRoutes(
         // Record status history
         await recordOrderStatusChange(orderId, userId, fromStatus, status, notes);
 
-        // Emit socket event
+        // Emit socket event to staff and customer rooms
         const io = app.get("io") as SocketIOServer;
-        io.to(`tenant:${restaurantId}`).emit("order:status-changed", {
+        const statusPayload = {
           orderId,
           fromStatus,
           toStatus: status,
-        });
-        io.to(`kitchen:${restaurantId}`).emit("order:status-changed", {
-          orderId,
-          fromStatus,
-          toStatus: status,
-        });
+          displayNumber: updatedOrder.displayNumber,
+        };
+        io.to(getTenantRoom(restaurantId)).emit("order:status-changed", statusPayload);
+        io.to(getKitchenRoom(restaurantId)).emit("order:status-changed", statusPayload);
+        io.to(getOrderRoom(orderId)).emit("order:status-changed", statusPayload);
 
         res.json({ message: "Status updated", order: updatedOrder });
       } catch (error) {
@@ -5489,12 +5567,14 @@ export async function registerRoutes(
             }
           }
 
-          // Emit socket event
-          io.to(`tenant:${restaurantId}`).emit("payment:completed", {
+          // Emit socket event to staff and customer rooms
+          const paymentPayload = {
             paymentId,
             orderId: order.id,
             isFullyPaid: newPaidAmount >= orderTotal,
-          });
+          };
+          io.to(getTenantRoom(restaurantId)).emit("payment:completed", paymentPayload);
+          io.to(getOrderRoom(order.id)).emit("payment:completed", paymentPayload);
         }
 
         res.json({
@@ -6111,25 +6191,30 @@ export async function registerRoutes(
                 .where(eq(diningTables.id, order.tableId));
             }
 
-            // Emit socket event
-            io.to(`tenant:${restaurantId}`).emit("order:status-changed", {
+            // Emit socket event to staff and customer rooms
+            const statusPayload = {
               orderId,
               fromStatus: order.status,
               toStatus: "completed",
               orderNumber: order.orderNumber,
-            });
+            };
+            io.to(getTenantRoom(restaurantId)).emit("order:status-changed", statusPayload);
+            io.to(getKitchenRoom(restaurantId)).emit("order:status-changed", statusPayload);
+            io.to(getOrderRoom(orderId)).emit("order:status-changed", statusPayload);
           }
         }
 
-        // Emit payment completed event
-        io.to(`tenant:${restaurantId}`).emit("split:payment-completed", {
+        // Emit payment completed event to staff and customer rooms
+        const splitPayload = {
           orderId,
           shareId,
           paymentId: payment.id,
           amount: paymentAmount,
           shareStatus: newShareStatus,
           isFullyPaid: allPaid,
-        });
+        };
+        io.to(getTenantRoom(restaurantId)).emit("split:payment-completed", splitPayload);
+        io.to(getOrderRoom(orderId)).emit("split:payment-completed", splitPayload);
 
         res.json({
           message: "Payment recorded",
