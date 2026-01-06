@@ -83,6 +83,9 @@ async function seed() {
     { featureKey: "kitchen_display", isEnabled: true },
     { featureKey: "inventory_management", isEnabled: false },
     { featureKey: "loyalty_program", isEnabled: false },
+    { featureKey: "stripe_payments", isEnabled: true },
+    { featureKey: "paypal_payments", isEnabled: true },
+    { featureKey: "counter_payments", isEnabled: true },
   ];
 
   for (const feature of features) {
@@ -107,7 +110,7 @@ async function seed() {
     { settingKey: "order_ready_notification", settingValue: { enabled: true, method: "sms" } },
     { settingKey: "kitchen_printer", settingValue: { enabled: false } },
     { settingKey: "receipt_footer", settingValue: { text: "Thank you for dining with us!" } },
-    { settingKey: "payment_methods", settingValue: { enabled_methods: ["cash", "card", "apple_pay", "google_pay"] } },
+    { settingKey: "payment_methods", settingValue: { enabled_methods: ["cash", "counter", "card", "apple_pay", "google_pay", "paypal"] } },
   ];
 
   for (const setting of settings) {

@@ -5211,6 +5211,341 @@ export async function registerRoutes(
   );
 
   // ============================================================================
+  // PHASE 8: PAYMENT METHODS (Stripe + PayPal + Pay at Counter)
+  // ============================================================================
+
+  const paymentProviders = await import("./payments/providers");
+
+  // Get available payment providers (system-level)
+  app.get("/api/payments/providers", async (req, res) => {
+    const status = paymentProviders.getPaymentProviderStatus();
+    res.json({
+      providers: [
+        { ...status.stripe, methods: ["card", "apple_pay", "google_pay"] },
+        { ...status.paypal, methods: ["paypal"] },
+        { ...status.counter, methods: ["cash", "counter"] },
+      ],
+    });
+  });
+
+  // Get available payment methods for a restaurant (master + restaurant + credentials)
+  app.get(
+    "/api/restaurants/:restaurantId/payment-methods",
+    authenticate,
+    requireRestaurantAccess,
+    async (req, res) => {
+      try {
+        const { restaurantId } = req.params;
+        const providerStatus = paymentProviders.getPaymentProviderStatus();
+
+        // Get restaurant feature allowlist for payment methods
+        const [stripeAllowed] = await db
+          .select({ isEnabled: restaurantFeatureAllowlist.isEnabled })
+          .from(restaurantFeatureAllowlist)
+          .where(and(
+            eq(restaurantFeatureAllowlist.restaurantId, restaurantId),
+            eq(restaurantFeatureAllowlist.featureKey, "stripe_payments")
+          ));
+
+        const [paypalAllowed] = await db
+          .select({ isEnabled: restaurantFeatureAllowlist.isEnabled })
+          .from(restaurantFeatureAllowlist)
+          .where(and(
+            eq(restaurantFeatureAllowlist.restaurantId, restaurantId),
+            eq(restaurantFeatureAllowlist.featureKey, "paypal_payments")
+          ));
+
+        const [counterAllowed] = await db
+          .select({ isEnabled: restaurantFeatureAllowlist.isEnabled })
+          .from(restaurantFeatureAllowlist)
+          .where(and(
+            eq(restaurantFeatureAllowlist.restaurantId, restaurantId),
+            eq(restaurantFeatureAllowlist.featureKey, "counter_payments")
+          ));
+
+        // Get restaurant settings for enabled methods
+        const [paymentSettings] = await db
+          .select({ settingValue: restaurantSettings.settingValue })
+          .from(restaurantSettings)
+          .where(and(
+            eq(restaurantSettings.restaurantId, restaurantId),
+            eq(restaurantSettings.settingKey, "payment_methods")
+          ));
+
+        const enabledMethods = (paymentSettings?.settingValue as any)?.enabled_methods || [];
+
+        const methods = [];
+
+        // Stripe methods (card, apple_pay, google_pay)
+        if (stripeAllowed?.isEnabled !== false && providerStatus.stripe.configured) {
+          if (enabledMethods.includes("card")) {
+            methods.push({ method: "card", displayName: "Credit/Debit Card", provider: "stripe" });
+          }
+          if (enabledMethods.includes("apple_pay")) {
+            methods.push({ method: "apple_pay", displayName: "Apple Pay", provider: "stripe" });
+          }
+          if (enabledMethods.includes("google_pay")) {
+            methods.push({ method: "google_pay", displayName: "Google Pay", provider: "stripe" });
+          }
+        }
+
+        // PayPal
+        if (paypalAllowed?.isEnabled !== false && providerStatus.paypal.configured) {
+          if (enabledMethods.includes("paypal")) {
+            methods.push({ method: "paypal", displayName: "PayPal", provider: "paypal" });
+          }
+        }
+
+        // Counter/Cash (always available if allowed)
+        if (counterAllowed?.isEnabled !== false && providerStatus.counter.configured) {
+          if (enabledMethods.includes("cash") || enabledMethods.includes("counter")) {
+            methods.push({ method: "cash", displayName: "Cash", provider: "counter" });
+            methods.push({ method: "counter", displayName: "Pay at Counter", provider: "counter" });
+          }
+        }
+
+        res.json({ 
+          methods,
+          providerStatus: {
+            stripe: providerStatus.stripe.configured,
+            paypal: providerStatus.paypal.configured,
+            counter: providerStatus.counter.configured,
+          }
+        });
+      } catch (error) {
+        console.error("Get payment methods error:", error);
+        res.status(500).json({ error: "Failed to get payment methods" });
+      }
+    }
+  );
+
+  // Create pending counter payment (public - for QR ordering)
+  app.post(
+    "/api/order/:orderId/payment/counter",
+    orderCreationRateLimiter,
+    async (req, res) => {
+      try {
+        const { orderId } = req.params;
+
+        // Verify order exists and is not completed
+        const [order] = await db
+          .select({
+            id: orders.id,
+            restaurantId: orders.restaurantId,
+            total: orders.total,
+            paidAmount: orders.paidAmount,
+            status: orders.status,
+          })
+          .from(orders)
+          .where(eq(orders.id, orderId));
+
+        if (!order) {
+          return res.status(404).json({ error: "Order not found" });
+        }
+
+        if (order.status === "completed" || order.status === "cancelled") {
+          return res.status(400).json({ error: "Order is already completed or cancelled" });
+        }
+
+        // Check if counter payments are enabled for this restaurant
+        const [counterAllowed] = await db
+          .select({ isEnabled: restaurantFeatureAllowlist.isEnabled })
+          .from(restaurantFeatureAllowlist)
+          .where(and(
+            eq(restaurantFeatureAllowlist.restaurantId, order.restaurantId),
+            eq(restaurantFeatureAllowlist.featureKey, "counter_payments")
+          ));
+
+        if (counterAllowed?.isEnabled === false) {
+          return res.status(403).json({ error: "Counter payments not enabled" });
+        }
+
+        const remainingAmount = parseFloat(order.total || "0") - parseFloat(order.paidAmount || "0");
+
+        // Create pending payment record
+        const [payment] = await db.insert(payments).values({
+          orderId: order.id,
+          restaurantId: order.restaurantId,
+          amount: remainingAmount.toFixed(2),
+          method: "counter",
+          status: "pending",
+          metadata: { type: "counter_payment", requestedAt: new Date().toISOString() },
+        }).returning();
+
+        res.status(201).json({
+          message: "Counter payment requested",
+          payment,
+          remainingAmount: remainingAmount.toFixed(2),
+        });
+      } catch (error) {
+        console.error("Create counter payment error:", error);
+        res.status(500).json({ error: "Failed to create counter payment" });
+      }
+    }
+  );
+
+  // Staff mark counter payment as paid
+  app.patch(
+    "/api/restaurants/:restaurantId/payments/:paymentId/mark-paid",
+    authenticate,
+    requireRestaurantAccess,
+    requireFeature("pos"),
+    requirePermission("orders:update"),
+    async (req, res) => {
+      try {
+        const { restaurantId, paymentId } = req.params;
+        const { tipAmount = 0 } = req.body;
+
+        // Get payment record
+        const [payment] = await db
+          .select()
+          .from(payments)
+          .where(and(
+            eq(payments.id, paymentId),
+            eq(payments.restaurantId, restaurantId)
+          ));
+
+        if (!payment) {
+          return res.status(404).json({ error: "Payment not found" });
+        }
+
+        if (payment.status !== "pending") {
+          return res.status(400).json({ error: "Payment is not pending" });
+        }
+
+        // Update payment to completed
+        const [updatedPayment] = await db
+          .update(payments)
+          .set({
+            status: "completed",
+            tipAmount: tipAmount.toString(),
+            processedAt: new Date(),
+            updatedAt: new Date(),
+            metadata: { 
+              ...(payment.metadata as object || {}),
+              markedPaidBy: req.user?.userId,
+              markedPaidAt: new Date().toISOString(),
+            },
+          })
+          .where(eq(payments.id, paymentId))
+          .returning();
+
+        // Get order to update paid amount
+        const [order] = await db
+          .select({
+            id: orders.id,
+            total: orders.total,
+            paidAmount: orders.paidAmount,
+            tableId: orders.tableId,
+          })
+          .from(orders)
+          .where(eq(orders.id, payment.orderId));
+
+        if (order) {
+          const paymentAmount = parseFloat(payment.amount || "0");
+          const tip = parseFloat(tipAmount.toString() || "0");
+          const newPaidAmount = parseFloat(order.paidAmount || "0") + paymentAmount + tip;
+          const orderTotal = parseFloat(order.total || "0");
+
+          const orderUpdates: any = {
+            paidAmount: newPaidAmount.toFixed(2),
+            tipAmount: sql`COALESCE(${orders.tipAmount}, 0) + ${tip.toFixed(2)}::decimal`,
+            updatedAt: new Date(),
+          };
+
+          // Auto-complete order if fully paid
+          if (newPaidAmount >= orderTotal) {
+            orderUpdates.status = "completed";
+            orderUpdates.completedAt = new Date();
+
+            // Record status change
+            await db.insert(orderStatusHistory).values({
+              orderId: order.id,
+              userId: req.user?.userId,
+              fromStatus: "served",
+              toStatus: "completed",
+              notes: "Auto-completed: payment received at counter",
+            });
+          }
+
+          await db.update(orders).set(orderUpdates).where(eq(orders.id, order.id));
+
+          // Free table if order completed
+          if (newPaidAmount >= orderTotal && order.tableId) {
+            const [otherOrders] = await db
+              .select({ count: sql<number>`count(*)` })
+              .from(orders)
+              .where(and(
+                eq(orders.tableId, order.tableId),
+                sql`${orders.status} NOT IN ('completed', 'cancelled')`,
+                sql`${orders.id} != ${order.id}`
+              ));
+
+            if (!otherOrders || otherOrders.count === 0) {
+              await db.update(diningTables).set({ status: "available", updatedAt: new Date() }).where(eq(diningTables.id, order.tableId));
+            }
+          }
+
+          // Emit socket event
+          io.to(`tenant:${restaurantId}`).emit("payment:completed", {
+            paymentId,
+            orderId: order.id,
+            isFullyPaid: newPaidAmount >= orderTotal,
+          });
+        }
+
+        res.json({
+          message: "Payment marked as paid",
+          payment: updatedPayment,
+        });
+      } catch (error) {
+        console.error("Mark payment paid error:", error);
+        res.status(500).json({ error: "Failed to mark payment as paid" });
+      }
+    }
+  );
+
+  // Stub endpoint for Stripe PaymentIntent (will be implemented when credentials are added)
+  app.post(
+    "/api/restaurants/:restaurantId/payments/stripe/create-intent",
+    authenticate,
+    requireRestaurantAccess,
+    async (req, res) => {
+      const providerStatus = paymentProviders.getPaymentProviderStatus();
+      if (!providerStatus.stripe.configured) {
+        return res.status(503).json({
+          error: "Stripe not configured",
+          message: "Stripe credentials are not set up. Contact administrator.",
+        });
+      }
+      res.status(501).json({
+        error: "Not implemented",
+        message: "Stripe integration will be enabled when credentials are configured",
+      });
+    }
+  );
+
+  // Stub endpoint for PayPal order creation (will be implemented when credentials are added)
+  app.post(
+    "/api/restaurants/:restaurantId/payments/paypal/create-order",
+    authenticate,
+    requireRestaurantAccess,
+    async (req, res) => {
+      const providerStatus = paymentProviders.getPaymentProviderStatus();
+      if (!providerStatus.paypal.configured) {
+        return res.status(503).json({
+          error: "PayPal not configured",
+          message: "PayPal credentials are not set up. Contact administrator.",
+        });
+      }
+      res.status(501).json({
+        error: "Not implemented",
+        message: "PayPal integration will be enabled when credentials are configured",
+      });
+    }
+  );
+
+  // ============================================================================
   // Legacy slug-based endpoints (kept for backwards compatibility)
   // ============================================================================
   

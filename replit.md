@@ -69,6 +69,14 @@ A full-stack, multi-tenant restaurant Point of Sale (POS) system with integrated
 - `POST /api/restaurants/:restaurantId/orders/:orderId/payments` - Record payment
 - `GET /api/restaurants/:restaurantId/orders/:orderId/payments` - Get payments
 
+### Payments (Phase 8 - Optional Providers)
+- `GET /api/payments/providers` - System payment provider status
+- `GET /api/restaurants/:restaurantId/payment-methods` - Available methods for restaurant
+- `POST /api/order/:orderId/payment/counter` - Create pending counter payment (public)
+- `PATCH /api/restaurants/:restaurantId/payments/:paymentId/mark-paid` - Staff mark paid
+- `POST /api/restaurants/:restaurantId/payments/stripe/create-intent` - Stripe stub (when configured)
+- `POST /api/restaurants/:restaurantId/payments/paypal/create-order` - PayPal stub (when configured)
+
 ## Socket.IO Events
 - `join-tenant` - Join tenant room for real-time updates
 - `join-kitchen` - Join kitchen room for order updates
@@ -77,12 +85,16 @@ A full-stack, multi-tenant restaurant Point of Sale (POS) system with integrated
 - `order:status-changed` - Order status updated
 - `order:items-added` - Items added to order
 - `order:item-removed` - Item removed from order
+- `payment:completed` - Payment marked as completed
 
 ## Environment Variables
 - `DATABASE_URL` - PostgreSQL connection string
 - `JWT_SECRET` - JWT signing secret
 - `SESSION_SECRET` - Express session secret
 - `PORT` - Server port (default: 5000)
+- `STRIPE_SECRET_KEY` - (Optional) Stripe API key for card payments
+- `PAYPAL_CLIENT_ID` - (Optional) PayPal client ID
+- `PAYPAL_CLIENT_SECRET` - (Optional) PayPal client secret
 
 ## Development Commands
 - `npm run dev` - Start development server
@@ -91,6 +103,16 @@ A full-stack, multi-tenant restaurant Point of Sale (POS) system with integrated
 - `npx tsx scripts/seed.ts` - Seed database with sample data
 
 ## Recent Changes
+- **2026-01-06**: Phase 8 - Payments Module (Optional Providers)
+  - Payment providers in DEV mode (no crash when Stripe/PayPal credentials missing)
+  - Stripe/PayPal show "not configured" when env vars not set
+  - Pay at Counter always available (cash/counter payments)
+  - Payment method availability: master allows + restaurant enabled + credentials exist
+  - Staff can mark pending payments as paid with optional tips
+  - Auto-complete orders when fully paid
+  - Socket.IO event for payment completion
+  - Feature keys: stripe_payments, paypal_payments, counter_payments
+
 - **2026-01-05**: Phase 7 - POS Order Management APIs complete
   - Create/view orders (list, live, by table, single with items)
   - Add/update/remove order items with total recalculation
