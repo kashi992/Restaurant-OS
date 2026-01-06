@@ -86,6 +86,7 @@ async function seed() {
     { featureKey: "stripe_payments", isEnabled: true },
     { featureKey: "paypal_payments", isEnabled: true },
     { featureKey: "counter_payments", isEnabled: true },
+    { featureKey: "split_billing", isEnabled: true },
   ];
 
   for (const feature of features) {

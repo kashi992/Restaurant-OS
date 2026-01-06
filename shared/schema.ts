@@ -419,34 +419,54 @@ export const payments = pgTable("payments", {
 ]);
 
 // Split payment sessions
+// Mode A = item-based, Mode B = amount-based, Mode C = equal split
 export const splitSessions = pgTable("split_sessions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   orderId: varchar("order_id").notNull().references(() => orders.id, { onDelete: "cascade" }),
-  splitType: text("split_type").notNull(), // equal, by_item, by_amount, custom
+  splitType: text("split_type").notNull(), // equal (C), by_item (A), by_amount (B)
   totalShares: integer("total_shares").default(1),
-  status: text("status").default("active"), // active, completed, cancelled
+  status: text("status").default("active"), // active, locked, completed, cancelled
+  createdById: varchar("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  lockedAt: timestamp("locked_at"), // Once locked, no more changes to shares
+  metadata: jsonb("metadata").default({}), // Mode-specific data
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
   index("split_sessions_order_id_idx").on(table.orderId),
+  index("split_sessions_status_idx").on(table.status),
 ]);
 
-// Individual shares in a split session
+// Individual shares in a split session - supports partial payments
 export const splitShares = pgTable("split_shares", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   splitSessionId: varchar("split_session_id").notNull().references(() => splitSessions.id, { onDelete: "cascade" }),
   shareNumber: integer("share_number").notNull(),
-  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
-  tipAmount: decimal("tip_amount", { precision: 10, scale: 2 }).default("0.00"),
-  itemIds: jsonb("item_ids").default([]), // Order item IDs for by_item split
-  isPaid: boolean("is_paid").default(false),
-  paymentId: varchar("payment_id").references(() => payments.id, { onDelete: "set null" }),
-  paidAt: timestamp("paid_at"),
+  label: text("label"), // Payer name/identifier (e.g., "Guest 1", "Alice")
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(), // Assigned amount for this share
+  tipAmount: decimal("tip_amount", { precision: 10, scale: 2 }).default("0.00"), // Tip target
+  paidAmount: decimal("paid_amount", { precision: 10, scale: 2 }).default("0.00"), // Amount paid so far
+  paidTip: decimal("paid_tip", { precision: 10, scale: 2 }).default("0.00"), // Tip paid so far
+  itemIds: jsonb("item_ids").default([]), // Order item IDs for by_item split (Mode A)
+  status: text("status").default("pending"), // pending, partial, paid, cancelled
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
   index("split_shares_split_session_id_idx").on(table.splitSessionId),
+  index("split_shares_status_idx").on(table.status),
   uniqueIndex("split_shares_session_number_idx").on(table.splitSessionId, table.shareNumber),
+]);
+
+// Payments applied to specific shares (for partial payment tracking)
+export const splitSharePayments = pgTable("split_share_payments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  splitShareId: varchar("split_share_id").notNull().references(() => splitShares.id, { onDelete: "cascade" }),
+  paymentId: varchar("payment_id").notNull().references(() => payments.id, { onDelete: "cascade" }),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(), // Amount from this payment applied to share
+  tipAmount: decimal("tip_amount", { precision: 10, scale: 2 }).default("0.00"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("split_share_payments_share_id_idx").on(table.splitShareId),
+  index("split_share_payments_payment_id_idx").on(table.paymentId),
 ]);
 
 // ============================================================================
@@ -592,13 +612,18 @@ export const insertSplitSessionSchema = createInsertSchema(splitSessions).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+  lockedAt: true,
 });
 
 export const insertSplitShareSchema = createInsertSchema(splitShares).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
-  paidAt: true,
+});
+
+export const insertSplitSharePaymentSchema = createInsertSchema(splitSharePayments).omit({
+  id: true,
+  createdAt: true,
 });
 
 export const insertRefreshTokenSchema = createInsertSchema(refreshTokens).omit({
@@ -676,6 +701,9 @@ export type SplitSession = typeof splitSessions.$inferSelect;
 
 export type InsertSplitShare = z.infer<typeof insertSplitShareSchema>;
 export type SplitShare = typeof splitShares.$inferSelect;
+
+export type InsertSplitSharePayment = z.infer<typeof insertSplitSharePaymentSchema>;
+export type SplitSharePayment = typeof splitSharePayments.$inferSelect;
 
 export type InsertRefreshToken = z.infer<typeof insertRefreshTokenSchema>;
 export type RefreshToken = typeof refreshTokens.$inferSelect;

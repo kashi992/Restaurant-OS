@@ -29,6 +29,9 @@ import {
   orderItems,
   orderStatusHistory,
   payments,
+  splitSessions,
+  splitShares,
+  splitSharePayments,
 } from "@shared/schema";
 import { 
   generateAccessToken, 
@@ -5542,6 +5545,607 @@ export async function registerRoutes(
         error: "Not implemented",
         message: "PayPal integration will be enabled when credentials are configured",
       });
+    }
+  );
+
+  // ============================================================================
+  // PHASE 9: Split Billing Module
+  // Modes: A (item-based), B (amount-based), C (equal split)
+  // ============================================================================
+
+  // Create split session for an order
+  app.post(
+    "/api/restaurants/:restaurantId/orders/:orderId/split",
+    authenticate,
+    requireRestaurantAccess,
+    requireFeature("split_billing"),
+    requireSoftToggle("split_billing", "enabled"),
+    async (req, res) => {
+      try {
+        const { restaurantId, orderId } = req.params;
+        const { splitType, shares } = req.body;
+        const userId = req.user!.userId;
+
+        // Validate split type: equal (C), by_item (A), by_amount (B)
+        if (!["equal", "by_item", "by_amount"].includes(splitType)) {
+          return res.status(400).json({
+            error: "Invalid split type",
+            message: "Split type must be one of: equal (C), by_item (A), by_amount (B)",
+          });
+        }
+
+        // Check if order exists and belongs to restaurant
+        const [order] = await db
+          .select()
+          .from(orders)
+          .where(and(eq(orders.id, orderId), eq(orders.restaurantId, restaurantId)));
+
+        if (!order) {
+          return res.status(404).json({ error: "Order not found" });
+        }
+
+        // Check if order is in a valid state for splitting
+        if (order.status === "completed" || order.status === "cancelled") {
+          return res.status(400).json({
+            error: "Invalid order state",
+            message: "Cannot split a completed or cancelled order",
+          });
+        }
+
+        // Check if an active split session already exists
+        const [existingSession] = await db
+          .select()
+          .from(splitSessions)
+          .where(
+            and(
+              eq(splitSessions.orderId, orderId),
+              or(eq(splitSessions.status, "active"), eq(splitSessions.status, "locked"))
+            )
+          );
+
+        if (existingSession) {
+          return res.status(400).json({
+            error: "Split session exists",
+            message: "An active split session already exists for this order. Cancel it first.",
+          });
+        }
+
+        const orderTotal = parseFloat(order.total || "0");
+        let sharesToCreate: { shareNumber: number; label?: string; amount: string; itemIds?: string[] }[] = [];
+
+        // Handle different split modes
+        if (splitType === "equal") {
+          // Mode C: Equal split
+          const numShares = shares?.count || 2;
+          if (numShares < 2 || numShares > 20) {
+            return res.status(400).json({
+              error: "Invalid share count",
+              message: "Equal split requires 2-20 shares",
+            });
+          }
+          const amountPerShare = (orderTotal / numShares).toFixed(2);
+          for (let i = 1; i <= numShares; i++) {
+            sharesToCreate.push({
+              shareNumber: i,
+              label: shares?.labels?.[i - 1] || `Guest ${i}`,
+              amount: amountPerShare,
+            });
+          }
+          // Adjust last share for rounding
+          const totalAssigned = parseFloat(amountPerShare) * numShares;
+          if (totalAssigned !== orderTotal) {
+            const diff = orderTotal - totalAssigned;
+            sharesToCreate[numShares - 1].amount = (parseFloat(amountPerShare) + diff).toFixed(2);
+          }
+        } else if (splitType === "by_amount") {
+          // Mode B: Amount-based split
+          if (!shares?.amounts || !Array.isArray(shares.amounts) || shares.amounts.length < 2) {
+            return res.status(400).json({
+              error: "Invalid amounts",
+              message: "Amount-based split requires at least 2 share amounts",
+            });
+          }
+          const totalAmounts = shares.amounts.reduce((sum: number, amt: number) => sum + amt, 0);
+          if (Math.abs(totalAmounts - orderTotal) > 0.01) {
+            return res.status(400).json({
+              error: "Amounts don't match order total",
+              message: `Share amounts (${totalAmounts.toFixed(2)}) must equal order total (${orderTotal.toFixed(2)})`,
+            });
+          }
+          shares.amounts.forEach((amt: number, idx: number) => {
+            sharesToCreate.push({
+              shareNumber: idx + 1,
+              label: shares?.labels?.[idx] || `Guest ${idx + 1}`,
+              amount: amt.toFixed(2),
+            });
+          });
+        } else if (splitType === "by_item") {
+          // Mode A: Item-based split
+          if (!shares?.itemAssignments || !Array.isArray(shares.itemAssignments) || shares.itemAssignments.length < 2) {
+            return res.status(400).json({
+              error: "Invalid item assignments",
+              message: "Item-based split requires at least 2 shares with item assignments",
+            });
+          }
+          // Get order items
+          const items = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+          const itemMap = new Map(items.map((item) => [item.id, parseFloat(item.totalPrice)]));
+          const allItemIds = new Set(items.map((item) => item.id));
+
+          // Validate and calculate amounts per share
+          const assignedItems = new Set<string>();
+          for (let i = 0; i < shares.itemAssignments.length; i++) {
+            const assignment = shares.itemAssignments[i];
+            const itemIds: string[] = assignment.itemIds || [];
+            let shareAmount = 0;
+
+            for (const itemId of itemIds) {
+              if (!allItemIds.has(itemId)) {
+                return res.status(400).json({
+                  error: "Invalid item ID",
+                  message: `Item ${itemId} not found in order`,
+                });
+              }
+              if (assignedItems.has(itemId)) {
+                return res.status(400).json({
+                  error: "Duplicate item assignment",
+                  message: `Item ${itemId} is assigned to multiple shares`,
+                });
+              }
+              assignedItems.add(itemId);
+              shareAmount += itemMap.get(itemId) || 0;
+            }
+
+            sharesToCreate.push({
+              shareNumber: i + 1,
+              label: assignment.label || `Guest ${i + 1}`,
+              amount: shareAmount.toFixed(2),
+              itemIds,
+            });
+          }
+
+          // Check if all items are assigned
+          if (assignedItems.size !== allItemIds.size) {
+            return res.status(400).json({
+              error: "Incomplete item assignment",
+              message: "All order items must be assigned to a share",
+            });
+          }
+        }
+
+        // Create split session
+        const [session] = await db
+          .insert(splitSessions)
+          .values({
+            orderId,
+            splitType,
+            totalShares: sharesToCreate.length,
+            status: "active",
+            createdById: userId,
+            metadata: { originalTotal: orderTotal },
+          })
+          .returning();
+
+        // Create shares
+        const createdShares = [];
+        for (const share of sharesToCreate) {
+          const [created] = await db
+            .insert(splitShares)
+            .values({
+              splitSessionId: session.id,
+              shareNumber: share.shareNumber,
+              label: share.label,
+              amount: share.amount,
+              itemIds: share.itemIds || [],
+              status: "pending",
+            })
+            .returning();
+          createdShares.push(created);
+        }
+
+        res.status(201).json({
+          message: "Split session created",
+          session: {
+            ...session,
+            shares: createdShares,
+          },
+        });
+      } catch (error) {
+        console.error("Create split session error:", error);
+        res.status(500).json({ error: "Failed to create split session" });
+      }
+    }
+  );
+
+  // Get split session for an order
+  app.get(
+    "/api/restaurants/:restaurantId/orders/:orderId/split",
+    authenticate,
+    requireRestaurantAccess,
+    async (req, res) => {
+      try {
+        const { orderId } = req.params;
+
+        const [session] = await db
+          .select()
+          .from(splitSessions)
+          .where(
+            and(
+              eq(splitSessions.orderId, orderId),
+              or(eq(splitSessions.status, "active"), eq(splitSessions.status, "locked"))
+            )
+          );
+
+        if (!session) {
+          return res.status(404).json({ error: "No active split session found" });
+        }
+
+        const shares = await db
+          .select()
+          .from(splitShares)
+          .where(eq(splitShares.splitSessionId, session.id));
+
+        // Get payments for each share
+        const sharePayments = await db
+          .select()
+          .from(splitSharePayments)
+          .where(
+            sql`${splitSharePayments.splitShareId} IN (${sql.join(
+              shares.map((s) => sql`${s.id}`),
+              sql`, `
+            )})`
+          );
+
+        const sharePaymentMap = new Map<string, typeof sharePayments>();
+        for (const sp of sharePayments) {
+          const existing = sharePaymentMap.get(sp.splitShareId) || [];
+          existing.push(sp);
+          sharePaymentMap.set(sp.splitShareId, existing);
+        }
+
+        res.json({
+          session,
+          shares: shares.map((share) => ({
+            ...share,
+            payments: sharePaymentMap.get(share.id) || [],
+            remainingAmount: Math.max(
+              0,
+              parseFloat(share.amount) - parseFloat(share.paidAmount || "0")
+            ).toFixed(2),
+          })),
+        });
+      } catch (error) {
+        console.error("Get split session error:", error);
+        res.status(500).json({ error: "Failed to get split session" });
+      }
+    }
+  );
+
+  // Lock split session (no more changes to shares)
+  app.post(
+    "/api/restaurants/:restaurantId/orders/:orderId/split/lock",
+    authenticate,
+    requireRestaurantAccess,
+    async (req, res) => {
+      try {
+        const { orderId } = req.params;
+
+        const [session] = await db
+          .select()
+          .from(splitSessions)
+          .where(and(eq(splitSessions.orderId, orderId), eq(splitSessions.status, "active")));
+
+        if (!session) {
+          return res.status(404).json({ error: "No active split session found" });
+        }
+
+        const [updated] = await db
+          .update(splitSessions)
+          .set({
+            status: "locked",
+            lockedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(splitSessions.id, session.id))
+          .returning();
+
+        res.json({ message: "Split session locked", session: updated });
+      } catch (error) {
+        console.error("Lock split session error:", error);
+        res.status(500).json({ error: "Failed to lock split session" });
+      }
+    }
+  );
+
+  // Cancel split session
+  app.delete(
+    "/api/restaurants/:restaurantId/orders/:orderId/split",
+    authenticate,
+    requireRestaurantAccess,
+    async (req, res) => {
+      try {
+        const { orderId } = req.params;
+
+        const [session] = await db
+          .select()
+          .from(splitSessions)
+          .where(
+            and(
+              eq(splitSessions.orderId, orderId),
+              or(eq(splitSessions.status, "active"), eq(splitSessions.status, "locked"))
+            )
+          );
+
+        if (!session) {
+          return res.status(404).json({ error: "No active split session found" });
+        }
+
+        // Check if any payments have been made
+        const shares = await db
+          .select()
+          .from(splitShares)
+          .where(eq(splitShares.splitSessionId, session.id));
+
+        const paidShares = shares.filter(
+          (s) => parseFloat(s.paidAmount || "0") > 0
+        );
+
+        if (paidShares.length > 0) {
+          return res.status(400).json({
+            error: "Cannot cancel split with payments",
+            message: "Some shares have already received payments. Process refunds first.",
+          });
+        }
+
+        // Cancel shares and session
+        await db
+          .update(splitShares)
+          .set({ status: "cancelled", updatedAt: new Date() })
+          .where(eq(splitShares.splitSessionId, session.id));
+
+        const [cancelled] = await db
+          .update(splitSessions)
+          .set({ status: "cancelled", updatedAt: new Date() })
+          .where(eq(splitSessions.id, session.id))
+          .returning();
+
+        res.json({ message: "Split session cancelled", session: cancelled });
+      } catch (error) {
+        console.error("Cancel split session error:", error);
+        res.status(500).json({ error: "Failed to cancel split session" });
+      }
+    }
+  );
+
+  // Pay a share (partial or full payment)
+  app.post(
+    "/api/restaurants/:restaurantId/orders/:orderId/split/shares/:shareId/pay",
+    authenticate,
+    requireRestaurantAccess,
+    async (req, res) => {
+      try {
+        const { restaurantId, orderId, shareId } = req.params;
+        const { amount, tipAmount = 0, method = "counter" } = req.body;
+        const userId = req.user!.userId;
+
+        // Validate payment method is enabled
+        const hasFeature = await checkFeature(restaurantId, "counter_payments");
+        if (method !== "counter" && method !== "cash") {
+          // For other methods, check if they're configured
+          if (method === "card") {
+            const stripeEnabled = await checkFeature(restaurantId, "stripe_payments");
+            if (!stripeEnabled) {
+              return res.status(400).json({
+                error: "Card payments not enabled",
+                message: "Stripe is not configured for this restaurant",
+              });
+            }
+          }
+        }
+
+        // Get share with session
+        const [share] = await db
+          .select()
+          .from(splitShares)
+          .where(eq(splitShares.id, shareId));
+
+        if (!share) {
+          return res.status(404).json({ error: "Share not found" });
+        }
+
+        const [session] = await db
+          .select()
+          .from(splitSessions)
+          .where(eq(splitSessions.id, share.splitSessionId));
+
+        if (!session || session.orderId !== orderId) {
+          return res.status(404).json({ error: "Split session not found" });
+        }
+
+        if (session.status !== "active" && session.status !== "locked") {
+          return res.status(400).json({
+            error: "Invalid session state",
+            message: "Split session is not active",
+          });
+        }
+
+        if (share.status === "paid" || share.status === "cancelled") {
+          return res.status(400).json({
+            error: "Share not payable",
+            message: `Share is already ${share.status}`,
+          });
+        }
+
+        // Calculate remaining amount for this share
+        const shareAmount = parseFloat(share.amount);
+        const paidSoFar = parseFloat(share.paidAmount || "0");
+        const remaining = shareAmount - paidSoFar;
+
+        const paymentAmount = parseFloat(amount);
+        if (paymentAmount <= 0) {
+          return res.status(400).json({
+            error: "Invalid amount",
+            message: "Payment amount must be positive",
+          });
+        }
+
+        // Prevent overpayment
+        if (paymentAmount > remaining + 0.01) {
+          return res.status(400).json({
+            error: "Overpayment",
+            message: `Payment amount (${paymentAmount.toFixed(2)}) exceeds remaining balance (${remaining.toFixed(2)})`,
+          });
+        }
+
+        // Get order to update paid amount
+        const [order] = await db
+          .select()
+          .from(orders)
+          .where(eq(orders.id, orderId));
+
+        if (!order) {
+          return res.status(404).json({ error: "Order not found" });
+        }
+
+        // Create payment record
+        const [payment] = await db
+          .insert(payments)
+          .values({
+            orderId,
+            restaurantId,
+            splitSessionId: session.id,
+            amount: paymentAmount.toFixed(2),
+            tipAmount: parseFloat(tipAmount || 0).toFixed(2),
+            method,
+            status: "completed",
+            processedAt: new Date(),
+            metadata: {
+              splitShareId: shareId,
+              shareNumber: share.shareNumber,
+              paidBy: userId,
+            },
+          })
+          .returning();
+
+        // Create split share payment record
+        await db.insert(splitSharePayments).values({
+          splitShareId: shareId,
+          paymentId: payment.id,
+          amount: paymentAmount.toFixed(2),
+          tipAmount: parseFloat(tipAmount || 0).toFixed(2),
+        });
+
+        // Update share paid amount
+        const newPaidAmount = paidSoFar + paymentAmount;
+        const newPaidTip = parseFloat(share.paidTip || "0") + parseFloat(tipAmount || 0);
+        const newShareStatus = newPaidAmount >= shareAmount - 0.01 ? "paid" : "partial";
+
+        await db
+          .update(splitShares)
+          .set({
+            paidAmount: newPaidAmount.toFixed(2),
+            paidTip: newPaidTip.toFixed(2),
+            status: newShareStatus,
+            updatedAt: new Date(),
+          })
+          .where(eq(splitShares.id, shareId));
+
+        // Update order paid amount
+        const orderPaidAmount = parseFloat(order.paidAmount || "0") + paymentAmount;
+        const orderTipAmount = parseFloat(order.tipAmount || "0") + parseFloat(tipAmount || 0);
+        const orderTotal = parseFloat(order.total || "0");
+
+        await db
+          .update(orders)
+          .set({
+            paidAmount: orderPaidAmount.toFixed(2),
+            tipAmount: orderTipAmount.toFixed(2),
+            updatedAt: new Date(),
+          })
+          .where(eq(orders.id, orderId));
+
+        // Check if all shares are paid to complete session and order
+        const allShares = await db
+          .select()
+          .from(splitShares)
+          .where(eq(splitShares.splitSessionId, session.id));
+
+        const allPaid = allShares.every(
+          (s) => s.id === shareId
+            ? newShareStatus === "paid"
+            : s.status === "paid"
+        );
+
+        if (allPaid) {
+          // Complete split session
+          await db
+            .update(splitSessions)
+            .set({ status: "completed", updatedAt: new Date() })
+            .where(eq(splitSessions.id, session.id));
+
+          // Check if order should be completed
+          if (orderPaidAmount >= orderTotal - 0.01) {
+            await db
+              .update(orders)
+              .set({
+                status: "completed",
+                completedAt: new Date(),
+                updatedAt: new Date(),
+              })
+              .where(eq(orders.id, orderId));
+
+            // Add status history
+            await db.insert(orderStatusHistory).values({
+              orderId,
+              userId,
+              fromStatus: order.status,
+              toStatus: "completed",
+              notes: "Auto-completed: all split payments received",
+            });
+
+            // Release table if applicable
+            if (order.tableId) {
+              await db
+                .update(diningTables)
+                .set({ status: "available", updatedAt: new Date() })
+                .where(eq(diningTables.id, order.tableId));
+            }
+
+            // Emit socket event
+            io.to(`tenant:${restaurantId}`).emit("order:status-changed", {
+              orderId,
+              fromStatus: order.status,
+              toStatus: "completed",
+              orderNumber: order.orderNumber,
+            });
+          }
+        }
+
+        // Emit payment completed event
+        io.to(`tenant:${restaurantId}`).emit("split:payment-completed", {
+          orderId,
+          shareId,
+          paymentId: payment.id,
+          amount: paymentAmount,
+          shareStatus: newShareStatus,
+          isFullyPaid: allPaid,
+        });
+
+        res.json({
+          message: "Payment recorded",
+          payment,
+          share: {
+            id: shareId,
+            paidAmount: newPaidAmount.toFixed(2),
+            remainingAmount: Math.max(0, shareAmount - newPaidAmount).toFixed(2),
+            status: newShareStatus,
+          },
+          sessionFullyPaid: allPaid,
+        });
+      } catch (error) {
+        console.error("Pay share error:", error);
+        res.status(500).json({ error: "Failed to process payment" });
+      }
     }
   );
 

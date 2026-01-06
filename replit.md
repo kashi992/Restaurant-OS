@@ -77,6 +77,13 @@ A full-stack, multi-tenant restaurant Point of Sale (POS) system with integrated
 - `POST /api/restaurants/:restaurantId/payments/stripe/create-intent` - Stripe stub (when configured)
 - `POST /api/restaurants/:restaurantId/payments/paypal/create-order` - PayPal stub (when configured)
 
+### Split Billing (Phase 9 - Feature Gated)
+- `POST /api/restaurants/:restaurantId/orders/:orderId/split` - Create split session
+- `GET /api/restaurants/:restaurantId/orders/:orderId/split` - Get split session with shares
+- `POST /api/restaurants/:restaurantId/orders/:orderId/split/lock` - Lock session (no changes)
+- `DELETE /api/restaurants/:restaurantId/orders/:orderId/split` - Cancel split session
+- `POST /api/restaurants/:restaurantId/orders/:orderId/split/shares/:shareId/pay` - Pay share (partial/full)
+
 ## Socket.IO Events
 - `join-tenant` - Join tenant room for real-time updates
 - `join-kitchen` - Join kitchen room for order updates
@@ -86,6 +93,7 @@ A full-stack, multi-tenant restaurant Point of Sale (POS) system with integrated
 - `order:items-added` - Items added to order
 - `order:item-removed` - Item removed from order
 - `payment:completed` - Payment marked as completed
+- `split:payment-completed` - Split share payment completed
 
 ## Environment Variables
 - `DATABASE_URL` - PostgreSQL connection string
@@ -103,6 +111,16 @@ A full-stack, multi-tenant restaurant Point of Sale (POS) system with integrated
 - `npx tsx scripts/seed.ts` - Seed database with sample data
 
 ## Recent Changes
+- **2026-01-06**: Phase 9 - Split Billing Module
+  - Three split modes: A (item-based), B (amount-based), C (equal split)
+  - Feature gated: requires split_billing feature + soft toggle enabled
+  - Split session per order with shares per payer
+  - Partial payments per share with balance tracking
+  - Overpayment prevention (blocks payments exceeding share balance)
+  - Order auto-completes when all shares fully paid
+  - Socket.IO event for split payment completion
+  - Feature key: split_billing
+
 - **2026-01-06**: Phase 8 - Payments Module (Optional Providers)
   - Payment providers in DEV mode (no crash when Stripe/PayPal credentials missing)
   - Stripe/PayPal show "not configured" when env vars not set
