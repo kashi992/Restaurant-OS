@@ -128,6 +128,16 @@ QR orders return a `trackingToken` JWT that customers can use to:
 - `npx tsx scripts/seed.ts` - Seed database with sample data
 
 ## Recent Changes
+- **2026-01-06**: Phase 11 - Frontend Applications Complete
+  - Built 4 frontend applications: Super Admin, Restaurant Dashboard, POS, and QR Customer UI
+  - Shared infrastructure: AuthProvider, ThemeProvider, protected routes, API helpers
+  - Super Admin: Restaurant list/create, feature toggles, suspend/restore
+  - Restaurant Dashboard: Menu manager, tables manager, staff manager, settings
+  - POS UI: Table grid, live orders, kitchen display, payment processing
+  - QR Customer UI: Mobile-first menu browsing, cart, checkout, order status tracking
+  - All frontend components properly aligned with backend API response formats
+  - Design system: Material Design 3 with warm orange color scheme
+
 - **2026-01-06**: Phase 10 - Real-time Socket.IO Sync
   - Socket authentication for staff (JWT) and customers (tracking token)
   - Room-based authorization: tenant, kitchen, and order rooms
