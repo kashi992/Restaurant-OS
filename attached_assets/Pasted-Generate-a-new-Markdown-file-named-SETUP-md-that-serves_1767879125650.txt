@@ -1,0 +1,107 @@
+Generate a new Markdown file named SETUP.md that serves as the definitive developer setup guide for this full-stack SaaS project. The guide must be exhaustive, beginner-friendly, and cover all possible development and deployment contexts: Replit, local machine (macOS/Linux/Windows), and production readiness notes.
+
+Structure it as follows:
+
+1. Overview
+Briefly explain this is a multi-tenant Restaurant POS + QR Ordering system built with React (Vite), Express, PostgreSQL, Drizzle ORM, Socket.IO, and JWT. Emphasize: one codebase, two environments.
+
+2. Replit-Specific Setup
+✅ Mandatory: Use Secrets (Environment Variables) — not .env file — because Replit ignores .env in runtime.
+List required secrets: DATABASE_URL, JWT_SECRET, SESSION_SECRET, NODE_ENV
+Explain how to generate secrets:
+
+Note: Replit auto-assigns PORT (usually 8080); your Express app must use process.env.PORT
+Command to run: npm run dev → preview auto-opens
+If using external PostgreSQL (Neon, Supabase, Render, etc.), provide connection string format and note: allow Replit’s outbound IPs or use connection pooling
+How to run Drizzle commands in Replit shell:
+
+npm run db:push  
+npx tsx scripts/seed.ts  
+Warn: Never commit .env or secrets; Replit Secrets are private
+3. Local Development Setup (macOS / Linux / Windows)
+Prerequisites
+Node.js v20+ (node -v)
+PostgreSQL 14+ (psql --version)
+npm or yarn
+Optional: openssl (to generate secrets)
+Step-by-Step
+Clone the repo
+npm install
+cp .env.example .env → edit with your values
+Create DB:
+
+# macOS/Linux (with pg CLI)  
+createdb restaurant_pos  
+# Windows (via pgAdmin or psql): CREATE DATABASE restaurant_pos;  
+Push schema: npm run db:push
+Seed data (optional but recommended): npx tsx scripts/seed.ts
+Start: npm run dev → open http://localhost:5000
+Windows-Specific Notes
+Use PowerShell or Git Bash (not CMD) for cp, openssl
+If createdb fails, connect via psql and run CREATE DATABASE restaurant_pos;
+Ensure PostgreSQL service is running
+4. Database Configuration Deep Dive
+DATABASE_URL format: postgresql://user:password@host:port/dbname
+Recommended: Use Neon.tech or Supabase for free cloud PostgreSQL with connection pooling
+Drizzle schema lives in shared/schema.ts; migrations are declarative (db:push)
+To inspect DB: npm run db:studio (opens Drizzle Studio GUI)
+⚠️ Never use the same DB for dev/staging/prod
+5. Environment Variables Reference
+Variable
+Required
+Example
+Description
+DATABASE_URL
+✅
+postgresql://...
+PostgreSQL connection string
+JWT_SECRET
+✅
+a1b2c3... (64 hex chars)
+For signing auth tokens
+SESSION_SECRET
+✅
+random-string
+For Express session (if used)
+PORT
+❌
+5000
+Local only; ignored on Replit
+NODE_ENV
+❌
+development / production
+Affects logging, caching
+6. Running the Application
+Command
+Purpose
+npm run dev
+Start full-stack dev server (Express + Vite proxy)
+npm run build
+Build React frontend for production
+npm run start
+Start production server (after build)
+npm run db:push
+Sync Drizzle schema to DB
+npm run db:studio
+Open Drizzle Studio (web-based DB explorer)
+npx tsx scripts/seed.ts
+Add sample restaurant + admin user
+7. Architecture Notes for Developers
+The backend (server/) serves the frontend in production
+In dev, Vite runs on :5173, Express proxies / → Vite
+All API routes are prefixed with /api
+Multi-tenancy: every query must filter by restaurant_id (handled via middleware later)
+Shared types in shared/schema.ts keep frontend/backend in sync
+8. Troubleshooting
+“ECONNREFUSED”: DB not running or wrong DATABASE_URL
+Blank screen on Replit: Check browser console; often CORS or 404 from wrong base path
+Drizzle push fails: Ensure DB user has CREATE privileges
+Port already in use: On local, change PORT in .env; on Replit, restart repl
+Seeding fails: Run db:push first
+9. Going to Production (Preview)
+Set NODE_ENV=production
+Use strong secrets (never reuse dev ones)
+Always use HTTPS
+Reverse proxy (nginx) recommended
+Monitor memory/CPU (Socket.IO scales per tenant)
+Format everything cleanly with code blocks, tables, and clear headings. Assume the reader is technical but new to this codebase.
