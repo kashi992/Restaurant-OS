@@ -1,4 +1,4 @@
-# Developer Setup Guide
+# Developer Setup Guide (new file)
 
 A comprehensive guide for setting up the Restaurant POS + QR Ordering SaaS system across all development and deployment contexts.
 
