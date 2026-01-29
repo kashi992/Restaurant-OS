@@ -88,6 +88,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const res = await apiRequest("POST", "/api/auth/login", { email, password });
     const data = await res.json();
     setAccessToken(data.accessToken);
+
+     // ✅ Set user immediately from login response (don't wait for fetchUser)
+  setUser({
+    id: data.user.id,
+    email: data.user.email,
+    firstName: data.user.firstName || "",
+    lastName: data.user.lastName || "",
+    role: data.user.roleName || "",
+    restaurantId: data.user.restaurantId,
+    isSuperAdmin: data.user.isSuperAdmin || false,
+    permissions: data.user.permissions || [],
+  });
+  
+  // Still fetch full user data in background
     await fetchUser(data.accessToken);
   };
 

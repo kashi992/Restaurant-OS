@@ -22,6 +22,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator 
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -33,6 +34,7 @@ import {
   Ban,
   RotateCcw,
   ChevronRight,
+  Trash2
 } from "lucide-react";
 
 interface Restaurant {
@@ -50,6 +52,7 @@ export default function AdminDashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [suspendDialogOpen, setSuspendDialogOpen] = useState(false);
   const [selectedRestaurant, setSelectedRestaurant] = useState<Restaurant | null>(null);
+const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   const { data: restaurants, isLoading } = useQuery<Restaurant[]>({
     queryKey: ["/api/admin/restaurants"],
@@ -109,6 +112,37 @@ export default function AdminDashboard() {
         return <Badge variant="outline">{status}</Badge>;
     }
   };
+
+  const deleteMutation = useMutation({
+  mutationFn: async (id: string) => {
+    const res = await fetch(`/api/admin/restaurants/${id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${accessToken}` },
+      credentials: "include",
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || "Failed to delete restaurant");
+    }
+    return res.json();
+  },
+  onSuccess: (data) => {
+    queryClient.invalidateQueries({ queryKey: ["/api/admin/restaurants"] });
+    toast({
+      title: "Restaurant deleted",
+      description: `${data.restaurantName} has been permanently deleted.`,
+    });
+    setDeleteDialogOpen(false);
+    setSelectedRestaurant(null);
+  },
+  onError: (error) => {
+    toast({
+      title: "Error",
+      description: error.message,
+      variant: "destructive",
+    });
+  },
+});
 
   return (
     <div className="space-y-6">
@@ -198,6 +232,18 @@ export default function AdminDashboard() {
                         Restore
                       </DropdownMenuItem>
                     )}
+                     <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => {
+                        setSelectedRestaurant(restaurant);
+                        setDeleteDialogOpen(true);
+                      }}
+                      className="text-destructive focus:text-destructive"
+                      data-testid={`menu-item-delete-${restaurant.id}`}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Delete Restaurant
+                    </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </CardHeader>
@@ -251,6 +297,67 @@ export default function AdminDashboard() {
               data-testid="button-confirm-suspend"
             >
               {suspendMutation.isPending ? "Suspending..." : "Suspend"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="text-destructive">
+              🗑️ Delete Restaurant Permanently?
+            </DialogTitle>
+            <DialogDescription className="space-y-3 pt-4">
+              <p className="font-semibold text-foreground">
+                You are about to permanently delete:{" "}
+                <span className="text-destructive">{selectedRestaurant?.name}</span>
+              </p>
+              
+              <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4">
+                <p className="font-semibold text-destructive mb-2">⚠️ This will delete:</p>
+                <ul className="space-y-1 text-sm text-muted-foreground">
+                  <li>✗ All staff accounts and roles</li>
+                  <li>✗ All menus, categories, and menu items</li>
+                  <li>✗ All orders and payments</li>
+                  <li>✗ All tables and QR codes</li>
+                  <li>✗ All settings and configurations</li>
+                </ul>
+              </div>
+
+              <p className="text-destructive font-bold text-center pt-2">
+                ⚠️ THIS ACTION CANNOT BE UNDONE!
+              </p>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDeleteDialogOpen(false);
+                setSelectedRestaurant(null);
+              }}
+              disabled={deleteMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => selectedRestaurant && deleteMutation.mutate(selectedRestaurant.id)}
+              disabled={deleteMutation.isPending}
+              data-testid="button-confirm-delete"
+            >
+              {deleteMutation.isPending ? (
+                <>
+                  <span className="animate-spin mr-2">⏳</span>
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete Permanently
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

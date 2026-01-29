@@ -80,7 +80,14 @@ export default function RestaurantDetailPage() {
           Authorization: `Bearer ${accessToken}`,
         },
         credentials: "include",
-        body: JSON.stringify({ featureKey, isEnabled: enabled }),
+        body: JSON.stringify({
+          features: {
+            [featureKey]: {
+              isEnabled: enabled,
+              expiresAt: null // or omit if not needed
+            }
+          }
+        }),
       });
       if (!res.ok) throw new Error("Failed to toggle feature");
     },
@@ -176,7 +183,7 @@ export default function RestaurantDetailPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {loadingFeatures ? (
+              {loadingRestaurant ? (
                 <div className="space-y-4">
                   {[1, 2, 3].map((i) => (
                     <Skeleton key={i} className="h-16 w-full" />

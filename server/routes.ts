@@ -6,11 +6,11 @@ import { log } from "./index";
 import bcrypt from "bcryptjs";
 import rateLimit from "express-rate-limit";
 import { eq, and, isNull, gt, sql, or } from "drizzle-orm";
-import { 
-  users, 
-  restaurants, 
-  restaurantUsers, 
-  roles, 
+import {
+  users,
+  restaurants,
+  restaurantUsers,
+  roles,
   refreshTokens,
   loginSchema,
   restaurantDomains,
@@ -33,9 +33,9 @@ import {
   splitShares,
   splitSharePayments,
 } from "@shared/schema";
-import { 
-  generateAccessToken, 
-  generateRefreshToken, 
+import {
+  generateAccessToken,
+  generateRefreshToken,
   verifyRefreshToken,
   generateTokenPair,
   AccessTokenPayload,
@@ -81,7 +81,7 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  
+
   // ============================================================================
   // Socket.IO Setup
   // ============================================================================
@@ -95,19 +95,19 @@ export async function registerRoutes(
 
   io.on("connection", async (socket) => {
     log(`Socket connected: ${socket.id}`, "socket.io");
-    
+
     const socketData = await authenticateSocket(socket);
     if (socketData) {
       (socket as any).data = socketData;
       log(`Socket ${socket.id} authenticated as ${socketData.type}`, "socket.io");
-      
+
       if (socketData.type === "customer") {
         socket.join(getOrderRoom(socketData.orderId));
         socket.join(getCustomerRoom(socketData.restaurantId));
         log(`Customer socket ${socket.id} joined order:${socketData.orderId}`, "socket.io");
       }
     }
-    
+
     socket.on("join-tenant", (tenantId: string) => {
       const data = (socket as any).data as SocketData | undefined;
       if (!data) {
@@ -143,12 +143,12 @@ export async function registerRoutes(
         .from(orders)
         .where(eq(orders.id, orderId))
         .limit(1);
-      
+
       if (order.length === 0) {
         socket.emit("error", { message: "Order not found" });
         return;
       }
-      
+
       if (data && canJoinOrderRoom(data, orderId, order[0].restaurantId)) {
         socket.join(getOrderRoom(orderId));
         log(`Socket ${socket.id} joined order: ${orderId}`, "socket.io");
@@ -174,7 +174,7 @@ export async function registerRoutes(
   app.get("/api/health", async (_req, res) => {
     const uptime = process.uptime();
     const memoryUsage = process.memoryUsage();
-    
+
     res.json({
       status: "healthy",
       timestamp: new Date().toISOString(),
@@ -190,7 +190,7 @@ export async function registerRoutes(
 
   app.get("/api/health/db", async (_req, res) => {
     const result = await testConnection();
-    
+
     if (result.success) {
       res.json({
         status: "connected",
@@ -244,9 +244,9 @@ export async function registerRoutes(
     try {
       const validation = loginSchema.safeParse(req.body);
       if (!validation.success) {
-        return res.status(400).json({ 
-          error: "Validation Error", 
-          message: validation.error.errors[0].message 
+        return res.status(400).json({
+          error: "Validation Error",
+          message: validation.error.errors[0].message
         });
       }
 
@@ -260,25 +260,25 @@ export async function registerRoutes(
         .limit(1);
 
       if (!user) {
-        return res.status(401).json({ 
-          error: "Unauthorized", 
-          message: "Invalid email or password" 
+        return res.status(401).json({
+          error: "Unauthorized",
+          message: "Invalid email or password"
         });
       }
 
       if (!user.isActive) {
-        return res.status(403).json({ 
-          error: "Forbidden", 
-          message: "Account is deactivated" 
+        return res.status(403).json({
+          error: "Forbidden",
+          message: "Account is deactivated"
         });
       }
 
       // Verify password
       const isValidPassword = await bcrypt.compare(password, user.password);
       if (!isValidPassword) {
-        return res.status(401).json({ 
-          error: "Unauthorized", 
-          message: "Invalid email or password" 
+        return res.status(401).json({
+          error: "Unauthorized",
+          message: "Invalid email or password"
         });
       }
 
@@ -367,9 +367,9 @@ export async function registerRoutes(
       });
     } catch (error) {
       console.error("Login error:", error);
-      res.status(500).json({ 
-        error: "Internal Server Error", 
-        message: "Failed to process login" 
+      res.status(500).json({
+        error: "Internal Server Error",
+        message: "Failed to process login"
       });
     }
   });
@@ -378,19 +378,19 @@ export async function registerRoutes(
   app.post("/api/auth/refresh", async (req, res) => {
     try {
       const { refreshToken: token } = req.body;
-      
+
       if (!token) {
-        return res.status(400).json({ 
-          error: "Bad Request", 
-          message: "Refresh token required" 
+        return res.status(400).json({
+          error: "Bad Request",
+          message: "Refresh token required"
         });
       }
 
       const payload = verifyRefreshToken(token);
       if (!payload) {
-        return res.status(401).json({ 
-          error: "Unauthorized", 
-          message: "Invalid refresh token" 
+        return res.status(401).json({
+          error: "Unauthorized",
+          message: "Invalid refresh token"
         });
       }
 
@@ -407,9 +407,9 @@ export async function registerRoutes(
         .limit(1);
 
       if (!storedToken) {
-        return res.status(401).json({ 
-          error: "Unauthorized", 
-          message: "Refresh token expired or revoked" 
+        return res.status(401).json({
+          error: "Unauthorized",
+          message: "Refresh token expired or revoked"
         });
       }
 
@@ -421,9 +421,9 @@ export async function registerRoutes(
         .limit(1);
 
       if (!user || !user.isActive) {
-        return res.status(401).json({ 
-          error: "Unauthorized", 
-          message: "User not found or deactivated" 
+        return res.status(401).json({
+          error: "Unauthorized",
+          message: "User not found or deactivated"
         });
       }
 
@@ -476,9 +476,9 @@ export async function registerRoutes(
       });
     } catch (error) {
       console.error("Token refresh error:", error);
-      res.status(500).json({ 
-        error: "Internal Server Error", 
-        message: "Failed to refresh token" 
+      res.status(500).json({
+        error: "Internal Server Error",
+        message: "Failed to refresh token"
       });
     }
   });
@@ -487,7 +487,7 @@ export async function registerRoutes(
   app.post("/api/auth/logout", authenticate, async (req, res) => {
     try {
       const { refreshToken: token } = req.body;
-      
+
       if (token) {
         const payload = verifyRefreshToken(token);
         if (payload) {
@@ -501,9 +501,9 @@ export async function registerRoutes(
       res.json({ message: "Logged out successfully" });
     } catch (error) {
       console.error("Logout error:", error);
-      res.status(500).json({ 
-        error: "Internal Server Error", 
-        message: "Failed to process logout" 
+      res.status(500).json({
+        error: "Internal Server Error",
+        message: "Failed to process logout"
       });
     }
   });
@@ -512,7 +512,7 @@ export async function registerRoutes(
   app.get("/api/auth/me", authenticate, loadFullUser, async (req, res) => {
     try {
       const user = req.user!;
-      
+
       // Get all restaurant associations for this user
       const restaurantAssociations = await db
         .select({
@@ -553,9 +553,9 @@ export async function registerRoutes(
       });
     } catch (error) {
       console.error("Get user error:", error);
-      res.status(500).json({ 
-        error: "Internal Server Error", 
-        message: "Failed to get user data" 
+      res.status(500).json({
+        error: "Internal Server Error",
+        message: "Failed to get user data"
       });
     }
   });
@@ -567,9 +567,9 @@ export async function registerRoutes(
       const user = req.user!;
 
       if (!restaurantId) {
-        return res.status(400).json({ 
-          error: "Bad Request", 
-          message: "Restaurant ID required" 
+        return res.status(400).json({
+          error: "Bad Request",
+          message: "Restaurant ID required"
         });
       }
 
@@ -592,9 +592,9 @@ export async function registerRoutes(
         .limit(1);
 
       if (!restaurantUser && !user.isSuperAdmin) {
-        return res.status(403).json({ 
-          error: "Forbidden", 
-          message: "No access to this restaurant" 
+        return res.status(403).json({
+          error: "Forbidden",
+          message: "No access to this restaurant"
         });
       }
 
@@ -622,9 +622,9 @@ export async function registerRoutes(
       });
     } catch (error) {
       console.error("Switch restaurant error:", error);
-      res.status(500).json({ 
-        error: "Internal Server Error", 
-        message: "Failed to switch restaurant" 
+      res.status(500).json({
+        error: "Internal Server Error",
+        message: "Failed to switch restaurant"
       });
     }
   });
@@ -644,9 +644,9 @@ export async function registerRoutes(
       res.json({ restaurants: allRestaurants });
     } catch (error) {
       console.error("List restaurants error:", error);
-      res.status(500).json({ 
-        error: "Internal Server Error", 
-        message: "Failed to list restaurants" 
+      res.status(500).json({
+        error: "Internal Server Error",
+        message: "Failed to list restaurants"
       });
     }
   });
@@ -673,9 +673,9 @@ export async function registerRoutes(
       res.json({ users: allUsers });
     } catch (error) {
       console.error("List users error:", error);
-      res.status(500).json({ 
-        error: "Internal Server Error", 
-        message: "Failed to list users" 
+      res.status(500).json({
+        error: "Internal Server Error",
+        message: "Failed to list users"
       });
     }
   });
@@ -683,15 +683,29 @@ export async function registerRoutes(
   // Create restaurant (super admin only)
   app.post("/api/admin/restaurants", authenticate, requireSuperAdmin, async (req, res) => {
     try {
-      const { name, slug, ...rest } = req.body;
+      // ✅ These will now come from the frontend form
+      const {
+        name,
+        slug,
+        timezone,
+        adminEmail,        // ← From frontend
+        adminPassword,     // ← From frontend
+        adminFirstName,    // ← From frontend
+        adminLastName,     // ← From frontend
+        ...rest
+      } = req.body;
 
       if (!name || !slug) {
-        return res.status(400).json({ 
-          error: "Bad Request", 
-          message: "Name and slug are required" 
+        return res.status(400).json({
+          error: "Bad Request",
+          message: "Name and slug are required"
         });
       }
 
+      // ✅ Check if admin email is provided
+      if (!adminEmail || !adminPassword) {
+        return res.status(400).json({ error: "Bad Request", message: "Admin email and password are required" });
+      }
       // Check slug uniqueness
       const [existing] = await db
         .select()
@@ -700,16 +714,91 @@ export async function registerRoutes(
         .limit(1);
 
       if (existing) {
-        return res.status(409).json({ 
-          error: "Conflict", 
-          message: "Restaurant with this slug already exists" 
+        return res.status(409).json({
+          error: "Conflict",
+          message: "Restaurant with this slug already exists"
         });
       }
-
+      // ✅ Step 1: Create restaurant (with email)
       const [restaurant] = await db
         .insert(restaurants)
-        .values({ name, slug, ...rest })
+        .values({
+          name,
+          slug,
+          timezone,
+          email: adminEmail,  // ← Store admin email here
+          ...rest
+        })
         .returning();
+
+      console.log("Restaurant created:", restaurant.id);
+
+      // ✅ Step 2: Check if user already exists
+      let [adminUser] = await db
+        .select()
+        .from(users)
+        .where(eq(users.email, adminEmail.toLowerCase()))
+        .limit(1);
+
+      if (!adminUser) {
+        // Create new admin user
+        console.log("Creating admin user:", adminEmail);
+        const hashedPassword = await bcrypt.hash(adminPassword, 10);
+        [adminUser] = await db
+          .insert(users)
+          .values({
+            email: adminEmail.toLowerCase(),
+            password: hashedPassword,
+            firstName: adminFirstName,
+            lastName: adminLastName,
+            isActive: true,
+            emailVerifiedAt: new Date(), // Auto-verify admin
+          })
+          .returning();
+        console.log("Admin user created:", adminUser.id);
+      }
+      else {
+        console.log("Admin user already exists:", adminUser.id);
+      }
+
+      // ✅ Step 3: Create admin role for this restaurant
+      let [adminRole] = await db
+        .select()
+        .from(roles)
+        .where(and(
+          eq(roles.restaurantId, restaurant.id),
+          eq(roles.name, "admin")
+        ))
+        .limit(1);
+
+      if (!adminRole) {
+        console.log("Creating admin role for restaurant");
+        [adminRole] = await db
+          .insert(roles)
+          .values({
+            restaurantId: restaurant.id,
+            name: "admin",
+            description: "Restaurant Administrator",
+            permissions: ["*"],  // Full access
+            isSystemRole: true,
+          })
+          .returning();
+        console.log("Admin role created:", adminRole.id);
+      }
+
+      // ✅ Step 4: Link admin user to restaurant
+      const [restaurantUser] = await db
+        .insert(restaurantUsers)
+        .values({
+          restaurantId: restaurant.id,
+          userId: adminUser.id,
+          roleId: adminRole.id,
+          isActive: true,
+          hiredAt: new Date(),
+        })
+        .returning();
+
+      console.log("Admin linked to restaurant:", restaurantUser.id);
 
       await createAuditLog({
         adminUserId: req.user!.userId,
@@ -721,12 +810,20 @@ export async function registerRoutes(
         req,
       });
 
-      res.status(201).json({ restaurant });
+      res.status(201).json({
+        restaurant,
+        adminUser: {
+          id: adminUser.id,
+          email: adminUser.email,
+          firstName: adminUser.firstName,
+          lastName: adminUser.lastName,
+        }
+      });
     } catch (error) {
       console.error("Create restaurant error:", error);
-      res.status(500).json({ 
-        error: "Internal Server Error", 
-        message: "Failed to create restaurant" 
+      res.status(500).json({
+        error: "Internal Server Error",
+        message: "Failed to create restaurant"
       });
     }
   });
@@ -743,9 +840,9 @@ export async function registerRoutes(
         .limit(1);
 
       if (!restaurant) {
-        return res.status(404).json({ 
-          error: "Not Found", 
-          message: "Restaurant not found" 
+        return res.status(404).json({
+          error: "Not Found",
+          message: "Restaurant not found"
         });
       }
 
@@ -765,9 +862,9 @@ export async function registerRoutes(
       });
     } catch (error) {
       console.error("Get restaurant details error:", error);
-      res.status(500).json({ 
-        error: "Internal Server Error", 
-        message: "Failed to get restaurant details" 
+      res.status(500).json({
+        error: "Internal Server Error",
+        message: "Failed to get restaurant details"
       });
     }
   });
@@ -785,9 +882,9 @@ export async function registerRoutes(
         .limit(1);
 
       if (!existing) {
-        return res.status(404).json({ 
-          error: "Not Found", 
-          message: "Restaurant not found" 
+        return res.status(404).json({
+          error: "Not Found",
+          message: "Restaurant not found"
         });
       }
 
@@ -818,9 +915,9 @@ export async function registerRoutes(
       res.json({ restaurant });
     } catch (error) {
       console.error("Update restaurant error:", error);
-      res.status(500).json({ 
-        error: "Internal Server Error", 
-        message: "Failed to update restaurant" 
+      res.status(500).json({
+        error: "Internal Server Error",
+        message: "Failed to update restaurant"
       });
     }
   });
@@ -832,9 +929,9 @@ export async function registerRoutes(
       const { domain, isPrimary = false } = req.body;
 
       if (!domain) {
-        return res.status(400).json({ 
-          error: "Bad Request", 
-          message: "Domain is required" 
+        return res.status(400).json({
+          error: "Bad Request",
+          message: "Domain is required"
         });
       }
 
@@ -845,9 +942,9 @@ export async function registerRoutes(
         .limit(1);
 
       if (!restaurant) {
-        return res.status(404).json({ 
-          error: "Not Found", 
-          message: "Restaurant not found" 
+        return res.status(404).json({
+          error: "Not Found",
+          message: "Restaurant not found"
         });
       }
 
@@ -859,9 +956,9 @@ export async function registerRoutes(
         .limit(1);
 
       if (existingDomain) {
-        return res.status(409).json({ 
-          error: "Conflict", 
-          message: "Domain is already in use" 
+        return res.status(409).json({
+          error: "Conflict",
+          message: "Domain is already in use"
         });
       }
 
@@ -884,9 +981,9 @@ export async function registerRoutes(
       res.status(201).json({ domain: newDomain });
     } catch (error) {
       console.error("Add domain error:", error);
-      res.status(500).json({ 
-        error: "Internal Server Error", 
-        message: "Failed to add domain" 
+      res.status(500).json({
+        error: "Internal Server Error",
+        message: "Failed to add domain"
       });
     }
   });
@@ -906,9 +1003,9 @@ export async function registerRoutes(
         .limit(1);
 
       if (!existingDomain) {
-        return res.status(404).json({ 
-          error: "Not Found", 
-          message: "Domain not found" 
+        return res.status(404).json({
+          error: "Not Found",
+          message: "Domain not found"
         });
       }
 
@@ -930,9 +1027,9 @@ export async function registerRoutes(
       res.json({ message: "Domain removed successfully" });
     } catch (error) {
       console.error("Remove domain error:", error);
-      res.status(500).json({ 
-        error: "Internal Server Error", 
-        message: "Failed to remove domain" 
+      res.status(500).json({
+        error: "Internal Server Error",
+        message: "Failed to remove domain"
       });
     }
   });
@@ -944,9 +1041,9 @@ export async function registerRoutes(
       const { features } = req.body; // { featureKey: { isEnabled: boolean, expiresAt?: string } }
 
       if (!features || typeof features !== 'object') {
-        return res.status(400).json({ 
-          error: "Bad Request", 
-          message: "Features object is required" 
+        return res.status(400).json({
+          error: "Bad Request",
+          message: "Features object is required"
         });
       }
 
@@ -957,9 +1054,9 @@ export async function registerRoutes(
         .limit(1);
 
       if (!restaurant) {
-        return res.status(404).json({ 
-          error: "Not Found", 
-          message: "Restaurant not found" 
+        return res.status(404).json({
+          error: "Not Found",
+          message: "Restaurant not found"
         });
       }
 
@@ -978,8 +1075,8 @@ export async function registerRoutes(
         if (existing) {
           const [updated] = await db
             .update(restaurantFeatureAllowlist)
-            .set({ 
-              isEnabled, 
+            .set({
+              isEnabled,
               expiresAt: expiresAt ? new Date(expiresAt) : null,
               updatedAt: new Date()
             })
@@ -1001,9 +1098,9 @@ export async function registerRoutes(
         } else {
           const [created] = await db
             .insert(restaurantFeatureAllowlist)
-            .values({ 
-              restaurantId, 
-              featureKey, 
+            .values({
+              restaurantId,
+              featureKey,
               isEnabled,
               expiresAt: expiresAt ? new Date(expiresAt) : null
             })
@@ -1028,9 +1125,9 @@ export async function registerRoutes(
       res.json({ features: results });
     } catch (error) {
       console.error("Set features error:", error);
-      res.status(500).json({ 
-        error: "Internal Server Error", 
-        message: "Failed to set features" 
+      res.status(500).json({
+        error: "Internal Server Error",
+        message: "Failed to set features"
       });
     }
   });
@@ -1042,9 +1139,9 @@ export async function registerRoutes(
       const { settings } = req.body; // { settingKey: settingValue }
 
       if (!settings || typeof settings !== 'object') {
-        return res.status(400).json({ 
-          error: "Bad Request", 
-          message: "Settings object is required" 
+        return res.status(400).json({
+          error: "Bad Request",
+          message: "Settings object is required"
         });
       }
 
@@ -1055,9 +1152,9 @@ export async function registerRoutes(
         .limit(1);
 
       if (!restaurant) {
-        return res.status(404).json({ 
-          error: "Not Found", 
-          message: "Restaurant not found" 
+        return res.status(404).json({
+          error: "Not Found",
+          message: "Restaurant not found"
         });
       }
 
@@ -1075,7 +1172,7 @@ export async function registerRoutes(
         if (existing) {
           const [updated] = await db
             .update(restaurantSettings)
-            .set({ 
+            .set({
               settingValue,
               updatedAt: new Date()
             })
@@ -1119,9 +1216,9 @@ export async function registerRoutes(
       res.json({ settings: results });
     } catch (error) {
       console.error("Set settings error:", error);
-      res.status(500).json({ 
-        error: "Internal Server Error", 
-        message: "Failed to set settings" 
+      res.status(500).json({
+        error: "Internal Server Error",
+        message: "Failed to set settings"
       });
     }
   });
@@ -1139,22 +1236,22 @@ export async function registerRoutes(
         .limit(1);
 
       if (!existing) {
-        return res.status(404).json({ 
-          error: "Not Found", 
-          message: "Restaurant not found" 
+        return res.status(404).json({
+          error: "Not Found",
+          message: "Restaurant not found"
         });
       }
 
       if (existing.suspendedAt) {
-        return res.status(400).json({ 
-          error: "Bad Request", 
-          message: "Restaurant is already suspended" 
+        return res.status(400).json({
+          error: "Bad Request",
+          message: "Restaurant is already suspended"
         });
       }
 
       const [restaurant] = await db
         .update(restaurants)
-        .set({ 
+        .set({
           suspendedAt: new Date(),
           suspendedReason: reason || "Suspended by administrator",
           updatedAt: new Date()
@@ -1177,9 +1274,9 @@ export async function registerRoutes(
       res.json({ restaurant, message: "Restaurant suspended successfully" });
     } catch (error) {
       console.error("Suspend restaurant error:", error);
-      res.status(500).json({ 
-        error: "Internal Server Error", 
-        message: "Failed to suspend restaurant" 
+      res.status(500).json({
+        error: "Internal Server Error",
+        message: "Failed to suspend restaurant"
       });
     }
   });
@@ -1196,22 +1293,22 @@ export async function registerRoutes(
         .limit(1);
 
       if (!existing) {
-        return res.status(404).json({ 
-          error: "Not Found", 
-          message: "Restaurant not found" 
+        return res.status(404).json({
+          error: "Not Found",
+          message: "Restaurant not found"
         });
       }
 
       if (!existing.suspendedAt) {
-        return res.status(400).json({ 
-          error: "Bad Request", 
-          message: "Restaurant is not suspended" 
+        return res.status(400).json({
+          error: "Bad Request",
+          message: "Restaurant is not suspended"
         });
       }
 
       const [restaurant] = await db
         .update(restaurants)
-        .set({ 
+        .set({
           suspendedAt: null,
           suspendedReason: null,
           updatedAt: new Date()
@@ -1233,12 +1330,69 @@ export async function registerRoutes(
       res.json({ restaurant, message: "Restaurant restored successfully" });
     } catch (error) {
       console.error("Restore restaurant error:", error);
-      res.status(500).json({ 
-        error: "Internal Server Error", 
-        message: "Failed to restore restaurant" 
+      res.status(500).json({
+        error: "Internal Server Error",
+        message: "Failed to restore restaurant"
       });
     }
   });
+
+  // Delete restaurant (super admin only) - PERMANENT deletion
+app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdmin, async (req, res) => {
+  try {
+    const { restaurantId } = req.params;
+
+    // Get restaurant details before deletion
+    const [restaurant] = await db
+      .select()
+      .from(restaurants)
+      .where(eq(restaurants.id, restaurantId))
+      .limit(1);
+
+    if (!restaurant) {
+      return res.status(404).json({
+        error: "Not Found",
+        message: "Restaurant not found"
+      });
+    }
+
+    console.log(`⚠️ DELETING RESTAURANT: ${restaurant.name} (${restaurantId})`);
+    console.log("This will permanently delete all associated data!");
+
+    // Delete the restaurant (cascading deletes will handle related data)
+    await db
+      .delete(restaurants)
+      .where(eq(restaurants.id, restaurantId));
+
+    // Create audit log
+    await createAuditLog({
+      adminUserId: req.user!.userId,
+      action: AUDIT_ACTIONS.RESTAURANT_DELETE,
+      targetType: "restaurant",
+      targetId: restaurantId,
+      targetName: restaurant.name,
+      previousValue: restaurant,
+      metadata: {
+        deletedAt: new Date().toISOString(),
+        reason: "Permanent deletion by super admin"
+      },
+      req,
+    });
+
+    console.log(`✅ Restaurant deleted: ${restaurant.name}`);
+
+    res.json({
+      message: "Restaurant deleted permanently",
+      restaurantName: restaurant.name
+    });
+  } catch (error) {
+    console.error("Delete restaurant error:", error);
+    res.status(500).json({
+      error: "Internal Server Error",
+      message: "Failed to delete restaurant"
+    });
+  }
+});
 
   // Create restaurant admin user (super admin only)
   app.post("/api/admin/restaurants/:restaurantId/admin", authenticate, requireSuperAdmin, async (req, res) => {
@@ -1247,9 +1401,9 @@ export async function registerRoutes(
       const { email, password, firstName, lastName, phone } = req.body;
 
       if (!email || !password) {
-        return res.status(400).json({ 
-          error: "Bad Request", 
-          message: "Email and password are required" 
+        return res.status(400).json({
+          error: "Bad Request",
+          message: "Email and password are required"
         });
       }
 
@@ -1260,9 +1414,9 @@ export async function registerRoutes(
         .limit(1);
 
       if (!restaurant) {
-        return res.status(404).json({ 
-          error: "Not Found", 
-          message: "Restaurant not found" 
+        return res.status(404).json({
+          error: "Not Found",
+          message: "Restaurant not found"
         });
       }
 
@@ -1286,9 +1440,9 @@ export async function registerRoutes(
           .limit(1);
 
         if (existingAssoc) {
-          return res.status(409).json({ 
-            error: "Conflict", 
-            message: "User is already associated with this restaurant" 
+          return res.status(409).json({
+            error: "Conflict",
+            message: "User is already associated with this restaurant"
           });
         }
         user = existingUser;
@@ -1386,9 +1540,9 @@ export async function registerRoutes(
       });
     } catch (error) {
       console.error("Create restaurant admin error:", error);
-      res.status(500).json({ 
-        error: "Internal Server Error", 
-        message: "Failed to create restaurant admin" 
+      res.status(500).json({
+        error: "Internal Server Error",
+        message: "Failed to create restaurant admin"
       });
     }
   });
@@ -1435,9 +1589,9 @@ export async function registerRoutes(
       res.json({ logs, limit, offset });
     } catch (error) {
       console.error("Get audit logs error:", error);
-      res.status(500).json({ 
-        error: "Internal Server Error", 
-        message: "Failed to get audit logs" 
+      res.status(500).json({
+        error: "Internal Server Error",
+        message: "Failed to get audit logs"
       });
     }
   });
@@ -1482,9 +1636,9 @@ export async function registerRoutes(
         res.json({ staff });
       } catch (error) {
         console.error("List staff error:", error);
-        res.status(500).json({ 
-          error: "Internal Server Error", 
-          message: "Failed to list staff" 
+        res.status(500).json({
+          error: "Internal Server Error",
+          message: "Failed to list staff"
         });
       }
     }
@@ -1503,9 +1657,9 @@ export async function registerRoutes(
         const { email, password, firstName, lastName, phone, roleId, pin } = req.body;
 
         if (!email || !password || !roleId) {
-          return res.status(400).json({ 
-            error: "Bad Request", 
-            message: "Email, password, and roleId are required" 
+          return res.status(400).json({
+            error: "Bad Request",
+            message: "Email, password, and roleId are required"
           });
         }
 
@@ -1520,9 +1674,9 @@ export async function registerRoutes(
           .limit(1);
 
         if (!role) {
-          return res.status(400).json({ 
-            error: "Bad Request", 
-            message: "Invalid role for this restaurant" 
+          return res.status(400).json({
+            error: "Bad Request",
+            message: "Invalid role for this restaurant"
           });
         }
 
@@ -1560,9 +1714,9 @@ export async function registerRoutes(
           .limit(1);
 
         if (existingMembership) {
-          return res.status(409).json({ 
-            error: "Conflict", 
-            message: "User is already a staff member of this restaurant" 
+          return res.status(409).json({
+            error: "Conflict",
+            message: "User is already a staff member of this restaurant"
           });
         }
 
@@ -1593,9 +1747,9 @@ export async function registerRoutes(
         });
       } catch (error) {
         console.error("Add staff error:", error);
-        res.status(500).json({ 
-          error: "Internal Server Error", 
-          message: "Failed to add staff member" 
+        res.status(500).json({
+          error: "Internal Server Error",
+          message: "Failed to add staff member"
         });
       }
     }
@@ -1624,9 +1778,9 @@ export async function registerRoutes(
           .limit(1);
 
         if (!existingStaff) {
-          return res.status(404).json({ 
-            error: "Not Found", 
-            message: "Staff member not found" 
+          return res.status(404).json({
+            error: "Not Found",
+            message: "Staff member not found"
           });
         }
 
@@ -1642,9 +1796,9 @@ export async function registerRoutes(
             .limit(1);
 
           if (!role) {
-            return res.status(400).json({ 
-              error: "Bad Request", 
-              message: "Invalid role for this restaurant" 
+            return res.status(400).json({
+              error: "Bad Request",
+              message: "Invalid role for this restaurant"
             });
           }
         }
@@ -1663,9 +1817,9 @@ export async function registerRoutes(
         res.json({ staff: updated });
       } catch (error) {
         console.error("Update staff error:", error);
-        res.status(500).json({ 
-          error: "Internal Server Error", 
-          message: "Failed to update staff member" 
+        res.status(500).json({
+          error: "Internal Server Error",
+          message: "Failed to update staff member"
         });
       }
     }
@@ -1691,18 +1845,18 @@ export async function registerRoutes(
           .returning();
 
         if (!deleted) {
-          return res.status(404).json({ 
-            error: "Not Found", 
-            message: "Staff member not found" 
+          return res.status(404).json({
+            error: "Not Found",
+            message: "Staff member not found"
           });
         }
 
         res.json({ message: "Staff member removed" });
       } catch (error) {
         console.error("Remove staff error:", error);
-        res.status(500).json({ 
-          error: "Internal Server Error", 
-          message: "Failed to remove staff member" 
+        res.status(500).json({
+          error: "Internal Server Error",
+          message: "Failed to remove staff member"
         });
       }
     }
@@ -1731,9 +1885,9 @@ export async function registerRoutes(
         res.json({ roles: rolesList });
       } catch (error) {
         console.error("List roles error:", error);
-        res.status(500).json({ 
-          error: "Internal Server Error", 
-          message: "Failed to list roles" 
+        res.status(500).json({
+          error: "Internal Server Error",
+          message: "Failed to list roles"
         });
       }
     }
@@ -1746,9 +1900,9 @@ export async function registerRoutes(
   // Get restaurant by slug (public)
   app.get("/api/restaurants/:tenantSlug", resolveTenantBySlug, async (req, res) => {
     if (!req.restaurant) {
-      return res.status(404).json({ 
-        error: "Not Found", 
-        message: "Restaurant not found" 
+      return res.status(404).json({
+        error: "Not Found",
+        message: "Restaurant not found"
       });
     }
 
@@ -2305,10 +2459,10 @@ export async function registerRoutes(
         const groupIds = linkedGroups.map(lg => lg.group.id);
         const modifierList = groupIds.length > 0
           ? await db
-              .select()
-              .from(modifiers)
-              .where(sql`${modifiers.modifierGroupId} IN (${sql.raw(groupIds.map(id => `'${id}'`).join(","))})`)
-              .orderBy(modifiers.sortOrder)
+            .select()
+            .from(modifiers)
+            .where(sql`${modifiers.modifierGroupId} IN (${sql.raw(groupIds.map(id => `'${id}'`).join(","))})`)
+            .orderBy(modifiers.sortOrder)
           : [];
 
         const modifiersByGroup = modifierList.reduce((acc, mod) => {
@@ -3408,7 +3562,7 @@ export async function registerRoutes(
     // Get the max display number for today and increment
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
+
     const [result] = await db
       .select({ maxDisplay: sql<number>`COALESCE(MAX(${orders.displayNumber}), 0)` })
       .from(orders)
@@ -3416,7 +3570,7 @@ export async function registerRoutes(
         eq(orders.restaurantId, restaurantId),
         gt(orders.createdAt, today)
       ));
-    
+
     return (result?.maxDisplay ?? 0) + 1;
   }
 
@@ -3445,21 +3599,21 @@ export async function registerRoutes(
           .where(eq(qrTokens.token, token));
 
         if (!qrToken) {
-          return res.status(404).json({ 
+          return res.status(404).json({
             error: "Invalid QR Code",
             message: "This QR code is not valid or has been removed"
           });
         }
 
         if (!qrToken.isActive) {
-          return res.status(410).json({ 
+          return res.status(410).json({
             error: "QR Code Expired",
             message: "This QR code is no longer active. Please ask staff for assistance."
           });
         }
 
         if (qrToken.expiresAt && new Date(qrToken.expiresAt) < new Date()) {
-          return res.status(410).json({ 
+          return res.status(410).json({
             error: "QR Code Expired",
             message: "This QR code has expired. Please ask staff for assistance."
           });
@@ -3468,7 +3622,7 @@ export async function registerRoutes(
         // Update scan count
         await db
           .update(qrTokens)
-          .set({ 
+          .set({
             scansCount: sql`${qrTokens.scansCount} + 1`,
             lastScannedAt: new Date(),
             updatedAt: new Date()
@@ -3490,14 +3644,14 @@ export async function registerRoutes(
           .where(eq(restaurants.id, qrToken.restaurantId));
 
         if (!restaurant) {
-          return res.status(404).json({ 
+          return res.status(404).json({
             error: "Restaurant Not Found",
             message: "The restaurant associated with this QR code was not found"
           });
         }
 
         if (restaurant.suspendedAt) {
-          return res.status(403).json({ 
+          return res.status(403).json({
             error: "Restaurant Unavailable",
             message: "This restaurant is currently not accepting orders"
           });
@@ -3506,7 +3660,7 @@ export async function registerRoutes(
         // Check if QR ordering feature is enabled
         const hasQrFeature = await checkFeature(qrToken.restaurantId, "qr");
         if (!hasQrFeature) {
-          return res.status(403).json({ 
+          return res.status(403).json({
             error: "QR Ordering Unavailable",
             message: "QR ordering is not available for this restaurant"
           });
@@ -3516,7 +3670,7 @@ export async function registerRoutes(
         const qrSettings = await getQrOrderingSettings(qrToken.restaurantId);
 
         if (!qrSettings.enabled) {
-          return res.status(403).json({ 
+          return res.status(403).json({
             error: "QR Ordering Disabled",
             message: "QR ordering is currently disabled for this restaurant"
           });
@@ -3604,8 +3758,8 @@ export async function registerRoutes(
 
         // Only return tables if manual mode with dropdown
         if (qrSettings.mode !== "manual") {
-          return res.status(400).json({ 
-            error: "Table selection not required in auto mode" 
+          return res.status(400).json({
+            error: "Table selection not required in auto mode"
           });
         }
 
@@ -3630,7 +3784,7 @@ export async function registerRoutes(
           label: t.name || `Table ${t.number}`,
         }));
 
-        res.json({ 
+        res.json({
           tables,
           inputType: qrSettings.manualInputType,
         });
@@ -3668,7 +3822,7 @@ export async function registerRoutes(
           .select({ timezone: restaurants.timezone })
           .from(restaurants)
           .where(eq(restaurants.id, restaurantId));
-        
+
         const restaurantTimezone = restaurant?.timezone || 'America/New_York';
 
         // Get active menus with their categories and items
@@ -3683,7 +3837,7 @@ export async function registerRoutes(
 
         // Build full menu structure
         const menuData = [];
-        
+
         for (const menu of activeMenus) {
           // Check time availability if specified (using restaurant's timezone)
           if (menu.availableFrom && menu.availableTo) {
@@ -3845,7 +3999,7 @@ export async function registerRoutes(
       try {
         const validation = createOrderSchema.safeParse(req.body);
         if (!validation.success) {
-          return res.status(400).json({ 
+          return res.status(400).json({
             error: "Invalid order data",
             details: validation.error.flatten().fieldErrors
           });
@@ -3957,7 +4111,7 @@ export async function registerRoutes(
         for (const item of orderData.items) {
           const unitPrice = parseFloat(item.unitPrice);
           const modifiersTotal = item.modifiers.reduce(
-            (sum, mod) => sum + parseFloat(mod.price), 
+            (sum, mod) => sum + parseFloat(mod.price),
             0
           );
           const itemTotal = (unitPrice + modifiersTotal) * item.quantity;
@@ -4046,8 +4200,8 @@ export async function registerRoutes(
 
         // Generate customer tracking token for real-time updates
         const trackingToken = generateCustomerTrackingToken(
-          order.id, 
-          restaurantId, 
+          order.id,
+          restaurantId,
           finalTableId || undefined
         );
 
@@ -4187,7 +4341,7 @@ export async function registerRoutes(
   async function generatePosOrderNumber(restaurantId: string): Promise<{ orderNumber: string; displayNumber: number }> {
     const today = new Date();
     const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
-    
+
     // Get today's order count for display number
     const startOfDay = new Date(today);
     startOfDay.setHours(0, 0, 0, 0);
@@ -4198,10 +4352,10 @@ export async function registerRoutes(
         eq(orders.restaurantId, restaurantId),
         gt(orders.createdAt, startOfDay)
       ));
-    
+
     const displayNumber = (countResult?.count || 0) + 1;
     const orderNumber = `POS-${dateStr}-${displayNumber.toString().padStart(4, '0')}`;
-    
+
     return { orderNumber, displayNumber };
   }
 
@@ -4247,7 +4401,7 @@ export async function registerRoutes(
 
         // Apply filters
         const conditions = [eq(orders.restaurantId, restaurantId)];
-        
+
         if (status && typeof status === 'string') {
           conditions.push(eq(orders.status, status));
         }
@@ -4633,7 +4787,7 @@ export async function registerRoutes(
             .where(eq(diningTables.id, tableId));
         }
 
-        res.status(201).json({ 
+        res.status(201).json({
           message: "Order created",
           order: newOrder,
         });
@@ -4792,7 +4946,7 @@ export async function registerRoutes(
         }
 
         const updates: any = { updatedAt: new Date() };
-        
+
         if (quantity !== undefined) {
           updates.quantity = quantity;
           const unitPrice = parseFloat(item.unitPrice);
@@ -4817,7 +4971,7 @@ export async function registerRoutes(
         if (quantity !== undefined) {
           const allItems = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
           const newSubtotal = allItems.reduce((sum, i) => sum + parseFloat(i.totalPrice), 0);
-          
+
           const [restaurant] = await db.select({ taxRate: restaurants.taxRate }).from(restaurants).where(eq(restaurants.id, restaurantId));
           const taxRate = parseFloat(restaurant?.taxRate || "0");
           const newTaxAmount = newSubtotal * (taxRate / 100);
@@ -4877,7 +5031,7 @@ export async function registerRoutes(
         // Recalculate order totals
         const allItems = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
         const newSubtotal = allItems.reduce((sum, i) => sum + parseFloat(i.totalPrice), 0);
-        
+
         const [restaurant] = await db.select({ taxRate: restaurants.taxRate }).from(restaurants).where(eq(restaurants.id, restaurantId));
         const taxRate = parseFloat(restaurant?.taxRate || "0");
         const newTaxAmount = newSubtotal * (taxRate / 100);
@@ -4944,7 +5098,7 @@ export async function registerRoutes(
         }
 
         const updates: any = { status, updatedAt: new Date() };
-        
+
         if (status === 'completed') {
           updates.completedAt = new Date();
           // Free up the table
@@ -5042,7 +5196,7 @@ export async function registerRoutes(
               sql`${orders.status} NOT IN ('completed', 'cancelled')`,
               sql`${orders.id} != ${orderId}`
             ));
-          
+
           if (!otherOrders || otherOrders.count === 0) {
             await db.update(diningTables).set({ status: 'available', updatedAt: new Date() }).where(eq(diningTables.id, oldTableId));
           }
@@ -5132,7 +5286,7 @@ export async function registerRoutes(
                 eq(orders.tableId, sourceOrder.tableId),
                 sql`${orders.status} NOT IN ('completed', 'cancelled')`
               ));
-            
+
             if (!otherOrders || otherOrders.count === 0) {
               await db.update(diningTables).set({ status: 'available', updatedAt: new Date() }).where(eq(diningTables.id, sourceOrder.tableId));
             }
@@ -5237,14 +5391,14 @@ export async function registerRoutes(
                 sql`${orders.status} NOT IN ('completed', 'cancelled')`,
                 sql`${orders.id} != ${orderId}`
               ));
-            
+
             if (!otherOrders || otherOrders.count === 0) {
               await db.update(diningTables).set({ status: 'available', updatedAt: new Date() }).where(eq(diningTables.id, updatedOrder.tableId));
             }
           }
         }
 
-        res.status(201).json({ 
+        res.status(201).json({
           message: "Payment recorded",
           payment,
           isFullyPaid: newPaidAmount >= orderTotal,
@@ -5385,7 +5539,7 @@ export async function registerRoutes(
           }
         }
 
-        res.json({ 
+        res.json({
           methods,
           providerStatus: {
             stripe: providerStatus.stripe.configured,
@@ -5502,7 +5656,7 @@ export async function registerRoutes(
             tipAmount: tipAmount.toString(),
             processedAt: new Date(),
             updatedAt: new Date(),
-            metadata: { 
+            metadata: {
               ...(payment.metadata as object || {}),
               markedPaidBy: req.user?.userId,
               markedPaidAt: new Date().toISOString(),
@@ -6237,13 +6391,13 @@ export async function registerRoutes(
   // ============================================================================
   // Legacy slug-based endpoints (kept for backwards compatibility)
   // ============================================================================
-  
+
   // Public menu endpoint by slug (redirects to use token-based approach)
   app.get("/api/:tenantSlug/menu", resolveTenantBySlug, async (req, res) => {
     if (!req.restaurant) {
       return res.status(404).json({ error: "Restaurant not found" });
     }
-    res.status(400).json({ 
+    res.status(400).json({
       error: "Please use token-based menu access",
       message: "Scan the QR code to access the menu"
     });
@@ -6254,7 +6408,7 @@ export async function registerRoutes(
   });
 
   app.post("/api/:tenantSlug/orders", resolveTenantBySlug, async (req, res) => {
-    res.status(400).json({ 
+    res.status(400).json({
       error: "Please use token-based order creation",
       message: "Use POST /api/order with a valid QR token"
     });
