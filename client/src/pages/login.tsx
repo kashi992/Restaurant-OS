@@ -36,8 +36,8 @@ export default function LoginPage() {
     setIsLoading(true);
     try {
       await login(data.email, data.password);
-       // The App.tsx root route will handle the correct destination
-    await new Promise(resolve => setTimeout(resolve, 100));
+
+    await new Promise(resolve => setTimeout(resolve, 150));
       toast({
         title: "Welcome back!",
         description: "You have been logged in successfully.",

@@ -86,23 +86,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (email: string, password: string) => {
     const res = await apiRequest("POST", "/api/auth/login", { email, password });
+      if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.message || "Login failed");
+  }
+
     const data = await res.json();
+    console.log("🔐 Login response:", data);
     setAccessToken(data.accessToken);
 
-     // ✅ Set user immediately from login response (don't wait for fetchUser)
-  setUser({
+   // ✅ Set user immediately from login response
+  const userObj = {
     id: data.user.id,
     email: data.user.email,
     firstName: data.user.firstName || "",
     lastName: data.user.lastName || "",
     role: data.user.roleName || "",
-    restaurantId: data.user.restaurantId,
+    restaurantId: data.user.restaurantId || null,
     isSuperAdmin: data.user.isSuperAdmin || false,
     permissions: data.user.permissions || [],
-  });
+  };
   
-  // Still fetch full user data in background
-    await fetchUser(data.accessToken);
+   console.log("👤 Setting user:", userObj); // ✅ DEBUG LOG
+  setUser(userObj);
+ 
+  return;
+    // await fetchUser(data.accessToken);
   };
 
   const logout = async () => {
