@@ -129,6 +129,15 @@ QR orders return a `trackingToken` JWT that customers can use to:
 - `npx tsx scripts/seed.ts` - Seed database with sample data
 
 ## Recent Changes
+- **2026-01-30**: Phase 14 - Security Enforcement & Bug Fixes
+  - Added `requireActiveRestaurant` middleware to 62+ restaurant dashboard endpoints
+  - Login flow now blocks suspended/expired restaurants with clear error messages
+  - Subscription status priority: suspended > expired > inactive > active
+  - Fixed menu CRUD frontend to handle array response directly (not wrapped in data.menus)
+  - Fixed tables list API to include active qrToken for each table
+  - Fixed QR generation mutation to properly update with token property
+  - Middleware chain: authenticate → requireRestaurantAccess → requireActiveRestaurant
+
 - **2026-01-30**: Authentication Persistence with HTTP-only Cookies
   - Added cookie-parser middleware for secure cookie handling
   - Login now sets httpOnly refresh token cookie (7-day expiry, lax sameSite)
