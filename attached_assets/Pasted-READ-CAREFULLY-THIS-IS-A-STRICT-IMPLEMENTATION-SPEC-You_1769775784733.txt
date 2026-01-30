@@ -1,0 +1,208 @@
+READ CAREFULLY. THIS IS A STRICT IMPLEMENTATION SPEC. 
+You MUST NOT skip any item. You MUST NOT implement partial UI-only fixes. This must be a production-grade, fully wired, dynamic system.
+
+BRANCH RULE (MANDATORY):
+1) You MUST work ONLY on branch: sohaib-dev
+2) Confirm by running and printing: git branch --show-current
+3) If not on sohaib-dev: checkout sohaib-dev, pull latest, then proceed.
+4) At the end you MUST commit and push to origin/sohaib-dev.
+
+SCOPE RULE:
+- Fix ONLY the issues described below. Do not refactor unrelated code. Do not introduce new frameworks.
+- All behavior must be enforced SERVER-SIDE first, and UI must reflect the server state.
+
+===========================================================
+GOAL: Professional Dynamic Product
+===========================================================
+A) SUPER ADMIN: Subscription (duration) must work like a real SaaS subscription
+B) SUPER ADMIN: Restaurant list must update instantly without refresh + admin must remain logged in after refresh
+C) SUPER ADMIN: Feature toggles must dynamically control Restaurant dashboard (POS/QR/etc) + server must block disabled features
+D) SUPER ADMIN: Edit restaurant must exist and persist
+E) RESTAURANT: Menu creation must work and display correctly
+F) RESTAURANT: Table QR must generate QR and allow replacement
+G) Remove all linking mismatches between FE/BE (response shape mismatches)
+
+===========================================================
+A) SUBSCRIPTION DURATION + AUTO SUSPEND + MANUAL SUSPEND
+===========================================================
+
+BUSINESS RULE:
+- When Super Admin creates a restaurant, they set a subscription period (example: 1 year).
+- The restaurant stays ACTIVE until subscription end.
+- After subscription end date/time passes, restaurant is automatically SUSPENDED (EXPIRED).
+- Super Admin can also MANUALLY suspend a restaurant anytime.
+- Super Admin can extend subscription (e.g. +1 month, +12 months), reactivating if needed.
+
+DATA MODEL (MANDATORY):
+Ensure DB has and API returns these fields per restaurant:
+- subscriptionStartAt (timestamp/date)
+- subscriptionEndAt (timestamp/date)
+- manualSuspended (boolean) OR isSuspended (boolean) with suspendedReason
+- suspendedAt (timestamp nullable)
+- suspendedReason (string nullable)
+- features (json) containing per-restaurant feature flags (pos, qr, etc.)
+
+IMPLEMENTATION MUST:
+1) Create Restaurant form:
+   - subscriptionStartAt default: now
+   - subscriptionDuration options: 1 month, 3 months, 6 months, 12 months, 24 months
+   - subscriptionEndAt auto-calculated (but editable optional)
+2) On create: backend must persist these values.
+3) Auto Suspend logic MUST be enforced server-side:
+   - A restaurant is considered "expired" if now >= subscriptionEndAt.
+   - Expired restaurants must be blocked from:
+     - restaurant login
+     - restaurant dashboard API requests
+     - public QR ordering endpoints
+4) Manual suspend:
+   - Super admin can "Suspend now" anytime (sets manualSuspended/isSuspended true)
+   - Super admin can "Reactivate" ONLY if subscription is still valid or subscription has been extended.
+5) UI must show:
+   - Status badge: Active / Suspended (Manual) / Suspended (Expired)
+   - Subscription start/end dates
+   - Days remaining (never show "undefined days"; show 0 if expired)
+   - Buttons: Extend subscription (+1, +3, +6, +12 months), Suspend now, Reactivate (when allowed)
+
+ACCEPTANCE TESTS (MUST PASS):
+- Create restaurant with 12 months -> immediately shows Active + correct dates + days remaining not undefined.
+- Manually set subscriptionEndAt in DB to past (or adjust code to test) -> restaurant becomes expired and cannot login / cannot use QR.
+- Manual suspend blocks login even if subscription valid.
+- Extend subscription updates end date and restores Active (if not manually suspended OR if reactivated).
+
+===========================================================
+B) SUPER ADMIN RESTAURANT LIST MUST UPDATE INSTANTLY + NO LOGOUT ON REFRESH
+===========================================================
+
+PROBLEM 1: After creating restaurant, list doesn’t show until refresh.
+FIX:
+- Use TanStack Query (or current state mgmt) correctly:
+  - After create mutation success, immediately update UI:
+    - invalidateQuery(["adminRestaurants"]) OR optimistic insert into cache
+- Do the same after update/extend/toggle: list + detail must reflect instantly.
+
+PROBLEM 2: Refresh logs admin out.
+FIX AUTH PERSISTENCE PROFESSIONALLY:
+- Ensure auth token/session persists after page refresh.
+- If JWT stored in cookie:
+  - ensure cookie attributes correct for localhost
+  - ensure backend sends cookie correctly and frontend includes credentials
+- If token stored in localStorage:
+  - ensure app loads token and sets headers automatically
+  - on app boot call /me endpoint to restore session
+- Do NOT force logout if token is valid.
+- Fix any redirect logic that triggers login screen on refresh incorrectly.
+
+ACCEPTANCE TESTS:
+- Create restaurant -> it appears in list instantly without manual refresh.
+- Refresh page while logged in as super admin -> still logged in and stays on same page.
+- No random logout when navigating between admin pages.
+
+===========================================================
+C) FEATURE TOGGLES MUST CONTROL RESTAURANT DASHBOARD DYNAMICALLY (POS toggle example)
+===========================================================
+
+BUSINESS RULE:
+- If super admin turns POS OFF for restaurant, then:
+  1) POS sidebar item must disappear for that restaurant dashboard
+  2) POS routes must be inaccessible (even manually typing URL)
+  3) POS backend endpoints must return 403 for that restaurant
+
+REQUIREMENTS:
+1) Persist per-restaurant features in DB (features json).
+2) Ensure restaurant session payload includes features always (login response / me endpoint).
+3) UI:
+   - Sidebar renders items conditionally based on features.
+   - Router guards show "Feature Disabled" page if route accessed directly.
+4) Backend:
+   - Create a middleware: requireFeature("pos") or equivalent.
+   - Apply it to POS endpoints and any feature endpoints.
+   - Return 403 with clear message.
+
+ACCEPTANCE TEST:
+- Toggle POS OFF in super admin -> login as restaurant -> POS sidebar gone.
+- Manually open /dashboard/pos -> shows Feature Disabled.
+- Any POS API call returns 403.
+
+===========================================================
+D) EDIT RESTAURANT MUST EXIST + PERSIST
+===========================================================
+
+REQUIREMENTS:
+- In restaurant detail page (super admin), add an Edit tab/section:
+  - name, slug, address, phone, timezone
+  - subscriptionStartAt/subscriptionEndAt (or extend buttons)
+  - features toggles (or separate tab)
+- Save via PATCH endpoint and reflect immediately in UI.
+- After save, refresh page -> data persists.
+
+ACCEPTANCE TEST:
+- Edit restaurant name -> save -> list + detail updates instantly -> refresh retains changes.
+
+===========================================================
+E) RESTAURANT MENU: MUST CREATE + DISPLAY (NO API SHAPE MISMATCH)
+===========================================================
+
+REQUIREMENTS:
+- Restaurant dashboard menu module must:
+  - create categories
+  - create items
+  - list them correctly after create and after refresh
+- Ensure correct scoping by restaurantId.
+- Fix response-shape mismatches:
+  - If backend returns array, frontend must not expect {menus:...}
+  - Standardize responses OR adjust frontend accordingly.
+
+ACCEPTANCE TEST:
+- Create category + item -> appears immediately.
+- Refresh -> still present.
+
+===========================================================
+F) TABLE QR: MUST GENERATE QR + REPLACE QR
+===========================================================
+
+REQUIREMENTS:
+- For each table:
+  - generate QR token / QR URL
+  - render QR image in UI
+  - support Replace QR (new token)
+  - ensure scan resolves to correct restaurant + table in public flow
+- Fix any mismatch like token vs qrToken naming.
+- If there is optional “upload barcode image” feature, implement only if already in code; otherwise token-based replacement is enough.
+
+ACCEPTANCE TEST:
+- Generate QR -> shows QR image.
+- Replace -> QR changes and old token no longer works.
+
+===========================================================
+G) EXECUTION STEPS YOU MUST FOLLOW (NO SKIPPING)
+===========================================================
+
+1) Print current branch.
+2) Identify all endpoints used by:
+   - admin restaurant create/list/detail/update
+   - restaurant login/me
+   - features toggles
+   - menu CRUD
+   - tables + QR token endpoints
+3) Standardize or reconcile FE/BE contracts for these endpoints.
+4) Implement server-side rules:
+   - subscription expiry enforcement
+   - feature enforcement middleware
+5) Implement frontend wiring:
+   - query invalidations/optimistic updates
+   - auth persistence
+   - conditional sidebar + route guards
+6) Run locally (in Replit) and validate ALL acceptance tests.
+7) Commit with messages:
+   - "fix: subscription persistence + auto-expiry suspension"
+   - "fix: feature flags enforced server-side + UI gating"
+   - "fix: admin list invalidation + auth persistence"
+   - "fix: menu + qr flows wired end-to-end"
+8) Push to origin sohaib-dev.
+
+STOP CONDITION:
+- If any acceptance test fails, do not stop. Fix until it passes.
+- Do not claim done unless ALL acceptance tests above pass.
+
+DELIVERABLE:
+- Code pushed to origin/sohaib-dev and working end-to-end as described.

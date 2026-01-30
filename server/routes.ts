@@ -45,6 +45,7 @@ import {
   optionalAuth,
   requireSuperAdmin,
   requireRestaurantAccess,
+  requireActiveRestaurant,
   requirePermission,
   requireRole,
   resolveTenantBySlug,
@@ -309,6 +310,25 @@ export async function registerRoutes(
           .limit(1);
 
         if (restaurantUser) {
+          // Check if restaurant is suspended
+          if (restaurantUser.restaurant.isSuspended) {
+            return res.status(403).json({
+              error: "Restaurant Suspended",
+              message: "This restaurant has been suspended. Please contact support.",
+              status: "suspended",
+            });
+          }
+
+          // Check if restaurant subscription has expired
+          if (restaurantUser.restaurant.subscriptionEndAt && 
+              new Date(restaurantUser.restaurant.subscriptionEndAt) < new Date()) {
+            return res.status(403).json({
+              error: "Subscription Expired",
+              message: "Your restaurant subscription has expired. Please contact your administrator to renew.",
+              status: "expired",
+            });
+          }
+
           // Get features for this restaurant
           const featureList = await db
             .select()
@@ -1807,7 +1827,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
     "/api/restaurants/:restaurantId/staff",
     authenticate,
     resolveTenantFromToken,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requirePermission("staff:read"),
     async (req, res) => {
       try {
@@ -1851,7 +1871,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
     "/api/restaurants/:restaurantId/staff",
     authenticate,
     resolveTenantFromToken,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requirePermission("staff:create"),
     async (req, res) => {
       try {
@@ -1962,7 +1982,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
     "/api/restaurants/:restaurantId/staff/:staffId",
     authenticate,
     resolveTenantFromToken,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requirePermission("staff:update"),
     async (req, res) => {
       try {
@@ -2032,7 +2052,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
     "/api/restaurants/:restaurantId/staff/:staffId",
     authenticate,
     resolveTenantFromToken,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requirePermission("staff:delete"),
     async (req, res) => {
       try {
@@ -2073,7 +2093,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
     "/api/restaurants/:restaurantId/roles",
     authenticate,
     resolveTenantFromToken,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     async (req, res) => {
       try {
         const { restaurantId } = req.params;
@@ -2131,7 +2151,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.get(
     "/api/restaurants/:restaurantId/features",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     async (req, res) => {
       try {
         const { features, settings } = await getRestaurantFeatures(req.params.restaurantId);
@@ -2291,7 +2311,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.get(
     "/api/restaurants/:restaurantId/menus",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requirePermission("menu:read"),
     async (req, res) => {
       try {
@@ -2313,7 +2333,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.post(
     "/api/restaurants/:restaurantId/menus",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requirePermission("menu:create"),
     async (req, res) => {
       try {
@@ -2351,7 +2371,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.patch(
     "/api/restaurants/:restaurantId/menus/:menuId",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requirePermission("menu:update"),
     async (req, res) => {
       try {
@@ -2385,7 +2405,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.delete(
     "/api/restaurants/:restaurantId/menus/:menuId",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requirePermission("menu:delete"),
     async (req, res) => {
       try {
@@ -2417,7 +2437,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.get(
     "/api/restaurants/:restaurantId/categories",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requirePermission("menu:read"),
     async (req, res) => {
       try {
@@ -2447,7 +2467,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.post(
     "/api/restaurants/:restaurantId/categories",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requirePermission("menu:create"),
     async (req, res) => {
       try {
@@ -2483,7 +2503,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.patch(
     "/api/restaurants/:restaurantId/categories/:categoryId",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requirePermission("menu:update"),
     async (req, res) => {
       try {
@@ -2517,7 +2537,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.delete(
     "/api/restaurants/:restaurantId/categories/:categoryId",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requirePermission("menu:delete"),
     async (req, res) => {
       try {
@@ -2549,7 +2569,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.get(
     "/api/restaurants/:restaurantId/menu-items",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requirePermission("menu:read"),
     async (req, res) => {
       try {
@@ -2579,7 +2599,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.post(
     "/api/restaurants/:restaurantId/menu-items",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requirePermission("menu:create"),
     async (req, res) => {
       try {
@@ -2630,7 +2650,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.get(
     "/api/restaurants/:restaurantId/menu-items/:itemId",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requirePermission("menu:read"),
     async (req, res) => {
       try {
@@ -2692,7 +2712,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.patch(
     "/api/restaurants/:restaurantId/menu-items/:itemId",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requirePermission("menu:update"),
     async (req, res) => {
       try {
@@ -2731,7 +2751,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.delete(
     "/api/restaurants/:restaurantId/menu-items/:itemId",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requirePermission("menu:delete"),
     async (req, res) => {
       try {
@@ -2763,7 +2783,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.get(
     "/api/restaurants/:restaurantId/modifier-groups",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requirePermission("menu:read"),
     async (req, res) => {
       try {
@@ -2787,7 +2807,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.post(
     "/api/restaurants/:restaurantId/modifier-groups",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requirePermission("menu:create"),
     async (req, res) => {
       try {
@@ -2823,7 +2843,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.patch(
     "/api/restaurants/:restaurantId/modifier-groups/:groupId",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requirePermission("menu:update"),
     async (req, res) => {
       try {
@@ -2857,7 +2877,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.delete(
     "/api/restaurants/:restaurantId/modifier-groups/:groupId",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requirePermission("menu:delete"),
     async (req, res) => {
       try {
@@ -2889,7 +2909,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.get(
     "/api/restaurants/:restaurantId/modifier-groups/:groupId/modifiers",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requirePermission("menu:read"),
     async (req, res) => {
       try {
@@ -2923,7 +2943,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.post(
     "/api/restaurants/:restaurantId/modifier-groups/:groupId/modifiers",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requirePermission("menu:create"),
     async (req, res) => {
       try {
@@ -2968,7 +2988,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.patch(
     "/api/restaurants/:restaurantId/modifier-groups/:groupId/modifiers/:modifierId",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requirePermission("menu:update"),
     async (req, res) => {
       try {
@@ -3014,7 +3034,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.delete(
     "/api/restaurants/:restaurantId/modifier-groups/:groupId/modifiers/:modifierId",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requirePermission("menu:delete"),
     async (req, res) => {
       try {
@@ -3056,7 +3076,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.post(
     "/api/restaurants/:restaurantId/menu-items/:itemId/modifier-groups",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requirePermission("menu:update"),
     async (req, res) => {
       try {
@@ -3107,7 +3127,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.delete(
     "/api/restaurants/:restaurantId/menu-items/:itemId/modifier-groups/:groupId",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requirePermission("menu:update"),
     async (req, res) => {
       try {
@@ -3158,7 +3178,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.get(
     "/api/restaurants/:restaurantId/tables",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requirePermission("tables:read"),
     async (req, res) => {
       try {
@@ -3182,7 +3202,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.post(
     "/api/restaurants/:restaurantId/tables",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requirePermission("tables:create"),
     async (req, res) => {
       try {
@@ -3223,7 +3243,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.patch(
     "/api/restaurants/:restaurantId/tables/:tableId",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requirePermission("tables:update"),
     async (req, res) => {
       try {
@@ -3260,7 +3280,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.delete(
     "/api/restaurants/:restaurantId/tables/:tableId",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requirePermission("tables:delete"),
     async (req, res) => {
       try {
@@ -3292,7 +3312,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.get(
     "/api/restaurants/:restaurantId/qr-tokens",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requireFeature("qr"),
     requirePermission("tables:read"),
     async (req, res) => {
@@ -3331,7 +3351,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.post(
     "/api/restaurants/:restaurantId/tables/:tableId/qr-token",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requireFeature("qr"),
     requirePermission("tables:update"),
     async (req, res) => {
@@ -3386,7 +3406,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.post(
     "/api/restaurants/:restaurantId/qr-tokens/bulk",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requireFeature("qr"),
     requirePermission("tables:update"),
     async (req, res) => {
@@ -3443,7 +3463,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.delete(
     "/api/restaurants/:restaurantId/qr-tokens/:tokenId",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requireFeature("qr"),
     requirePermission("tables:update"),
     async (req, res) => {
@@ -3480,7 +3500,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.get(
     "/api/restaurants/:restaurantId/settings",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requirePermission("settings:read"),
     async (req, res) => {
       try {
@@ -3521,7 +3541,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.patch(
     "/api/restaurants/:restaurantId/settings/:settingKey",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requirePermission("settings:update"),
     async (req, res) => {
       try {
@@ -3601,7 +3621,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.put(
     "/api/restaurants/:restaurantId/settings",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requirePermission("settings:update"),
     async (req, res) => {
       try {
@@ -4565,7 +4585,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.get(
     "/api/restaurants/:restaurantId/orders",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requireFeature("pos"),
     requirePermission("orders:read"),
     async (req, res) => {
@@ -4660,7 +4680,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.get(
     "/api/restaurants/:restaurantId/orders/live",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requireFeature("pos"),
     requirePermission("orders:read"),
     async (req, res) => {
@@ -4709,7 +4729,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.get(
     "/api/restaurants/:restaurantId/tables/:tableId/orders",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requireFeature("pos"),
     requirePermission("orders:read"),
     async (req, res) => {
@@ -4759,7 +4779,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.get(
     "/api/restaurants/:restaurantId/orders/:orderId",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requireFeature("pos"),
     requirePermission("orders:read"),
     async (req, res) => {
@@ -4840,7 +4860,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.post(
     "/api/restaurants/:restaurantId/orders",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requireFeature("pos"),
     requirePermission("orders:create"),
     async (req, res) => {
@@ -5004,7 +5024,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.post(
     "/api/restaurants/:restaurantId/orders/:orderId/items",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requireFeature("pos"),
     requirePermission("orders:update"),
     async (req, res) => {
@@ -5115,7 +5135,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.patch(
     "/api/restaurants/:restaurantId/orders/:orderId/items/:itemId",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requireFeature("pos"),
     requirePermission("orders:update"),
     async (req, res) => {
@@ -5199,7 +5219,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.delete(
     "/api/restaurants/:restaurantId/orders/:orderId/items/:itemId",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requireFeature("pos"),
     requirePermission("orders:update"),
     async (req, res) => {
@@ -5269,7 +5289,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.patch(
     "/api/restaurants/:restaurantId/orders/:orderId/status",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requireFeature("pos"),
     requirePermission("orders:update"),
     async (req, res) => {
@@ -5346,7 +5366,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.patch(
     "/api/restaurants/:restaurantId/orders/:orderId/table",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requireFeature("pos"),
     requirePermission("orders:update"),
     async (req, res) => {
@@ -5418,7 +5438,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.post(
     "/api/restaurants/:restaurantId/orders/merge",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requireFeature("pos"),
     requirePermission("orders:update"),
     async (req, res) => {
@@ -5519,7 +5539,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.post(
     "/api/restaurants/:restaurantId/orders/:orderId/payments",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requireFeature("pos"),
     requirePermission("orders:update"),
     async (req, res) => {
@@ -5616,7 +5636,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.get(
     "/api/restaurants/:restaurantId/orders/:orderId/payments",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requireFeature("pos"),
     requirePermission("orders:read"),
     async (req, res) => {
@@ -5669,7 +5689,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.get(
     "/api/restaurants/:restaurantId/payment-methods",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     async (req, res) => {
       try {
         const { restaurantId } = req.params;
@@ -5825,7 +5845,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.patch(
     "/api/restaurants/:restaurantId/payments/:paymentId/mark-paid",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requireFeature("pos"),
     requirePermission("orders:update"),
     async (req, res) => {
@@ -5948,7 +5968,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.post(
     "/api/restaurants/:restaurantId/payments/stripe/create-intent",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     async (req, res) => {
       const providerStatus = paymentProviders.getPaymentProviderStatus();
       if (!providerStatus.stripe.configured) {
@@ -5968,7 +5988,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.post(
     "/api/restaurants/:restaurantId/payments/paypal/create-order",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     async (req, res) => {
       const providerStatus = paymentProviders.getPaymentProviderStatus();
       if (!providerStatus.paypal.configured) {
@@ -5993,7 +6013,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.post(
     "/api/restaurants/:restaurantId/orders/:orderId/split",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     requireFeature("split_billing"),
     requireSoftToggle("split_billing", "enabled"),
     async (req, res) => {
@@ -6197,7 +6217,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.get(
     "/api/restaurants/:restaurantId/orders/:orderId/split",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     async (req, res) => {
       try {
         const { orderId } = req.params;
@@ -6261,7 +6281,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.post(
     "/api/restaurants/:restaurantId/orders/:orderId/split/lock",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     async (req, res) => {
       try {
         const { orderId } = req.params;
@@ -6297,7 +6317,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.delete(
     "/api/restaurants/:restaurantId/orders/:orderId/split",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     async (req, res) => {
       try {
         const { orderId } = req.params;
@@ -6357,7 +6377,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   app.post(
     "/api/restaurants/:restaurantId/orders/:orderId/split/shares/:shareId/pay",
     authenticate,
-    requireRestaurantAccess,
+    requireRestaurantAccess, requireActiveRestaurant,
     async (req, res) => {
       try {
         const { restaurantId, orderId, shareId } = req.params;

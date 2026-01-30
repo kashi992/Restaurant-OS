@@ -290,3 +290,76 @@ export async function loadFullUser(req: Request, res: Response, next: NextFuncti
     next();
   }
 }
+
+/**
+ * Middleware to ensure the restaurant is active (not suspended or expired).
+ * Must be used after tenantId has been resolved (via authenticate or resolveTenantFromToken).
+ * Super admins bypass this check.
+ */
+export async function requireActiveRestaurant(req: Request, res: Response, next: NextFunction) {
+  // Super admins bypass restaurant status checks
+  if (req.user?.isSuperAdmin) {
+    return next();
+  }
+
+  const restaurantId = req.tenantId || req.params.restaurantId || req.user?.restaurantId;
+
+  if (!restaurantId) {
+    return res.status(400).json({
+      error: "Bad Request",
+      message: "Restaurant context required",
+    });
+  }
+
+  try {
+    const [restaurant] = await db
+      .select()
+      .from(restaurants)
+      .where(eq(restaurants.id, restaurantId))
+      .limit(1);
+
+    if (!restaurant) {
+      return res.status(404).json({
+        error: "Not Found",
+        message: "Restaurant not found",
+      });
+    }
+
+    // Check manual suspension first
+    if (restaurant.isSuspended) {
+      return res.status(403).json({
+        error: "Restaurant Suspended",
+        message: "This restaurant has been suspended. Please contact support.",
+        status: "suspended",
+      });
+    }
+
+    // Check subscription expiry
+    if (restaurant.subscriptionEndAt && new Date(restaurant.subscriptionEndAt) < new Date()) {
+      return res.status(403).json({
+        error: "Subscription Expired",
+        message: "Your restaurant subscription has expired. Please contact your administrator to renew.",
+        status: "expired",
+      });
+    }
+
+    // Check if restaurant is inactive
+    if (!restaurant.isActive) {
+      return res.status(403).json({
+        error: "Restaurant Inactive",
+        message: "This restaurant is currently inactive.",
+        status: "inactive",
+      });
+    }
+
+    // Restaurant is active, continue
+    req.restaurant = restaurant;
+    next();
+  } catch (error) {
+    console.error("Error checking restaurant status:", error);
+    return res.status(500).json({
+      error: "Internal Server Error",
+      message: "Failed to verify restaurant status",
+    });
+  }
+}
