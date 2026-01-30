@@ -113,8 +113,7 @@ export default function MenuManager() {
         credentials: "include",
       });
       if (!res.ok) throw new Error("Failed to fetch menus");
-      const data = await res.json();
-      return data.menus;
+      return res.json();
     },
     enabled: !!accessToken && !!restaurantId,
   });

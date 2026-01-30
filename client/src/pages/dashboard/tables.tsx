@@ -105,7 +105,10 @@ export default function TablesManager() {
     mutationFn: async (tableId: string) => {
       const res = await fetch(`/api/restaurants/${restaurantId}/tables/${tableId}/qr-token`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${accessToken}` },
+        headers: { 
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}` 
+        },
         credentials: "include",
       });
       if (!res.ok) throw new Error("Failed to generate QR code");
@@ -113,7 +116,7 @@ export default function TablesManager() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "tables"] });
-      setSelectedTable({ ...selectedTable!, qrToken: data.qrToken });
+      setSelectedTable({ ...selectedTable!, qrToken: data.token });
       toast({ title: "QR code generated" });
     },
     onError: (error) => {

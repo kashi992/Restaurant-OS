@@ -3190,7 +3190,24 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
           .where(eq(diningTables.restaurantId, restaurantId))
           .orderBy(diningTables.number);
 
-        res.json(tableList);
+        // Get active QR tokens for all tables
+        const activeTokens = await db
+          .select()
+          .from(qrTokens)
+          .where(and(eq(qrTokens.restaurantId, restaurantId), eq(qrTokens.isActive, true)));
+
+        // Map tokens by tableId for quick lookup
+        const tokensByTable = new Map(
+          activeTokens.map((token) => [token.tableId, token.token])
+        );
+
+        // Add qrToken to each table
+        const tablesWithQr = tableList.map((table) => ({
+          ...table,
+          qrToken: tokensByTable.get(table.id) || null,
+        }));
+
+        res.json(tablesWithQr);
       } catch (error) {
         console.error("List tables error:", error);
         res.status(500).json({ error: "Failed to list tables" });
