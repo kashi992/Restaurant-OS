@@ -33,6 +33,7 @@ const createRestaurantSchema = z.object({
     .min(2, "Slug must be at least 2 characters")
     .regex(/^[a-z0-9-]+$/, "Slug must be lowercase letters, numbers, and hyphens only"),
   timezone: z.string().min(1, "Timezone is required"),
+  subscriptionDuration: z.string().min(1, "Subscription duration is required"),
   adminEmail: z.string().email("Valid admin email required"),
   adminFirstName: z.string().min(1, "Admin first name required"),
   adminLastName: z.string().min(1, "Admin last name required"),
@@ -40,6 +41,14 @@ const createRestaurantSchema = z.object({
 });
 
 type CreateRestaurantForm = z.infer<typeof createRestaurantSchema>;
+
+const subscriptionDurations = [
+  { value: "1", label: "1 Month" },
+  { value: "3", label: "3 Months" },
+  { value: "6", label: "6 Months" },
+  { value: "12", label: "1 Year" },
+  { value: "24", label: "2 Years" },
+];
 
 const timezones = [
   "America/New_York",
@@ -69,6 +78,7 @@ export default function CreateRestaurantPage() {
       name: "",
       slug: "",
       timezone: "America/New_York",
+      subscriptionDuration: "12",
       adminEmail: "",
       adminFirstName: "",
       adminLastName: "",
@@ -189,30 +199,57 @@ export default function CreateRestaurantPage() {
                 />
               </div>
 
-              <FormField
-                control={form.control}
-                name="timezone"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Timezone</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                      <FormControl>
-                        <SelectTrigger data-testid="select-timezone">
-                          <SelectValue placeholder="Select timezone" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {timezones.map((tz) => (
-                          <SelectItem key={tz} value={tz}>
-                            {tz.replace(/_/g, " ")}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <div className="grid gap-4 sm:grid-cols-2">
+                <FormField
+                  control={form.control}
+                  name="timezone"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Timezone</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-timezone">
+                            <SelectValue placeholder="Select timezone" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {timezones.map((tz) => (
+                            <SelectItem key={tz} value={tz}>
+                              {tz.replace(/_/g, " ")}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="subscriptionDuration"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Subscription Duration</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-subscription-duration">
+                            <SelectValue placeholder="Select duration" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {subscriptionDurations.map((duration) => (
+                            <SelectItem key={duration.value} value={duration.value}>
+                              {duration.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
 
               <div className="border-t pt-6">
                 <h3 className="text-lg font-medium mb-4">Restaurant Admin Account</h3>

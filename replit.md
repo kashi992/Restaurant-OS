@@ -28,13 +28,14 @@ A full-stack, multi-tenant restaurant Point of Sale (POS) system with integrated
 - `POST /api/auth/refresh` - Refresh access token
 - `GET /api/auth/me` - Get current user info
 
-### Super Admin (Phase 4)
-- `GET /api/admin/restaurants` - List all restaurants
-- `POST /api/admin/restaurants` - Create restaurant
-- `GET /api/admin/restaurants/:id` - Get restaurant details
+### Super Admin (Phase 4 + 13)
+- `GET /api/admin/restaurants` - List all restaurants (with computed status, daysRemaining)
+- `POST /api/admin/restaurants` - Create restaurant (with subscription duration)
+- `GET /api/admin/restaurants/:id` - Get restaurant details (with subscription info)
 - `PATCH /api/admin/restaurants/:id` - Update restaurant
-- `POST /api/admin/restaurants/:id/suspend` - Suspend restaurant
-- `POST /api/admin/restaurants/:id/restore` - Restore restaurant
+- `POST /api/admin/restaurants/:id/suspend` - Suspend restaurant (sets isSuspended=true)
+- `POST /api/admin/restaurants/:id/restore` - Restore restaurant (sets isSuspended=false)
+- `POST /api/admin/restaurants/:id/extend` - Extend subscription (months or endDate)
 
 ### Restaurant Dashboard - Menu (Phase 5)
 - `GET/POST /api/restaurants/:restaurantId/menus` - List/Create menus
@@ -128,6 +129,17 @@ QR orders return a `trackingToken` JWT that customers can use to:
 - `npx tsx scripts/seed.ts` - Seed database with sample data
 
 ## Recent Changes
+- **2026-01-30**: Phase 13 - Subscription Management System Complete
+  - Database schema: Added `isSuspended`, `subscriptionStartAt`, `subscriptionEndAt` fields to restaurants
+  - Status computation: Priority order is suspended > expired > inactive > active
+  - Create restaurant form: Subscription duration selection (1 month to 2 years)
+  - Admin dashboard: Shows subscription end date and days remaining with expiration warnings
+  - Restaurant detail page: New Subscription tab with extend functionality (+1/3/6/12 months)
+  - API endpoints: POST /api/admin/restaurants/:id/extend for subscription extension
+  - Suspend/restore: Updated to use `isSuspended` field for manual vs expiration distinction
+  - Status badges: Color-coded (green=Active, red=Suspended, orange=Expired, gray=Inactive)
+  - Admin settings page created to fix 404 error
+
 - **2026-01-07**: Phase 12 - Deployment Packaging Complete
   - Created .env.example with all environment variables documented
   - PM2 ecosystem config (ecosystem.config.cjs) with cluster mode

@@ -1,0 +1,116 @@
+You are working on branch: sohaib-dev (DO NOT touch main).
+
+Project: Restaurant based application. Stack is React + Vite frontend and Node/Express backend with database (Drizzle/Postgres). Replit previously created components but some are not linked properly. Fix these specific issues ONLY and make sure pages are wired end-to-end.
+
+========================================
+A) SUPER ADMIN FEATURES
+========================================
+
+1) Restaurant Subscription/Duration + Auto Suspend (IMPORTANT CHANGE)
+Business rule:
+- A party/customer can buy (subscribe/lease) a restaurant for a fixed period (example: 1 year).
+- When Super Admin creates a restaurant, admin must set a subscription duration and/or end date.
+- After the duration ends, the restaurant should automatically become suspended (expired).
+- There must ALSO be a manual suspend feature that can suspend a restaurant anytime after it’s created.
+
+Implementation requirements:
+- On "Create Restaurant" form add fields:
+  - subscriptionStartDate (default: today)
+  - subscriptionDuration (example options: 1 month, 3 months, 6 months, 1 year, 2 years) OR allow admin to pick an end date directly
+  - subscriptionEndDate (auto-calculated if duration selected, but editable if needed)
+- Store in DB fields like:
+  - subscriptionStartAt (date)
+  - subscriptionEndAt (date)
+  - isSuspended (boolean)
+  - suspendedReason (optional)
+  - suspendedAt (optional)
+- Automatic suspension rule:
+  - If current time >= subscriptionEndAt, restaurant is treated as suspended (expired).
+  - This must be enforced in:
+    - restaurant login
+    - any restaurant dashboard API access
+    - QR ordering / customer flow (public)
+- Manual suspend rule:
+  - Super admin can click “Suspend” anytime
+  - Super admin can click “Unsuspend/Reactivate” (ONLY if subscription is still valid OR if admin extends subscription)
+  - Show status label: Active / Suspended (Manual) / Suspended (Expired)
+
+Admin UI requirements:
+- Restaurants list + restaurant details page should show:
+  - Subscription end date
+  - Days remaining
+  - Status badge (Active / Expired / Suspended)
+- Provide action buttons:
+  - Suspend now (manual)
+  - Reactivate (if allowed)
+  - Extend subscription (add X months/years and update subscriptionEndAt)
+
+Acceptance:
+- When creating restaurant with 1 year subscription, it remains active until end date.
+- After end date passes, it becomes suspended automatically.
+- Manual suspend works anytime.
+- Expired/suspended restaurants cannot login and QR ordering is blocked.
+
+2) Restaurant Toggle Settings must be Dynamic
+- Super admin can toggle restaurant feature settings (e.g. QR ordering, split billing, payment methods, etc.).
+- Ensure toggles are saved per-restaurant in DB and reflect correctly on refresh.
+- When toggle OFF: restaurant dashboard/customer flow must hide/disable that feature.
+- When toggle ON: feature must activate.
+
+Acceptance:
+- Toggle state persists and behavior changes in UI + API.
+
+3) Edit Restaurant
+- Add edit feature for restaurant profile:
+  - fields: name, address, phone, timezone, opening hours (whatever exists in schema)
+  - Save updates via API and persist in DB.
+- Must also allow editing subscription end date (extend/shorten) from super admin.
+
+Acceptance:
+- Admin can edit, save, refresh, and see updated values.
+
+4) Super Admin sidebar Settings 404
+- Sidebar has Settings menu that currently routes to missing page.
+- Create route + page OR correct route to existing page.
+- No more 404.
+
+Acceptance:
+- Clicking Settings opens a valid page.
+
+========================================
+B) RESTAURANT LOGIN FIXES
+========================================
+
+1) Menu not created / not showing
+- In Restaurant dashboard, menu module is not working properly.
+- Fix API + frontend linking so restaurant can:
+  - Create menu categories
+  - Create menu items
+  - View menu list
+- Ensure correct restaurantId scoping.
+
+Acceptance:
+- Restaurant can create menu item and it shows in list after refresh.
+
+2) Table QR not generating QR code + ability to replace QR
+- Fix QR generation for each table:
+  - Generate QR token
+  - Render QR image in UI
+  - Allow "Replace QR" to generate a new token
+  - Allow admin to upload/replace a barcode image (if feature exists) OR keep it token-based but must support replacement.
+
+Acceptance:
+- QR shows on UI and scanning token links to correct table/restaurant.
+- Replace QR changes token and updates QR.
+
+========================================
+C) IMPORTANT RULES
+========================================
+- Use existing code patterns and API structure, do not introduce a new framework.
+- Ensure types match backend responses (no mismatch like expecting qrToken while backend returns token).
+- Ensure subscription expiry enforcement is server-side (not only UI).
+- After changes, run checks: build frontend, start backend, verify routes don’t 404.
+- Commit changes to sohaib-dev with clear commit messages.
+
+Deliverable:
+- All above issues fixed and linked end-to-end.

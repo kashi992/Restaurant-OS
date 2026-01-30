@@ -16,6 +16,8 @@ import {
   Settings,
   Shield,
   Globe,
+  Calendar,
+  Clock,
 } from "lucide-react";
 
 interface Restaurant {
@@ -24,6 +26,10 @@ interface Restaurant {
   slug: string;
   status: string;
   timezone: string;
+  subscriptionStartAt: string | null;
+  subscriptionEndAt: string | null;
+  isSuspended: boolean;
+  daysRemaining: number | null;
 }
 
 interface FeatureAllowlist {
@@ -104,15 +110,54 @@ export default function RestaurantDetailPage() {
     return features?.[key]?.isEnabled ?? false;
   };
 
+  const extendMutation = useMutation({
+    mutationFn: async (months: number) => {
+      const res = await fetch(`/api/admin/restaurants/${restaurantId}/extend`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        credentials: "include",
+        body: JSON.stringify({ months }),
+      });
+      if (!res.ok) throw new Error("Failed to extend subscription");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Subscription Extended",
+        description: data.message,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/restaurants", restaurantId] });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to extend subscription",
+        variant: "destructive",
+      });
+    },
+  });
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "active":
         return <Badge className="bg-green-500/10 text-green-600 dark:text-green-400">Active</Badge>;
       case "suspended":
-        return <Badge variant="destructive">Suspended</Badge>;
+        return <Badge variant="destructive">Suspended (Manual)</Badge>;
+      case "expired":
+        return <Badge className="bg-orange-500/10 text-orange-600 dark:text-orange-400">Expired</Badge>;
+      case "inactive":
+        return <Badge variant="secondary">Inactive</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
+  };
+
+  const formatDate = (dateStr: string | null) => {
+    if (!dateStr) return "N/A";
+    return new Date(dateStr).toLocaleDateString();
   };
 
   if (loadingRestaurant) {
@@ -154,8 +199,12 @@ export default function RestaurantDetailPage() {
         </div>
       </div>
 
-      <Tabs defaultValue="features">
-        <TabsList>
+      <Tabs defaultValue="subscription">
+        <TabsList className="flex-wrap">
+          <TabsTrigger value="subscription" data-testid="tab-subscription">
+            <Calendar className="mr-2 h-4 w-4" />
+            Subscription
+          </TabsTrigger>
           <TabsTrigger value="features" data-testid="tab-features">
             <Shield className="mr-2 h-4 w-4" />
             Features
@@ -169,6 +218,71 @@ export default function RestaurantDetailPage() {
             Domains
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="subscription" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Calendar className="h-5 w-5" />
+                Subscription Status
+              </CardTitle>
+              <CardDescription>
+                Manage subscription period and status for this restaurant.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <label className="text-sm text-muted-foreground">Current Status</label>
+                  <div>{getStatusBadge(restaurant.status)}</div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm text-muted-foreground">Days Remaining</label>
+                  <div className={`font-medium ${
+                    restaurant.daysRemaining !== null && restaurant.daysRemaining < 30 
+                      ? "text-orange-500" 
+                      : ""
+                  }`}>
+                    {restaurant.daysRemaining !== null ? `${restaurant.daysRemaining} days` : "N/A"}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm text-muted-foreground">Subscription Start</label>
+                  <div className="font-medium">{formatDate(restaurant.subscriptionStartAt)}</div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm text-muted-foreground">Subscription End</label>
+                  <div className={`font-medium ${restaurant.status === "expired" ? "text-destructive" : ""}`}>
+                    {formatDate(restaurant.subscriptionEndAt)}
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t pt-6">
+                <h4 className="font-medium mb-4 flex items-center gap-2">
+                  <Clock className="h-4 w-4" />
+                  Extend Subscription
+                </h4>
+                <div className="flex flex-wrap gap-2">
+                  {[1, 3, 6, 12].map((months) => (
+                    <Button
+                      key={months}
+                      variant="outline"
+                      onClick={() => extendMutation.mutate(months)}
+                      disabled={extendMutation.isPending}
+                      data-testid={`button-extend-${months}`}
+                    >
+                      +{months} {months === 1 ? "Month" : "Months"}
+                    </Button>
+                  ))}
+                </div>
+                {extendMutation.isPending && (
+                  <p className="text-sm text-muted-foreground mt-2">Extending subscription...</p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         <TabsContent value="features" className="space-y-4">
           <Card>

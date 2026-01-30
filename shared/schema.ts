@@ -41,6 +41,9 @@ export const restaurants = pgTable("restaurants", {
   currency: text("currency").default("USD"),
   taxRate: decimal("tax_rate", { precision: 5, scale: 4 }).default("0.0000"),
   isActive: boolean("is_active").default(true),
+  subscriptionStartAt: timestamp("subscription_start_at").defaultNow(),
+  subscriptionEndAt: timestamp("subscription_end_at"),
+  isSuspended: boolean("is_suspended").default(false),
   suspendedAt: timestamp("suspended_at"),
   suspendedReason: text("suspended_reason"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -48,6 +51,7 @@ export const restaurants = pgTable("restaurants", {
 }, (table) => [
   uniqueIndex("restaurants_slug_idx").on(table.slug),
   index("restaurants_is_active_idx").on(table.isActive),
+  index("restaurants_subscription_end_idx").on(table.subscriptionEndAt),
 ]);
 
 // Restaurant custom domains for white-labeling

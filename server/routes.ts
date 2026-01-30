@@ -633,6 +633,28 @@ export async function registerRoutes(
   // Super Admin Endpoints
   // ============================================================================
 
+  // Helper function to compute restaurant status
+  const computeRestaurantStatus = (restaurant: any) => {
+    const now = new Date();
+    
+    // Check manual suspension first
+    if (restaurant.isSuspended) {
+      return "suspended";
+    }
+    
+    // Check subscription expiry
+    if (restaurant.subscriptionEndAt && new Date(restaurant.subscriptionEndAt) < now) {
+      return "expired";
+    }
+    
+    // Check if active
+    if (!restaurant.isActive) {
+      return "inactive";
+    }
+    
+    return "active";
+  };
+
   // List all restaurants (super admin only)
   app.get("/api/admin/restaurants", authenticate, requireSuperAdmin, async (req, res) => {
     try {
@@ -641,7 +663,16 @@ export async function registerRoutes(
         .from(restaurants)
         .orderBy(restaurants.name);
 
-      res.json({ restaurants: allRestaurants });
+      // Add computed status to each restaurant
+      const restaurantsWithStatus = allRestaurants.map((r) => ({
+        ...r,
+        status: computeRestaurantStatus(r),
+        daysRemaining: r.subscriptionEndAt 
+          ? Math.max(0, Math.ceil((new Date(r.subscriptionEndAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+          : null,
+      }));
+
+      res.json({ restaurants: restaurantsWithStatus });
     } catch (error) {
       console.error("List restaurants error:", error);
       res.status(500).json({
@@ -692,6 +723,8 @@ export async function registerRoutes(
         adminPassword,     // ← From frontend
         adminFirstName,    // ← From frontend
         adminLastName,     // ← From frontend
+        subscriptionDuration, // ← Subscription duration in months
+        subscriptionEndDate,  // ← Custom end date (optional)
         ...rest
       } = req.body;
 
@@ -719,7 +752,19 @@ export async function registerRoutes(
           message: "Restaurant with this slug already exists"
         });
       }
-      // ✅ Step 1: Create restaurant (with email)
+
+      // Calculate subscription end date
+      const subscriptionStartAt = new Date();
+      let subscriptionEndAt: Date | null = null;
+      
+      if (subscriptionEndDate) {
+        subscriptionEndAt = new Date(subscriptionEndDate);
+      } else if (subscriptionDuration) {
+        subscriptionEndAt = new Date(subscriptionStartAt);
+        subscriptionEndAt.setMonth(subscriptionEndAt.getMonth() + parseInt(subscriptionDuration));
+      }
+
+      // ✅ Step 1: Create restaurant (with email and subscription)
       const [restaurant] = await db
         .insert(restaurants)
         .values({
@@ -727,6 +772,9 @@ export async function registerRoutes(
           slug,
           timezone,
           email: adminEmail,  // ← Store admin email here
+          subscriptionStartAt,
+          subscriptionEndAt,
+          isSuspended: false,
           ...rest
         })
         .returning();
@@ -853,8 +901,18 @@ export async function registerRoutes(
         db.select({ id: restaurantUsers.id }).from(restaurantUsers).where(eq(restaurantUsers.restaurantId, restaurantId)),
       ]);
 
+      // Compute status and days remaining
+      const status = computeRestaurantStatus(restaurant);
+      const daysRemaining = restaurant.subscriptionEndAt 
+        ? Math.max(0, Math.ceil((new Date(restaurant.subscriptionEndAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+        : null;
+
       res.json({
-        restaurant,
+        restaurant: {
+          ...restaurant,
+          status,
+          daysRemaining,
+        },
         domains,
         features: features.reduce((acc, f) => ({ ...acc, [f.featureKey]: { isEnabled: f.isEnabled, expiresAt: f.expiresAt } }), {}),
         settings: settings.reduce((acc, s) => ({ ...acc, [s.settingKey]: s.settingValue }), {}),
@@ -1242,7 +1300,7 @@ export async function registerRoutes(
         });
       }
 
-      if (existing.suspendedAt) {
+      if (existing.isSuspended) {
         return res.status(400).json({
           error: "Bad Request",
           message: "Restaurant is already suspended"
@@ -1252,6 +1310,7 @@ export async function registerRoutes(
       const [restaurant] = await db
         .update(restaurants)
         .set({
+          isSuspended: true,
           suspendedAt: new Date(),
           suspendedReason: reason || "Suspended by administrator",
           updatedAt: new Date()
@@ -1299,7 +1358,16 @@ export async function registerRoutes(
         });
       }
 
-      if (!existing.suspendedAt) {
+      // Check if restaurant is manually suspended (not just expired)
+      if (!existing.isSuspended) {
+        // If not manually suspended, check if it's expired and can be restored
+        const isExpired = existing.subscriptionEndAt && new Date(existing.subscriptionEndAt) < new Date();
+        if (isExpired) {
+          return res.status(400).json({
+            error: "Bad Request",
+            message: "Restaurant subscription has expired. Please extend the subscription first."
+          });
+        }
         return res.status(400).json({
           error: "Bad Request",
           message: "Restaurant is not suspended"
@@ -1309,6 +1377,7 @@ export async function registerRoutes(
       const [restaurant] = await db
         .update(restaurants)
         .set({
+          isSuspended: false,
           suspendedAt: null,
           suspendedReason: null,
           updatedAt: new Date()
@@ -1333,6 +1402,77 @@ export async function registerRoutes(
       res.status(500).json({
         error: "Internal Server Error",
         message: "Failed to restore restaurant"
+      });
+    }
+  });
+
+  // Extend subscription (super admin only)
+  app.post("/api/admin/restaurants/:restaurantId/extend", authenticate, requireSuperAdmin, async (req, res) => {
+    try {
+      const { restaurantId } = req.params;
+      const { months, endDate } = req.body;
+
+      const [existing] = await db
+        .select()
+        .from(restaurants)
+        .where(eq(restaurants.id, restaurantId))
+        .limit(1);
+
+      if (!existing) {
+        return res.status(404).json({
+          error: "Not Found",
+          message: "Restaurant not found"
+        });
+      }
+
+      let newEndDate: Date;
+      
+      if (endDate) {
+        newEndDate = new Date(endDate);
+      } else if (months) {
+        // Extend from current end date or from now if expired
+        const baseDate = existing.subscriptionEndAt && new Date(existing.subscriptionEndAt) > new Date() 
+          ? new Date(existing.subscriptionEndAt)
+          : new Date();
+        newEndDate = new Date(baseDate);
+        newEndDate.setMonth(newEndDate.getMonth() + parseInt(months));
+      } else {
+        return res.status(400).json({
+          error: "Bad Request",
+          message: "Either months or endDate is required"
+        });
+      }
+
+      const [restaurant] = await db
+        .update(restaurants)
+        .set({
+          subscriptionEndAt: newEndDate,
+          updatedAt: new Date()
+        })
+        .where(eq(restaurants.id, restaurantId))
+        .returning();
+
+      await createAuditLog({
+        adminUserId: req.user!.userId,
+        action: "SUBSCRIPTION_EXTEND" as any,
+        targetType: "restaurant",
+        targetId: restaurant.id,
+        targetName: restaurant.name,
+        previousValue: { subscriptionEndAt: existing.subscriptionEndAt },
+        newValue: { subscriptionEndAt: restaurant.subscriptionEndAt },
+        metadata: { months, endDate },
+        req,
+      });
+
+      res.json({ 
+        restaurant, 
+        message: `Subscription extended to ${newEndDate.toLocaleDateString()}` 
+      });
+    } catch (error) {
+      console.error("Extend subscription error:", error);
+      res.status(500).json({
+        error: "Internal Server Error",
+        message: "Failed to extend subscription"
       });
     }
   });

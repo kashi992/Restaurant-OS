@@ -44,6 +44,10 @@ interface Restaurant {
   status: string;
   timezone: string;
   createdAt: string;
+  subscriptionStartAt: string | null;
+  subscriptionEndAt: string | null;
+  isSuspended: boolean;
+  daysRemaining: number | null;
 }
 
 export default function AdminDashboard() {
@@ -105,12 +109,19 @@ const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
       case "active":
         return <Badge className="bg-green-500/10 text-green-600 dark:text-green-400">Active</Badge>;
       case "suspended":
-        return <Badge variant="destructive">Suspended</Badge>;
-      case "pending":
-        return <Badge variant="secondary">Pending</Badge>;
+        return <Badge variant="destructive">Suspended (Manual)</Badge>;
+      case "expired":
+        return <Badge className="bg-orange-500/10 text-orange-600 dark:text-orange-400">Expired</Badge>;
+      case "inactive":
+        return <Badge variant="secondary">Inactive</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
+  };
+
+  const formatDate = (dateStr: string | null) => {
+    if (!dateStr) return "N/A";
+    return new Date(dateStr).toLocaleDateString();
   };
 
   const deleteMutation = useMutation({
@@ -247,7 +258,7 @@ const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
                   </DropdownMenuContent>
                 </DropdownMenu>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-3">
                 <div className="flex items-center justify-between">
                   {getStatusBadge(restaurant.status)}
                   <Link href={`/admin/restaurants/${restaurant.id}`}>
@@ -256,6 +267,22 @@ const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
                       <ChevronRight className="ml-1 h-4 w-4" />
                     </Button>
                   </Link>
+                </div>
+                <div className="text-xs text-muted-foreground space-y-1">
+                  <div className="flex justify-between">
+                    <span>Subscription ends:</span>
+                    <span className={restaurant.status === "expired" ? "text-destructive font-medium" : ""}>
+                      {formatDate(restaurant.subscriptionEndAt)}
+                    </span>
+                  </div>
+                  {restaurant.daysRemaining !== null && restaurant.status !== "expired" && (
+                    <div className="flex justify-between">
+                      <span>Days remaining:</span>
+                      <span className={restaurant.daysRemaining < 30 ? "text-orange-500 font-medium" : ""}>
+                        {restaurant.daysRemaining}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
