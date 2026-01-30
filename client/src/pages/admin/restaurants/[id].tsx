@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRoute, Link } from "wouter";
 import { useAuth } from "@/lib/auth";
@@ -8,6 +9,8 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft,
@@ -18,6 +21,9 @@ import {
   Globe,
   Calendar,
   Clock,
+  Pencil,
+  Save,
+  X,
 } from "lucide-react";
 
 interface Restaurant {
@@ -26,6 +32,10 @@ interface Restaurant {
   slug: string;
   status: string;
   timezone: string;
+  address?: string;
+  city?: string;
+  phone?: string;
+  email?: string;
   subscriptionStartAt: string | null;
   subscriptionEndAt: string | null;
   isSuspended: boolean;
@@ -56,6 +66,14 @@ export default function RestaurantDetailPage() {
   const { accessToken } = useAuth();
   const { toast } = useToast();
   const restaurantId = params?.id;
+  const [isEditing, setIsEditing] = useState(false);
+  const [editForm, setEditForm] = useState({
+    name: "",
+    slug: "",
+    timezone: "",
+    address: "",
+    phone: "",
+  });
 
   const { data: restaurantData, isLoading: loadingRestaurant } = useQuery<{
     restaurant: Restaurant;
@@ -76,6 +94,52 @@ export default function RestaurantDetailPage() {
 
   const restaurant = restaurantData?.restaurant;
   const features = restaurantData?.features || {};
+
+  // Initialize edit form when restaurant data loads
+  const startEditing = () => {
+    if (restaurant) {
+      setEditForm({
+        name: restaurant.name || "",
+        slug: restaurant.slug || "",
+        timezone: restaurant.timezone || "",
+        address: restaurant.address || "",
+        phone: restaurant.phone || "",
+      });
+      setIsEditing(true);
+    }
+  };
+
+  const cancelEditing = () => {
+    setIsEditing(false);
+  };
+
+  const updateMutation = useMutation({
+    mutationFn: async (data: typeof editForm) => {
+      const res = await fetch(`/api/admin/restaurants/${restaurantId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || "Failed to update restaurant");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/restaurants", restaurantId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/restaurants"] });
+      toast({ title: "Restaurant updated", description: "Changes have been saved successfully." });
+      setIsEditing(false);
+    },
+    onError: (error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
 
   const toggleFeatureMutation = useMutation({
     mutationFn: async ({ featureKey, enabled }: { featureKey: string; enabled: boolean }) => {
@@ -373,31 +437,120 @@ export default function RestaurantDetailPage() {
 
         <TabsContent value="settings">
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between gap-4">
               <CardTitle className="flex items-center gap-2">
                 <Building2 className="h-5 w-5" />
                 Restaurant Information
               </CardTitle>
+              {!isEditing ? (
+                <Button variant="outline" size="sm" onClick={startEditing} data-testid="button-edit">
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Edit
+                </Button>
+              ) : (
+                <div className="flex gap-2">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={cancelEditing}
+                    data-testid="button-cancel"
+                  >
+                    <X className="mr-2 h-4 w-4" />
+                    Cancel
+                  </Button>
+                  <Button 
+                    size="sm" 
+                    onClick={() => updateMutation.mutate(editForm)}
+                    disabled={updateMutation.isPending}
+                    data-testid="button-save"
+                  >
+                    <Save className="mr-2 h-4 w-4" />
+                    {updateMutation.isPending ? "Saving..." : "Save"}
+                  </Button>
+                </div>
+              )}
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Name</p>
-                  <p>{restaurant.name}</p>
+              {isEditing ? (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="name">Name</Label>
+                    <Input
+                      id="name"
+                      value={editForm.name}
+                      onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                      data-testid="input-name"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="slug">Slug</Label>
+                    <Input
+                      id="slug"
+                      value={editForm.slug}
+                      onChange={(e) => setEditForm({ ...editForm, slug: e.target.value })}
+                      data-testid="input-slug"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="timezone">Timezone</Label>
+                    <Input
+                      id="timezone"
+                      value={editForm.timezone}
+                      onChange={(e) => setEditForm({ ...editForm, timezone: e.target.value })}
+                      data-testid="input-timezone"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="address">Address</Label>
+                    <Input
+                      id="address"
+                      value={editForm.address}
+                      onChange={(e) => setEditForm({ ...editForm, address: e.target.value })}
+                      data-testid="input-address"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="phone">Phone</Label>
+                    <Input
+                      id="phone"
+                      value={editForm.phone}
+                      onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                      data-testid="input-phone"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Status</Label>
+                    <div className="pt-2">{getStatusBadge(restaurant.status)}</div>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Slug</p>
-                  <p>/{restaurant.slug}</p>
+              ) : (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Name</p>
+                    <p>{restaurant.name}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Slug</p>
+                    <p>/{restaurant.slug}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Timezone</p>
+                    <p>{restaurant.timezone || "Not set"}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Address</p>
+                    <p>{restaurant.address || "Not set"}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Phone</p>
+                    <p>{restaurant.phone || "Not set"}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Status</p>
+                    {getStatusBadge(restaurant.status)}
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Timezone</p>
-                  <p>{restaurant.timezone}</p>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Status</p>
-                  {getStatusBadge(restaurant.status)}
-                </div>
-              </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

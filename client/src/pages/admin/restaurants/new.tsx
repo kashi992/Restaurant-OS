@@ -4,6 +4,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useAuth } from "@/lib/auth";
+import { queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -105,6 +106,10 @@ export default function CreateRestaurantPage() {
       }
 
       const result = await res.json();
+      
+      // Invalidate the restaurants list to trigger a refetch
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/restaurants"] });
+      
       toast({
         title: "Restaurant created",
         description: `${data.name} has been created successfully.`,

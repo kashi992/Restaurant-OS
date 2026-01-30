@@ -37,16 +37,23 @@ import {
 } from "lucide-react";
 
 const navItems = [
-  { title: "Overview", url: "/dashboard", icon: LayoutDashboard },
-  { title: "Menu", url: "/dashboard/menu", icon: UtensilsCrossed },
-  { title: "Tables", url: "/dashboard/tables", icon: Grid3X3 },
-  { title: "Staff", url: "/dashboard/staff", icon: Users },
-  { title: "Settings", url: "/dashboard/settings", icon: Settings },
+  { title: "Overview", url: "/dashboard", icon: LayoutDashboard, feature: null },
+  { title: "Menu", url: "/dashboard/menu", icon: UtensilsCrossed, feature: null },
+  { title: "Tables", url: "/dashboard/tables", icon: Grid3X3, feature: null },
+  { title: "Staff", url: "/dashboard/staff", icon: Users, feature: null },
+  { title: "Settings", url: "/dashboard/settings", icon: Settings, feature: null },
 ];
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const { user, logout } = useAuth();
+  
+  // Check if a feature is enabled (defaults to true if no feature requirement or no features loaded)
+  const isFeatureEnabled = (featureKey: string | null) => {
+    if (!featureKey) return true;
+    if (!user?.features) return true;
+    return user.features[featureKey] !== false;
+  };
 
   const handleLogout = async () => {
     await logout();
@@ -92,21 +99,23 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
-            <SidebarGroup>
-              <SidebarGroupLabel>POS</SidebarGroupLabel>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton asChild>
-                      <Link href="/pos">
-                        <Monitor className="h-4 w-4" />
-                        <span>Open POS</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
+            {isFeatureEnabled("pos") && (
+              <SidebarGroup>
+                <SidebarGroupLabel>POS</SidebarGroupLabel>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton asChild>
+                        <Link href="/pos">
+                          <Monitor className="h-4 w-4" />
+                          <span>Open POS</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
+            )}
           </SidebarContent>
           <SidebarFooter className="p-4">
             <DropdownMenu>

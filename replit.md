@@ -129,6 +129,15 @@ QR orders return a `trackingToken` JWT that customers can use to:
 - `npx tsx scripts/seed.ts` - Seed database with sample data
 
 ## Recent Changes
+- **2026-01-30**: Authentication Persistence with HTTP-only Cookies
+  - Added cookie-parser middleware for secure cookie handling
+  - Login now sets httpOnly refresh token cookie (7-day expiry, lax sameSite)
+  - Refresh endpoint reads from cookie first, fallback to body
+  - Logout no longer requires valid access token - uses refresh cookie
+  - Removed refresh token from JSON response body (security improvement)
+  - Client auth restores session on page load via cookie-based refresh
+  - Features included in login response for non-super-admin users
+
 - **2026-01-30**: Phase 13 - Subscription Management System Complete
   - Database schema: Added `isSuspended`, `subscriptionStartAt`, `subscriptionEndAt` fields to restaurants
   - Status computation: Priority order is suspended > expired > inactive > active

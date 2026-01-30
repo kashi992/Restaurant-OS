@@ -288,6 +288,7 @@ export async function registerRoutes(
         roleId?: string;
         roleName?: string;
         permissions?: string[];
+        features?: Record<string, boolean>;
       } = {};
 
       if (!user.isSuperAdmin) {
@@ -308,11 +309,23 @@ export async function registerRoutes(
           .limit(1);
 
         if (restaurantUser) {
+          // Get features for this restaurant
+          const featureList = await db
+            .select()
+            .from(restaurantFeatureAllowlist)
+            .where(eq(restaurantFeatureAllowlist.restaurantId, restaurantUser.restaurant.id));
+          
+          const features = featureList.reduce((acc, f) => ({
+            ...acc,
+            [f.featureKey]: f.isEnabled ?? false
+          }), {} as Record<string, boolean>);
+
           restaurantContext = {
             restaurantId: restaurantUser.restaurant.id,
             roleId: restaurantUser.role.id,
             roleName: restaurantUser.role.name,
             permissions: (restaurantUser.role.permissions as string[]) || [],
+            features,
           };
         }
       }
@@ -351,11 +364,18 @@ export async function registerRoutes(
         .set({ lastLoginAt: new Date() })
         .where(eq(users.id, user.id));
 
+      // Set refresh token as HTTP-only cookie for security
+      res.cookie("refreshToken", refreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+        path: "/",
+      });
+
       res.json({
         accessToken,
-        refreshToken,
         accessTokenExpiresAt: accessExpiresAt.toISOString(),
-        refreshTokenExpiresAt: refreshExpiresAt.toISOString(),
         user: {
           id: user.id,
           email: user.email,
@@ -377,12 +397,13 @@ export async function registerRoutes(
   // Refresh token - exchange refresh token for new access token
   app.post("/api/auth/refresh", async (req, res) => {
     try {
-      const { refreshToken: token } = req.body;
+      // Try to get refresh token from cookie first, then from body
+      const token = req.cookies?.refreshToken || req.body?.refreshToken;
 
       if (!token) {
-        return res.status(400).json({
-          error: "Bad Request",
-          message: "Refresh token required"
+        return res.status(401).json({
+          error: "Unauthorized",
+          message: "No refresh token provided"
         });
       }
 
@@ -483,10 +504,11 @@ export async function registerRoutes(
     }
   });
 
-  // Logout - revoke refresh token
-  app.post("/api/auth/logout", authenticate, async (req, res) => {
+  // Logout - revoke refresh token (does not require authenticate - uses refresh token from cookie)
+  app.post("/api/auth/logout", async (req, res) => {
     try {
-      const { refreshToken: token } = req.body;
+      // Try to get refresh token from cookie first, then from body
+      const token = req.cookies?.refreshToken || req.body?.refreshToken;
 
       if (token) {
         const payload = verifyRefreshToken(token);
@@ -497,6 +519,14 @@ export async function registerRoutes(
             .where(eq(refreshTokens.tokenId, payload.tokenId));
         }
       }
+
+      // Clear the refresh token cookie
+      res.clearCookie("refreshToken", {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/",
+      });
 
       res.json({ message: "Logged out successfully" });
     } catch (error) {
@@ -528,6 +558,44 @@ export async function registerRoutes(
           eq(restaurantUsers.isActive, true)
         ));
 
+      // Get features for each restaurant (for feature gating in dashboard)
+      const restaurantsWithFeatures = await Promise.all(
+        restaurantAssociations.map(async (ra) => {
+          const features = await db
+            .select()
+            .from(restaurantFeatureAllowlist)
+            .where(eq(restaurantFeatureAllowlist.restaurantId, ra.restaurant.id));
+          
+          const featureFlags = features.reduce((acc, f) => ({
+            ...acc,
+            [f.featureKey]: f.isEnabled ?? false
+          }), {} as Record<string, boolean>);
+
+          return {
+            id: ra.restaurant.id,
+            name: ra.restaurant.name,
+            slug: ra.restaurant.slug,
+            roleId: ra.role.id,
+            roleName: ra.role.name,
+            permissions: ra.role.permissions,
+            features: featureFlags,
+          };
+        })
+      );
+
+      // Get features for current restaurant context
+      let currentRestaurantFeatures: Record<string, boolean> = {};
+      if (user.restaurantId) {
+        const currentFeatures = await db
+          .select()
+          .from(restaurantFeatureAllowlist)
+          .where(eq(restaurantFeatureAllowlist.restaurantId, user.restaurantId));
+        currentRestaurantFeatures = currentFeatures.reduce((acc, f) => ({
+          ...acc,
+          [f.featureKey]: f.isEnabled ?? false
+        }), {} as Record<string, boolean>);
+      }
+
       res.json({
         id: user.userId,
         email: user.email,
@@ -541,15 +609,9 @@ export async function registerRoutes(
           roleId: user.roleId,
           roleName: user.roleName,
           permissions: user.permissions,
+          features: currentRestaurantFeatures,
         } : null,
-        restaurants: restaurantAssociations.map(ra => ({
-          id: ra.restaurant.id,
-          name: ra.restaurant.name,
-          slug: ra.restaurant.slug,
-          roleId: ra.role.id,
-          roleName: ra.role.name,
-          permissions: ra.role.permissions,
-        })),
+        restaurants: restaurantsWithFeatures,
       });
     } catch (error) {
       console.error("Get user error:", error);

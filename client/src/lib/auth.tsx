@@ -10,6 +10,7 @@ interface User {
   restaurantId?: string;
   isSuperAdmin: boolean;
   permissions: string[];
+  features: Record<string, boolean>;
 }
 
 interface AuthContextType {
@@ -54,7 +55,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
       if (res.ok) {
         const data = await res.json();
-        setUser(data);
+        // Map the response to our User interface
+        setUser({
+          id: data.id,
+          email: data.email,
+          firstName: data.firstName || "",
+          lastName: data.lastName || "",
+          role: data.currentRestaurant?.roleName || "",
+          restaurantId: data.currentRestaurant?.restaurantId,
+          isSuperAdmin: data.isSuperAdmin || false,
+          permissions: data.currentRestaurant?.permissions || [],
+          features: data.currentRestaurant?.features || {},
+        });
       } else {
         setUser(null);
         setAccessToken(null);
@@ -67,8 +79,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const init = async () => {
-      const refreshed = await refreshToken();
-      if (refreshed) {
+      try {
+        // Try to refresh the session using the httpOnly cookie
         const res = await fetch("/api/auth/refresh", {
           method: "POST",
           credentials: "include",
@@ -78,11 +90,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setAccessToken(data.accessToken);
           await fetchUser(data.accessToken);
         }
+      } catch {
+        // No valid session
       }
       setIsLoading(false);
     };
     init();
-  }, [refreshToken, fetchUser]);
+  }, [fetchUser]);
 
   const login = async (email: string, password: string) => {
     const res = await apiRequest("POST", "/api/auth/login", { email, password });
@@ -105,6 +119,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     restaurantId: data.user.restaurantId || null,
     isSuperAdmin: data.user.isSuperAdmin || false,
     permissions: data.user.permissions || [],
+    features: data.user.features || {},
   };
   
    console.log("👤 Setting user:", userObj); // ✅ DEBUG LOG
@@ -118,8 +133,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       await fetch("/api/auth/logout", {
         method: "POST",
-        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
-        credentials: "include",
+        credentials: "include", // Uses httpOnly cookie for auth
       });
     } catch {
       // ignore logout errors

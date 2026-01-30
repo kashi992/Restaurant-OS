@@ -1,0 +1,129 @@
+WORK ONLY ON BRANCH: sohaib-dev
+DO NOT TOUCH main.
+
+Goal: make Super Admin + Restaurant dashboards fully dynamic and professional. Some screens exist but are not properly wired to backend/state and are not reactive after create/update/toggles.
+
+========================================================
+1) NEW RESTAURANT: Subscription status not showing + edit feature missing
+========================================================
+
+Problem:
+- When creating a restaurant, UI asks for subscription duration, but after create:
+  - subscription status shows N/A / undefined days
+  - edit feature is missing or not saving
+
+Required Fix:
+A) Ensure subscription values are saved at creation time
+- On Create Restaurant request:
+  - send subscriptionStartAt (default now) and subscriptionEndAt (calculated by duration)
+- Backend must persist these fields in DB.
+- API response must return these fields for:
+  - GET /api/admin/restaurants
+  - GET /api/admin/restaurants/:id
+
+B) Fix Subscription Status UI calculations
+- On restaurant detail page subscription tab:
+  - if subscriptionStartAt and subscriptionEndAt exist:
+    - show formatted start/end date
+    - show daysRemaining = max(0, ceil((end-now)/86400000))
+    - show status badge:
+      - Active if now < end and not manually suspended
+      - Expired if now >= end
+      - Suspended if isSuspended true (manual)
+- Handle null values gracefully (show “Not set”)
+
+C) Add/Edit Restaurant profile (Professional)
+- Add an "Edit" capability in restaurant details:
+  - Name, slug, timezone, address, phone, subscription end date
+- Use PATCH /api/admin/restaurants/:id
+- After saving, UI should instantly reflect updates without refresh.
+
+Acceptance:
+- After creating restaurant with 12 months subscription, detail page shows:
+  - status Active
+  - start date today
+  - end date 12 months later
+  - correct days remaining
+- Edit works and persists after refresh.
+
+========================================================
+2) FEATURE TOGGLES: POS toggle OFF but POS menu still appears in restaurant dashboard
+========================================================
+
+Problem:
+- Super admin can toggle features OFF (ex POS) for a restaurant
+- But restaurant dashboard still shows POS sidebar/pages; it is not dynamic.
+
+Required Fix (must be enforced server-side + UI):
+A) Ensure restaurant "features" are persisted and returned
+- Store feature flags per restaurant in DB (json column is ok).
+- Ensure restaurant login / me endpoint returns restaurant features.
+  Example:
+  restaurant.features = { pos: true/false, qr: true/false, ... }
+
+B) Enforce feature flags in backend routes (IMPORTANT)
+- Any POS-related API routes must check:
+  if restaurant.features.pos !== true -> return 403 with message "POS is disabled"
+- Same for QR / menu modules if relevant.
+
+C) Hide/disable UI dynamically based on features
+- In restaurant dashboard sidebar:
+  - if features.pos is false => do not render POS menu items/routes
+- Also protect routes:
+  - if user navigates manually to /dashboard/pos, show a "Feature Disabled" page instead of the POS screens.
+
+Acceptance:
+- Toggle POS OFF in super admin.
+- Login as that restaurant:
+  - POS sidebar item is hidden
+  - Trying to access POS URL manually shows Feature Disabled
+  - POS API calls return 403.
+
+========================================================
+3) SUPER ADMIN: Restaurant list not updating instantly + refresh logs out
+========================================================
+
+Problems:
+- After creating a restaurant, it doesn’t appear in restaurant list immediately.
+- After refresh, admin gets logged out and must re-login.
+
+Required Fix:
+A) Make restaurant list reactive after create/update
+- Use TanStack Query properly:
+  - after createRestaurant mutation success:
+    - invalidateQuery(["adminRestaurants"]) OR optimistically update cache
+- Ensure the list updates immediately without manual refresh.
+
+B) Fix auth persistence across refresh (professional)
+- Currently admin is logged out on refresh.
+- Ensure JWT/session token is persisted correctly:
+  - if using cookie: cookie must be httpOnly and correct domain/secure flags for localhost
+  - if using localStorage token: restore it on app boot and set auth headers automatically
+- Fix the "me" endpoint flow:
+  - on app load, call /api/auth/me and restore user session
+  - do not redirect to login unless token is invalid.
+
+C) Fix create restaurant flow response + navigation
+- After successful create:
+  - either navigate to restaurant detail page
+  - OR keep on list but show toast "Restaurant created"
+  - list should include the new restaurant immediately.
+
+Acceptance:
+- Create restaurant -> it appears instantly in list (no refresh).
+- Refresh admin page -> still logged in.
+- No forced logout.
+
+========================================================
+GENERAL RULES
+========================================================
+- Follow existing code structure; do not add new libraries unless already present.
+- Prefer server-side enforcement for subscription expiry + feature toggles; UI is secondary.
+- Add proper loading/error states and toast notifications.
+- After implementing, run:
+  - frontend build
+  - backend start
+  - validate flows end-to-end
+
+DELIVERABLE
+- All 3 issues fixed fully, committed to sohaib-dev with clear commits and pushed code to sohaib-dev in the end.
