@@ -2191,7 +2191,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
     "/api/test/feature/qr",
     authenticate,
     resolveTenantFromToken,
-    requireFeature("qr"),
+    requireFeature("qr_ordering"),
     async (req, res) => {
       res.json({
         success: true,
@@ -3330,7 +3330,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
     "/api/restaurants/:restaurantId/qr-tokens",
     authenticate,
     requireRestaurantAccess, requireActiveRestaurant,
-    requireFeature("qr"),
+    requireFeature("qr_ordering"),
     requirePermission("tables:read"),
     async (req, res) => {
       try {
@@ -3369,7 +3369,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
     "/api/restaurants/:restaurantId/tables/:tableId/qr-token",
     authenticate,
     requireRestaurantAccess, requireActiveRestaurant,
-    requireFeature("qr"),
+    requireFeature("qr_ordering"),
     requirePermission("tables:update"),
     async (req, res) => {
       try {
@@ -3424,7 +3424,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
     "/api/restaurants/:restaurantId/qr-tokens/bulk",
     authenticate,
     requireRestaurantAccess, requireActiveRestaurant,
-    requireFeature("qr"),
+    requireFeature("qr_ordering"),
     requirePermission("tables:update"),
     async (req, res) => {
       try {
@@ -3481,7 +3481,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
     "/api/restaurants/:restaurantId/qr-tokens/:tokenId",
     authenticate,
     requireRestaurantAccess, requireActiveRestaurant,
-    requireFeature("qr"),
+    requireFeature("qr_ordering"),
     requirePermission("tables:update"),
     async (req, res) => {
       try {

@@ -1,0 +1,151 @@
+STRICT IMPLEMENTATION SPEC — DO NOT SKIP ANY ITEM.
+WORK ONLY ON BRANCH: sohaib-dev (DO NOT TOUCH main).
+First print: git branch --show-current
+If not sohaib-dev: git checkout sohaib-dev && git pull origin sohaib-dev
+
+Goal: Fix 4 critical production issues in Super Admin + Restaurant app. Must be fully wired end-to-end (backend + frontend) with no “UI-only” workarounds. Make it professional and dynamic.
+
+========================================================
+1) SUPER ADMIN LOGOUT ON REFRESH (SESSION PERSISTENCE)
+========================================================
+
+Problem:
+- Super admin logs in successfully, but after page refresh it returns to login screen.
+
+Required Fix (must be correct, not a hack):
+A) Determine current auth method:
+- If cookie-based: ensure server sets cookie correctly and frontend sends credentials.
+  - Server must set cookie with correct flags for localhost (no wrong secure flag on http).
+  - Frontend must use fetch/axios with credentials included.
+- If token-based (localStorage): ensure app restores token on boot and attaches Authorization header.
+  - On app load, call /api/auth/me (or equivalent) to restore session.
+  - Do not clear token unless API responds 401/403.
+
+B) Fix routing guard:
+- Do not redirect to login during initial loading before /me resolves.
+- Implement a proper “auth loading” state to avoid flicker/logouts.
+
+Acceptance:
+- Login as super admin -> refresh page -> still logged in and stays on same admin page.
+- Open admin page in new tab -> still logged in.
+- Only logs out if token/cookie is actually invalid.
+
+========================================================
+2) RESTAURANT MENU TAB: CATEGORY + ITEMS (LIKE REAL MENU BUILDER)
+========================================================
+
+Requirement:
+Menu system must be hierarchical:
+- Category (e.g., Pizza)
+- Menu Items inside category (e.g., Italian Pizza, Pepperoni Pizza)
+UI must match this behavior:
+- Create category
+- Create item under a selected category
+- Display categories with expandable/collapsible items OR grouped list.
+
+Backend (must be correct):
+- Ensure DB schema supports:
+  - categories table: id, restaurantId, name, sortOrder
+  - items table: id, restaurantId, categoryId, name, description, price, isAvailable, sortOrder
+- Ensure endpoints exist and are wired:
+  - GET categories (with items OR separate endpoint)
+  - POST category
+  - POST item (must require categoryId)
+  - PATCH/DELETE optional if already in scope, but at least create + list must work
+
+Frontend (must match backend contract):
+- Menu tab must:
+  - show list of categories
+  - within each category show its items
+  - “Add Category” button
+  - “Add Item” button (requires selecting a category)
+- Fix any FE/BE response mismatch (array vs object, naming differences, etc.)
+
+Acceptance:
+- Create category “Pizza” -> appears immediately.
+- Add item “Italian Pizza” under Pizza -> appears under Pizza immediately.
+- Refresh page -> category + items persist and render correctly.
+
+========================================================
+3) TABLES TAB: GENERATE QR ERROR
+========================================================
+
+Problem:
+- Tables can be created, but clicking QR button -> Generate QR Code -> throws error.
+
+Required Fix:
+A) Identify exact failing API call and fix contract mismatch:
+- Ensure correct endpoint path, method, body, and response parsing.
+- Common issues: frontend expects qrToken but backend returns token; or missing tableId/restaurantId.
+
+B) Ensure backend returns a valid QR payload:
+- token (string)
+- qrUrl or data needed to build QR
+- tableId and restaurantId mapping
+
+C) Ensure frontend renders QR correctly:
+- Generate QR -> show QR image and the URL
+- Allow regenerate/replace QR if already implemented earlier
+
+Acceptance:
+- For an existing table -> click Generate QR -> success, QR shown, no error.
+- Refresh -> QR still retrievable (or regenerate works consistently).
+
+========================================================
+4) POS TAB: START NEW ORDER DOES NOTHING / NO ORDER UI
+========================================================
+
+Problem:
+- POS feature enabled.
+- Clicking a table -> “Start New Order” shows nothing; no ordering workflow appears.
+
+Required Fix (end-to-end POS flow):
+A) Define correct POS ordering flow:
+- Select table
+- Start new order -> creates an order on server linked to restaurant + table
+- POS UI loads order with:
+  - items list (menu items)
+  - add/remove item
+  - quantity
+  - subtotal/total
+- Persist order state via backend.
+
+B) Backend must provide:
+- POST create order for table (returns orderId)
+- GET order by id
+- POST add item to order / update qty / remove item
+- Ensure it uses restaurantId scoping and respects feature flags.
+
+C) Frontend must wire:
+- “Start New Order” triggers mutation -> navigates to Order screen OR opens order panel
+- Order screen actually renders menu items to add
+- If menu is empty, show a clear empty-state message (not blank UI)
+
+Acceptance:
+- Create at least 1 category + 1 item in Menu.
+- Go to POS -> select table -> Start New Order:
+  - order screen opens
+  - menu items available to add
+  - adding item updates order UI and totals
+- Refresh on POS order page retains current order (if designed) OR reloads from server.
+
+========================================================
+EXECUTION RULES (MANDATORY)
+========================================================
+1) Do not refactor unrelated code.
+2) Fix server-side first, then UI.
+3) Standardize FE/BE contracts for these modules:
+   - auth / me
+   - menu categories/items
+   - tables QR
+   - POS orders
+4) After each major fix, run through the acceptance tests above.
+5) Commit + push to origin/sohaib-dev with clear commits:
+   - "fix: super admin auth persistence"
+   - "feat: menu categories + items hierarchy"
+   - "fix: tables qr generate endpoint wiring"
+   - "feat: pos start order + ordering workflow"
+
+Deliverable:
+- All 4 issues fixed and verified by acceptance tests.
+- Pushed to sohaib-dev.
