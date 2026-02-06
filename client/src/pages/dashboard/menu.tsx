@@ -21,6 +21,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Form,
   FormControl,
   FormField,
@@ -28,19 +38,6 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
 import { useToast } from "@/hooks/use-toast";
 import {
   Plus,
@@ -49,6 +46,7 @@ import {
   UtensilsCrossed,
   FolderOpen,
   Loader2,
+  ChevronRight,
 } from "lucide-react";
 
 interface Menu {
@@ -82,14 +80,17 @@ const menuSchema = z.object({
 });
 
 const categorySchema = z.object({
-  name: z.string().min(1, "Name is required"),
+  name: z.string().min(1, "Category name is required"),
   description: z.string().optional(),
 });
 
 const menuItemSchema = z.object({
-  name: z.string().min(1, "Name is required"),
+  name: z.string().min(1, "Item name is required"),
   description: z.string().optional(),
-  price: z.string().min(1, "Price is required"),
+  price: z.string().min(1, "Price is required").refine(
+    (val) => !isNaN(parseFloat(val)) && parseFloat(val) >= 0,
+    "Price must be a valid number"
+  ),
   isAvailable: z.boolean(),
 });
 
@@ -103,7 +104,9 @@ export default function MenuManager() {
   const [itemDialogOpen, setItemDialogOpen] = useState(false);
   const [selectedMenu, setSelectedMenu] = useState<Menu | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
+  const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ type: "category" | "item"; id: string; name: string } | null>(null);
 
   const { data: menus, isLoading: loadingMenus } = useQuery<Menu[]>({
     queryKey: ["/api/restaurants", restaurantId, "menus"],
@@ -118,10 +121,13 @@ export default function MenuManager() {
     enabled: !!accessToken && !!restaurantId,
   });
 
-  const { data: categories } = useQuery<Category[]>({
-    queryKey: ["/api/restaurants", restaurantId, "categories", { menuId: selectedMenu?.id }],
+  const { data: categories, isLoading: loadingCategories } = useQuery<Category[]>({
+    queryKey: ["/api/restaurants", restaurantId, "categories", selectedMenu?.id || ""],
     queryFn: async () => {
-      const res = await fetch(`/api/restaurants/${restaurantId}/categories?menuId=${selectedMenu?.id}`, {
+      const url = selectedMenu?.id
+        ? `/api/restaurants/${restaurantId}/categories?menuId=${selectedMenu.id}`
+        : `/api/restaurants/${restaurantId}/categories`;
+      const res = await fetch(url, {
         headers: { Authorization: `Bearer ${accessToken}` },
         credentials: "include",
       });
@@ -131,7 +137,7 @@ export default function MenuManager() {
     enabled: !!accessToken && !!restaurantId && !!selectedMenu?.id,
   });
 
-  const { data: allItems } = useQuery<MenuItem[]>({
+  const { data: allItems, isLoading: loadingItems } = useQuery<MenuItem[]>({
     queryKey: ["/api/restaurants", restaurantId, "menu-items"],
     queryFn: async () => {
       const res = await fetch(`/api/restaurants/${restaurantId}/menu-items`, {
@@ -161,6 +167,12 @@ export default function MenuManager() {
     defaultValues: { name: "", description: "", price: "", isAvailable: true },
   });
 
+  const invalidateAll = () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "menus"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "categories"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "menu-items"] });
+  };
+
   const createMenuMutation = useMutation({
     mutationFn: async (data: z.infer<typeof menuSchema>) => {
       const res = await fetch(`/api/restaurants/${restaurantId}/menus`, {
@@ -172,13 +184,17 @@ export default function MenuManager() {
         credentials: "include",
         body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error("Failed to create menu");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to create menu");
+      }
       return res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "menus"] });
+    onSuccess: (data) => {
+      invalidateAll();
       setMenuDialogOpen(false);
       menuForm.reset();
+      setSelectedMenu(data);
       toast({ title: "Menu created successfully" });
     },
     onError: (error) => {
@@ -188,8 +204,11 @@ export default function MenuManager() {
 
   const createCategoryMutation = useMutation({
     mutationFn: async (data: z.infer<typeof categorySchema>) => {
-      const res = await fetch(`/api/restaurants/${restaurantId}/categories`, {
-        method: "POST",
+      const url = editingCategory
+        ? `/api/restaurants/${restaurantId}/categories/${editingCategory.id}`
+        : `/api/restaurants/${restaurantId}/categories`;
+      const res = await fetch(url, {
+        method: editingCategory ? "PATCH" : "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${accessToken}`,
@@ -197,14 +216,21 @@ export default function MenuManager() {
         credentials: "include",
         body: JSON.stringify({ ...data, menuId: selectedMenu?.id }),
       });
-      if (!res.ok) throw new Error("Failed to create category");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to save category");
+      }
       return res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "categories"] });
+    onSuccess: (data) => {
+      invalidateAll();
       setCategoryDialogOpen(false);
+      setEditingCategory(null);
       categoryForm.reset();
-      toast({ title: "Category created successfully" });
+      if (!editingCategory) {
+        setSelectedCategory(data);
+      }
+      toast({ title: editingCategory ? "Category updated" : "Category created successfully" });
     },
     onError: (error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -225,20 +251,63 @@ export default function MenuManager() {
         credentials: "include",
         body: JSON.stringify({ ...data, categoryId: selectedCategory?.id }),
       });
-      if (!res.ok) throw new Error("Failed to save item");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to save item");
+      }
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "menu-items"] });
+      invalidateAll();
       setItemDialogOpen(false);
       setEditingItem(null);
       itemForm.reset({ name: "", description: "", price: "", isAvailable: true });
-      toast({ title: editingItem ? "Item updated successfully" : "Item created successfully" });
+      toast({ title: editingItem ? "Item updated" : "Item created successfully" });
     },
     onError: (error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
+
+  const deleteMutation = useMutation({
+    mutationFn: async ({ type, id }: { type: "category" | "item"; id: string }) => {
+      const endpoint = type === "category"
+        ? `/api/restaurants/${restaurantId}/categories/${id}`
+        : `/api/restaurants/${restaurantId}/menu-items/${id}`;
+      const res = await fetch(endpoint, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${accessToken}` },
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || `Failed to delete ${type}`);
+      }
+      return { type, id };
+    },
+    onSuccess: ({ type, id }) => {
+      invalidateAll();
+      if (type === "category" && selectedCategory?.id === id) {
+        setSelectedCategory(null);
+      }
+      setDeleteTarget(null);
+      toast({ title: `${type === "category" ? "Category" : "Item"} deleted` });
+    },
+    onError: (error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const openCategoryDialog = (category?: Category) => {
+    if (category) {
+      setEditingCategory(category);
+      categoryForm.reset({ name: category.name, description: category.description || "" });
+    } else {
+      setEditingCategory(null);
+      categoryForm.reset({ name: "", description: "" });
+    }
+    setCategoryDialogOpen(true);
+  };
 
   const openItemDialog = (item?: MenuItem) => {
     if (item) {
@@ -256,21 +325,42 @@ export default function MenuManager() {
     setItemDialogOpen(true);
   };
 
+  const getCategoryItemCount = (categoryId: string) => {
+    return allItems?.filter(item => item.categoryId === categoryId).length || 0;
+  };
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between flex-wrap">
         <div>
           <h1 className="text-3xl font-semibold" data-testid="text-page-title">Menu Manager</h1>
           <p className="text-muted-foreground">Manage your menus, categories, and items</p>
         </div>
-        <Button onClick={() => setMenuDialogOpen(true)} data-testid="button-create-menu">
+        <Button onClick={() => { menuForm.reset(); setMenuDialogOpen(true); }} data-testid="button-create-menu">
           <Plus className="mr-2 h-4 w-4" />
           Create Menu
         </Button>
       </div>
 
+      {selectedMenu && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <span className="cursor-pointer hover:text-foreground" onClick={() => { setSelectedMenu(null); setSelectedCategory(null); }}>
+            Menus
+          </span>
+          <ChevronRight className="h-4 w-4" />
+          <span className={selectedCategory ? "cursor-pointer hover:text-foreground" : "text-foreground font-medium"} onClick={() => setSelectedCategory(null)}>
+            {selectedMenu.name}
+          </span>
+          {selectedCategory && (
+            <>
+              <ChevronRight className="h-4 w-4" />
+              <span className="text-foreground font-medium">{selectedCategory.name}</span>
+            </>
+          )}
+        </div>
+      )}
+
       <div className="grid gap-6 lg:grid-cols-3">
-        {/* Menus List */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -291,7 +381,7 @@ export default function MenuManager() {
                 {menus.map((menu) => (
                   <div
                     key={menu.id}
-                    className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-colors ${
+                    className={`flex items-center justify-between p-3 rounded-md border cursor-pointer transition-colors ${
                       selectedMenu?.id === menu.id ? "bg-accent border-primary" : "hover-elevate"
                     }`}
                     onClick={() => {
@@ -300,145 +390,209 @@ export default function MenuManager() {
                     }}
                     data-testid={`menu-item-${menu.id}`}
                   >
-                    <div>
-                      <p className="font-medium">{menu.name}</p>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium truncate">{menu.name}</p>
                       {menu.description && (
-                        <p className="text-sm text-muted-foreground">{menu.description}</p>
+                        <p className="text-sm text-muted-foreground truncate">{menu.description}</p>
                       )}
                     </div>
-                    {menu.isActive && (
-                      <Badge className="bg-green-500/10 text-green-600 dark:text-green-400">
-                        Active
-                      </Badge>
-                    )}
+                    <div className="flex items-center gap-2 ml-2">
+                      {menu.isActive && (
+                        <Badge className="bg-green-500/10 text-green-600 dark:text-green-400 no-default-active-elevate">
+                          Active
+                        </Badge>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-muted-foreground text-sm">No menus yet. Create your first menu.</p>
+              <div className="text-center py-8">
+                <UtensilsCrossed className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+                <p className="text-muted-foreground text-sm">No menus yet</p>
+                <p className="text-muted-foreground text-xs mt-1">Create your first menu to get started</p>
+              </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Categories List */}
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FolderOpen className="h-5 w-5" />
-              Categories
-            </CardTitle>
-            <CardDescription>
-              {selectedMenu ? `Categories in ${selectedMenu.name}` : "Select a menu first"}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {selectedMenu ? (
-              <>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <FolderOpen className="h-5 w-5" />
+                  Categories
+                </CardTitle>
+                <CardDescription>
+                  {selectedMenu ? `Categories in "${selectedMenu.name}"` : "Select a menu first"}
+                </CardDescription>
+              </div>
+              {selectedMenu && (
                 <Button
-                  variant="outline"
-                  className="w-full mb-4"
-                  onClick={() => setCategoryDialogOpen(true)}
+                  size="sm"
+                  onClick={() => openCategoryDialog()}
                   data-testid="button-add-category"
                 >
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Category
+                  <Plus className="mr-1 h-4 w-4" />
+                  Add
                 </Button>
-                {categories && categories.length > 0 ? (
-                  <div className="space-y-2">
-                    {categories.map((category) => (
-                      <div
-                        key={category.id}
-                        className={`p-3 rounded-lg border cursor-pointer transition-colors ${
-                          selectedCategory?.id === category.id ? "bg-accent border-primary" : "hover-elevate"
-                        }`}
-                        onClick={() => setSelectedCategory(category)}
-                        data-testid={`category-item-${category.id}`}
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            {!selectedMenu ? (
+              <div className="text-center py-8">
+                <FolderOpen className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+                <p className="text-muted-foreground text-sm">Select a menu to view categories</p>
+              </div>
+            ) : loadingCategories ? (
+              <div className="space-y-2">
+                {[1, 2].map((i) => <Skeleton key={i} className="h-12 w-full" />)}
+              </div>
+            ) : categories && categories.length > 0 ? (
+              <div className="space-y-2">
+                {categories.map((category) => (
+                  <div
+                    key={category.id}
+                    className={`flex items-center justify-between p-3 rounded-md border cursor-pointer transition-colors group ${
+                      selectedCategory?.id === category.id ? "bg-accent border-primary" : "hover-elevate"
+                    }`}
+                    onClick={() => setSelectedCategory(category)}
+                    data-testid={`category-item-${category.id}`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium truncate">{category.name}</p>
+                      {category.description && (
+                        <p className="text-sm text-muted-foreground truncate">{category.description}</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1 ml-2">
+                      <Badge variant="secondary" className="no-default-active-elevate">
+                        {getCategoryItemCount(category.id)}
+                      </Badge>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="opacity-0 group-hover:opacity-100"
+                        onClick={(e) => { e.stopPropagation(); openCategoryDialog(category); }}
+                        data-testid={`button-edit-category-${category.id}`}
                       >
-                        <p className="font-medium">{category.name}</p>
-                        {category.description && (
-                          <p className="text-sm text-muted-foreground">{category.description}</p>
-                        )}
-                      </div>
-                    ))}
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="opacity-0 group-hover:opacity-100 text-destructive"
+                        onClick={(e) => { e.stopPropagation(); setDeleteTarget({ type: "category", id: category.id, name: category.name }); }}
+                        data-testid={`button-delete-category-${category.id}`}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
                   </div>
-                ) : (
-                  <p className="text-muted-foreground text-sm">No categories yet.</p>
-                )}
-              </>
+                ))}
+              </div>
             ) : (
-              <p className="text-muted-foreground text-sm">Select a menu to view categories.</p>
+              <div className="text-center py-8">
+                <FolderOpen className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+                <p className="text-muted-foreground text-sm">No categories yet</p>
+                <p className="text-muted-foreground text-xs mt-1">Add a category to organize your menu items</p>
+              </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Items List */}
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <UtensilsCrossed className="h-5 w-5" />
-              Menu Items
-            </CardTitle>
-            <CardDescription>
-              {selectedCategory ? `Items in ${selectedCategory.name}` : "Select a category first"}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {selectedCategory ? (
-              <>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <UtensilsCrossed className="h-5 w-5" />
+                  Menu Items
+                </CardTitle>
+                <CardDescription>
+                  {selectedCategory ? `Items in "${selectedCategory.name}"` : "Select a category first"}
+                </CardDescription>
+              </div>
+              {selectedCategory && (
                 <Button
-                  variant="outline"
-                  className="w-full mb-4"
+                  size="sm"
                   onClick={() => openItemDialog()}
                   data-testid="button-add-item"
                 >
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Item
+                  <Plus className="mr-1 h-4 w-4" />
+                  Add
                 </Button>
-                {items && items.length > 0 ? (
-                  <div className="space-y-2">
-                    {items.map((item) => (
-                      <div
-                        key={item.id}
-                        className="p-3 rounded-lg border"
-                        data-testid={`item-card-${item.id}`}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <p className="font-medium">{item.name}</p>
-                            {item.description && (
-                              <p className="text-sm text-muted-foreground">{item.description}</p>
-                            )}
-                            <p className="text-sm font-medium text-primary">${item.price}</p>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {!item.isAvailable && (
-                              <Badge variant="secondary">Unavailable</Badge>
-                            )}
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => openItemDialog(item)}
-                              data-testid={`button-edit-item-${item.id}`}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                          </div>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            {!selectedCategory ? (
+              <div className="text-center py-8">
+                <UtensilsCrossed className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+                <p className="text-muted-foreground text-sm">Select a category to view items</p>
+              </div>
+            ) : loadingItems ? (
+              <div className="space-y-2">
+                {[1, 2].map((i) => <Skeleton key={i} className="h-16 w-full" />)}
+              </div>
+            ) : items && items.length > 0 ? (
+              <div className="space-y-2">
+                {items.map((item) => (
+                  <div
+                    key={item.id}
+                    className="p-3 rounded-md border group"
+                    data-testid={`item-card-${item.id}`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-medium">{item.name}</p>
+                          {!item.isAvailable && (
+                            <Badge variant="secondary" className="no-default-active-elevate">Unavailable</Badge>
+                          )}
                         </div>
+                        {item.description && (
+                          <p className="text-sm text-muted-foreground mt-0.5 line-clamp-1">{item.description}</p>
+                        )}
+                        <p className="text-sm font-semibold mt-1">${parseFloat(item.price).toFixed(2)}</p>
                       </div>
-                    ))}
+                      <div className="flex items-center gap-1">
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="opacity-0 group-hover:opacity-100"
+                          onClick={() => openItemDialog(item)}
+                          data-testid={`button-edit-item-${item.id}`}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="opacity-0 group-hover:opacity-100 text-destructive"
+                          onClick={() => setDeleteTarget({ type: "item", id: item.id, name: item.name })}
+                          data-testid={`button-delete-item-${item.id}`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </div>
                   </div>
-                ) : (
-                  <p className="text-muted-foreground text-sm">No items yet.</p>
-                )}
-              </>
+                ))}
+              </div>
             ) : (
-              <p className="text-muted-foreground text-sm">Select a category to view items.</p>
+              <div className="text-center py-8">
+                <UtensilsCrossed className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+                <p className="text-muted-foreground text-sm">No items in this category</p>
+                <p className="text-muted-foreground text-xs mt-1">Add items for customers to order</p>
+              </div>
             )}
           </CardContent>
         </Card>
       </div>
 
-      {/* Create Menu Dialog */}
       <Dialog open={menuDialogOpen} onOpenChange={setMenuDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -487,12 +641,13 @@ export default function MenuManager() {
         </DialogContent>
       </Dialog>
 
-      {/* Create Category Dialog */}
-      <Dialog open={categoryDialogOpen} onOpenChange={setCategoryDialogOpen}>
+      <Dialog open={categoryDialogOpen} onOpenChange={(open: boolean) => { setCategoryDialogOpen(open); if (!open) setEditingCategory(null); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add Category</DialogTitle>
-            <DialogDescription>Add a category to {selectedMenu?.name}</DialogDescription>
+            <DialogTitle>{editingCategory ? "Edit Category" : "Add Category"}</DialogTitle>
+            <DialogDescription>
+              {editingCategory ? "Update category details" : `Add a category to "${selectedMenu?.name}"`}
+            </DialogDescription>
           </DialogHeader>
           <Form {...categoryForm}>
             <form onSubmit={categoryForm.handleSubmit((data) => createCategoryMutation.mutate(data))} className="space-y-4">
@@ -503,7 +658,7 @@ export default function MenuManager() {
                   <FormItem>
                     <FormLabel>Name</FormLabel>
                     <FormControl>
-                      <Input placeholder="Appetizers" data-testid="input-category-name" {...field} />
+                      <Input placeholder="e.g. Pizza, Burgers, Drinks" data-testid="input-category-name" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -516,7 +671,7 @@ export default function MenuManager() {
                   <FormItem>
                     <FormLabel>Description (optional)</FormLabel>
                     <FormControl>
-                      <Textarea placeholder="Start your meal right" data-testid="input-category-description" {...field} />
+                      <Textarea placeholder="A short description for this category" data-testid="input-category-description" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -528,7 +683,7 @@ export default function MenuManager() {
                 </Button>
                 <Button type="submit" disabled={createCategoryMutation.isPending} data-testid="button-save-category">
                   {createCategoryMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Add Category
+                  {editingCategory ? "Update Category" : "Add Category"}
                 </Button>
               </DialogFooter>
             </form>
@@ -536,13 +691,12 @@ export default function MenuManager() {
         </DialogContent>
       </Dialog>
 
-      {/* Create/Edit Item Dialog */}
-      <Dialog open={itemDialogOpen} onOpenChange={setItemDialogOpen}>
+      <Dialog open={itemDialogOpen} onOpenChange={(open: boolean) => { setItemDialogOpen(open); if (!open) setEditingItem(null); }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{editingItem ? "Edit Item" : "Add Item"}</DialogTitle>
             <DialogDescription>
-              {editingItem ? "Update menu item details" : `Add an item to ${selectedCategory?.name}`}
+              {editingItem ? "Update menu item details" : `Add an item to "${selectedCategory?.name}"`}
             </DialogDescription>
           </DialogHeader>
           <Form {...itemForm}>
@@ -554,7 +708,7 @@ export default function MenuManager() {
                   <FormItem>
                     <FormLabel>Name</FormLabel>
                     <FormControl>
-                      <Input placeholder="Grilled Salmon" data-testid="input-item-name" {...field} />
+                      <Input placeholder="e.g. Margherita Pizza" data-testid="input-item-name" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -567,7 +721,7 @@ export default function MenuManager() {
                   <FormItem>
                     <FormLabel>Description (optional)</FormLabel>
                     <FormControl>
-                      <Textarea placeholder="Fresh Atlantic salmon with herbs" data-testid="input-item-description" {...field} />
+                      <Textarea placeholder="A description for this item" data-testid="input-item-description" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -580,7 +734,7 @@ export default function MenuManager() {
                   <FormItem>
                     <FormLabel>Price</FormLabel>
                     <FormControl>
-                      <Input type="number" step="0.01" placeholder="19.99" data-testid="input-item-price" {...field} />
+                      <Input type="number" step="0.01" min="0" placeholder="9.99" data-testid="input-item-price" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -615,6 +769,34 @@ export default function MenuManager() {
           </Form>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open: boolean) => { if (!open) setDeleteTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {deleteTarget?.type === "category" ? "Category" : "Item"}</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{deleteTarget?.name}"?
+              {deleteTarget?.type === "category" && " All items in this category may be affected."}
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground"
+              onClick={() => {
+                if (deleteTarget) {
+                  deleteMutation.mutate({ type: deleteTarget.type, id: deleteTarget.id });
+                }
+              }}
+              data-testid="button-confirm-delete"
+            >
+              {deleteMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

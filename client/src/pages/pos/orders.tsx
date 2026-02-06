@@ -7,7 +7,21 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Input } from "@/components/ui/input";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -21,6 +35,12 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import {
   Plus,
@@ -33,26 +53,81 @@ import {
   ShoppingCart,
   Trash2,
   UtensilsCrossed,
+  Eye,
+  History,
+  ClipboardList,
 } from "lucide-react";
 import { useLocation } from "wouter";
 
-interface Order {
+interface OrderSummary {
   id: string;
   orderNumber: string;
+  displayNumber: number | null;
   status: string;
-  total: string;
+  orderType: string;
+  source: string;
   tableId: string | null;
+  tableName: string | null;
+  tableNumber: string | null;
+  subtotal: string;
+  taxAmount: string;
+  total: string;
+  paidAmount: string;
+  customerName: string | null;
+  guestCount: number;
+  notes: string | null;
+  completedAt: string | null;
   createdAt: string;
-  items: OrderItem[];
+  updatedAt: string;
 }
 
-interface OrderItem {
+interface OrderDetail {
   id: string;
-  menuItemId: string;
+  orderNumber: string;
+  displayNumber: number | null;
+  status: string;
+  orderType: string;
+  source: string;
+  tableId: string | null;
+  tableName: string | null;
+  tableNumber: string | null;
+  subtotal: string;
+  taxAmount: string;
+  tipAmount: string;
+  discountAmount: string;
+  total: string;
+  paidAmount: string;
+  customerName: string | null;
+  guestCount: number;
+  notes: string | null;
+  completedAt: string | null;
+  cancelledAt: string | null;
+  cancelReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface OrderItemType {
+  id: string;
+  orderId: string;
+  menuItemId: string | null;
   name: string;
   quantity: number;
   unitPrice: string;
+  modifiersPrice: string;
   totalPrice: string;
+  modifiers: any[];
+  notes: string | null;
+  status: string;
+}
+
+interface StatusHistoryEntry {
+  id: string;
+  fromStatus: string | null;
+  toStatus: string;
+  notes: string | null;
+  userId: string | null;
+  createdAt: string;
 }
 
 interface Category {
@@ -78,50 +153,79 @@ interface CartItem {
 }
 
 const ORDER_STATUSES = [
-  { value: "pending", label: "Pending", icon: Clock, color: "bg-yellow-500/10 text-yellow-600" },
-  { value: "confirmed", label: "Confirmed", icon: CheckCircle, color: "bg-blue-500/10 text-blue-600" },
-  { value: "preparing", label: "Preparing", icon: ChefHat, color: "bg-orange-500/10 text-orange-600" },
-  { value: "ready", label: "Ready", icon: CheckCircle, color: "bg-green-500/10 text-green-600" },
-  { value: "served", label: "Served", icon: CheckCircle, color: "bg-purple-500/10 text-purple-600" },
-  { value: "completed", label: "Completed", icon: CheckCircle, color: "bg-gray-500/10 text-gray-600" },
+  { value: "pending", label: "Pending", icon: Clock, color: "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400" },
+  { value: "confirmed", label: "Confirmed", icon: CheckCircle, color: "bg-blue-500/10 text-blue-600 dark:text-blue-400" },
+  { value: "preparing", label: "Preparing", icon: ChefHat, color: "bg-orange-500/10 text-orange-600 dark:text-orange-400" },
+  { value: "ready", label: "Ready", icon: CheckCircle, color: "bg-green-500/10 text-green-600 dark:text-green-400" },
+  { value: "served", label: "Served", icon: CheckCircle, color: "bg-purple-500/10 text-purple-600 dark:text-purple-400" },
+  { value: "completed", label: "Completed", icon: CheckCircle, color: "bg-gray-500/10 text-gray-600 dark:text-gray-400" },
+  { value: "cancelled", label: "Cancelled", icon: Clock, color: "bg-red-500/10 text-red-600 dark:text-red-400" },
 ];
+
+const STATUS_FLOW = ["pending", "confirmed", "preparing", "ready", "served", "completed"];
 
 export default function OrdersPage() {
   const { accessToken, user } = useAuth();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const restaurantId = user?.restaurantId;
-  const [statusFilter, setStatusFilter] = useState<string>("active");
-  
-  // Parse URL params
+
   const urlParams = new URLSearchParams(window.location.search);
   const tableId = urlParams.get("table");
   const isNewOrder = urlParams.get("new") === "true";
-  
-  // New order state
-  const [cart, setCart] = useState<CartItem[]>([]);
-  const [creatingOrder, setCreatingOrder] = useState(false);
-  const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
+  const viewOrderId = urlParams.get("order");
 
-  const { data: orders, isLoading } = useQuery<Order[]>({
-    queryKey: ["/api/restaurants", restaurantId, "orders", statusFilter],
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [activeTab, setActiveTab] = useState("active");
+  const [detailOrderId, setDetailOrderId] = useState<string | null>(viewOrderId);
+  const [detailDialogOpen, setDetailDialogOpen] = useState(!!viewOrderId);
+  const [addingItemsToOrder, setAddingItemsToOrder] = useState(false);
+  const [addItemsCart, setAddItemsCart] = useState<CartItem[]>([]);
+
+  const { data: activeOrdersData, isLoading: loadingActive } = useQuery<{ orders: OrderSummary[] }>({
+    queryKey: ["/api/restaurants", restaurantId, "orders", "live"],
     queryFn: async () => {
-      const endpoint = statusFilter === "active"
-        ? `/api/restaurants/${restaurantId}/orders/live`
-        : `/api/restaurants/${restaurantId}/orders?status=${statusFilter}`;
-      const res = await fetch(endpoint, {
+      const res = await fetch(`/api/restaurants/${restaurantId}/orders/live`, {
         headers: { Authorization: `Bearer ${accessToken}` },
         credentials: "include",
       });
-      if (!res.ok) return [];
-      const data = await res.json();
-      return data.orders;
+      if (!res.ok) return { orders: [] };
+      return res.json();
     },
     enabled: !!accessToken && !!restaurantId && !isNewOrder,
     refetchInterval: 5000,
   });
 
-  // Fetch categories
+  const { data: completedOrdersData, isLoading: loadingCompleted } = useQuery<{ orders: OrderSummary[] }>({
+    queryKey: ["/api/restaurants", restaurantId, "orders", "completed"],
+    queryFn: async () => {
+      const res = await fetch(`/api/restaurants/${restaurantId}/orders?status=completed`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        credentials: "include",
+      });
+      if (!res.ok) return { orders: [] };
+      return res.json();
+    },
+    enabled: !!accessToken && !!restaurantId && !isNewOrder && activeTab === "history",
+  });
+
+  const { data: orderDetailData, isLoading: loadingDetail } = useQuery<{
+    order: OrderDetail;
+    items: OrderItemType[];
+    statusHistory: StatusHistoryEntry[];
+  }>({
+    queryKey: ["/api/restaurants", restaurantId, "orders", detailOrderId],
+    queryFn: async () => {
+      const res = await fetch(`/api/restaurants/${restaurantId}/orders/${detailOrderId}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to fetch order");
+      return res.json();
+    },
+    enabled: !!accessToken && !!restaurantId && !!detailOrderId,
+  });
+
   const { data: categories } = useQuery<Category[]>({
     queryKey: ["/api/restaurants", restaurantId, "categories"],
     queryFn: async () => {
@@ -132,10 +236,9 @@ export default function OrdersPage() {
       if (!res.ok) return [];
       return res.json();
     },
-    enabled: !!accessToken && !!restaurantId && isNewOrder,
+    enabled: !!accessToken && !!restaurantId && (isNewOrder || addingItemsToOrder),
   });
 
-  // Fetch menu items
   const { data: menuItems, isLoading: loadingItems } = useQuery<MenuItem[]>({
     queryKey: ["/api/restaurants", restaurantId, "menu-items"],
     queryFn: async () => {
@@ -146,10 +249,9 @@ export default function OrdersPage() {
       if (!res.ok) return [];
       return res.json();
     },
-    enabled: !!accessToken && !!restaurantId && isNewOrder,
+    enabled: !!accessToken && !!restaurantId && (isNewOrder || addingItemsToOrder),
   });
 
-  // Create order mutation
   const createOrderMutation = useMutation({
     mutationFn: async () => {
       const items = cart.map(item => ({
@@ -157,7 +259,6 @@ export default function OrdersPage() {
         quantity: item.quantity,
         notes: "",
       }));
-      
       const res = await fetch(`/api/restaurants/${restaurantId}/orders`, {
         method: "POST",
         headers: {
@@ -173,18 +274,18 @@ export default function OrdersPage() {
         }),
       });
       if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.message || "Failed to create order");
+        const error = await res.json().catch(() => ({}));
+        throw new Error(error.message || error.error || "Failed to create order");
       }
       return res.json();
     },
-    onSuccess: (data) => {
+    onSuccess: () => {
       toast({ title: "Order created successfully!" });
       queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "orders"] });
       setCart([]);
       setLocation("/pos/orders");
     },
-    onError: (error) => {
+    onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
@@ -200,282 +301,278 @@ export default function OrdersPage() {
         credentials: "include",
         body: JSON.stringify({ status }),
       });
-      if (!res.ok) throw new Error("Failed to update status");
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({}));
+        throw new Error(error.message || error.error || "Failed to update status");
+      }
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "orders"] });
       toast({ title: "Order status updated" });
     },
-    onError: (error) => {
+    onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
 
-  const addToCart = (item: MenuItem) => {
-    setCart(prev => {
+  const addItemsMutation = useMutation({
+    mutationFn: async ({ orderId, items }: { orderId: string; items: CartItem[] }) => {
+      const payload = items.map(item => ({
+        menuItemId: item.menuItemId,
+        quantity: item.quantity,
+        notes: "",
+      }));
+      const res = await fetch(`/api/restaurants/${restaurantId}/orders/${orderId}/items`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        credentials: "include",
+        body: JSON.stringify({ items: payload }),
+      });
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({}));
+        throw new Error(error.message || error.error || "Failed to add items");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "orders"] });
+      setAddItemsCart([]);
+      setAddingItemsToOrder(false);
+      toast({ title: "Items added to order" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const removeItemMutation = useMutation({
+    mutationFn: async ({ orderId, itemId }: { orderId: string; itemId: string }) => {
+      const res = await fetch(`/api/restaurants/${restaurantId}/orders/${orderId}/items/${itemId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${accessToken}` },
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({}));
+        throw new Error(error.message || error.error || "Failed to remove item");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "orders"] });
+      toast({ title: "Item removed" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const addToCart = (item: MenuItem, targetCart: "new" | "add") => {
+    const setter = targetCart === "new" ? setCart : setAddItemsCart;
+    setter(prev => {
       const existing = prev.find(c => c.menuItemId === item.id);
       if (existing) {
         return prev.map(c =>
-          c.menuItemId === item.id
-            ? { ...c, quantity: c.quantity + 1 }
-            : c
+          c.menuItemId === item.id ? { ...c, quantity: c.quantity + 1 } : c
         );
       }
-      return [...prev, {
-        menuItemId: item.id,
-        name: item.name,
-        price: parseFloat(item.price),
-        quantity: 1,
-      }];
+      return [...prev, { menuItemId: item.id, name: item.name, price: parseFloat(item.price), quantity: 1 }];
     });
   };
 
-  const updateCartQuantity = (menuItemId: string, delta: number) => {
-    setCart(prev => {
-      return prev.map(item => {
+  const updateCartQuantity = (menuItemId: string, delta: number, targetCart: "new" | "add") => {
+    const setter = targetCart === "new" ? setCart : setAddItemsCart;
+    setter(prev =>
+      prev.map(item => {
         if (item.menuItemId === menuItemId) {
           const newQty = item.quantity + delta;
-          if (newQty <= 0) return null;
+          if (newQty <= 0) return null as any;
           return { ...item, quantity: newQty };
         }
         return item;
-      }).filter(Boolean) as CartItem[];
-    });
+      }).filter(Boolean)
+    );
   };
 
-  const removeFromCart = (menuItemId: string) => {
-    setCart(prev => prev.filter(item => item.menuItemId !== menuItemId));
+  const removeFromCart = (menuItemId: string, targetCart: "new" | "add") => {
+    const setter = targetCart === "new" ? setCart : setAddItemsCart;
+    setter(prev => prev.filter(item => item.menuItemId !== menuItemId));
   };
 
   const cartTotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const addItemsCartTotal = addItemsCart.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
   const getStatusBadge = (status: string) => {
     const statusInfo = ORDER_STATUSES.find(s => s.value === status);
     if (!statusInfo) return <Badge variant="outline">{status}</Badge>;
-    return (
-      <Badge className={statusInfo.color}>
-        {statusInfo.label}
-      </Badge>
-    );
+    return <Badge className={`${statusInfo.color} no-default-active-elevate`}>{statusInfo.label}</Badge>;
   };
 
   const getNextStatus = (currentStatus: string): string | null => {
-    const statusOrder = ["pending", "confirmed", "preparing", "ready", "served", "completed"];
-    const currentIndex = statusOrder.indexOf(currentStatus);
-    if (currentIndex < statusOrder.length - 1) {
-      return statusOrder[currentIndex + 1];
-    }
+    const idx = STATUS_FLOW.indexOf(currentStatus);
+    if (idx >= 0 && idx < STATUS_FLOW.length - 1) return STATUS_FLOW[idx + 1];
     return null;
   };
 
-  const formatTime = (dateString: string) => {
+  const formatDateTime = (dateString: string) => {
     const date = new Date(dateString);
-    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return date.toLocaleString([], {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   };
 
-  // Get items by category
+  const formatTime = (dateString: string) => {
+    return new Date(dateString).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  };
+
   const getItemsByCategory = (categoryId: string) => {
     return menuItems?.filter(item => item.categoryId === categoryId && item.isAvailable) || [];
   };
 
-  // If creating new order, show the order builder UI
-  if (isNewOrder && tableId) {
-    return (
-      <div className="h-full flex flex-col">
-        <div className="flex items-center gap-4 p-4 border-b">
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            onClick={() => setLocation("/pos")}
-            data-testid="button-back"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-          <div>
-            <h1 className="text-xl font-semibold" data-testid="text-new-order-title">New Order</h1>
-            <p className="text-sm text-muted-foreground">Table {tableId.slice(0, 8)}...</p>
-          </div>
-        </div>
+  const openOrderDetail = (orderId: string) => {
+    setDetailOrderId(orderId);
+    setDetailDialogOpen(true);
+    setAddingItemsToOrder(false);
+    setAddItemsCart([]);
+  };
 
-        <div className="flex-1 flex overflow-hidden">
-          {/* Menu Items Panel */}
-          <div className="flex-1 overflow-hidden flex flex-col">
-            <div className="p-4 border-b">
-              <h2 className="font-medium">Menu Items</h2>
-              <p className="text-sm text-muted-foreground">Select items to add to the order</p>
+  const renderMenuPicker = (targetCart: "new" | "add") => {
+    const currentCart = targetCart === "new" ? cart : addItemsCart;
+    const currentTotal = targetCart === "new" ? cartTotal : addItemsCartTotal;
+
+    return (
+      <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 overflow-hidden flex flex-col">
+          <div className="p-4 border-b">
+            <h2 className="font-medium" data-testid="text-menu-items-header">Menu Items</h2>
+            <p className="text-sm text-muted-foreground">Select items to add to the order</p>
+          </div>
+
+          {loadingItems ? (
+            <div className="p-4 space-y-4">
+              {[1, 2, 3].map(i => <Skeleton key={i} className="h-20 w-full" />)}
             </div>
-            
-            {loadingItems ? (
-              <div className="p-4 space-y-4">
-                {[1, 2, 3].map(i => <Skeleton key={i} className="h-20 w-full" />)}
-              </div>
-            ) : categories && categories.length > 0 ? (
-              <ScrollArea className="flex-1 p-4">
-                <Accordion type="multiple" className="space-y-2">
-                  {categories.map(category => {
-                    const categoryItems = getItemsByCategory(category.id);
-                    if (categoryItems.length === 0) return null;
-                    return (
-                      <AccordionItem 
-                        key={category.id} 
-                        value={category.id}
-                        className="border rounded-lg"
-                      >
-                        <AccordionTrigger className="px-4 hover:no-underline">
-                          <span className="font-medium">{category.name}</span>
-                          <Badge variant="secondary" className="ml-2">
-                            {categoryItems.length}
-                          </Badge>
-                        </AccordionTrigger>
-                        <AccordionContent className="px-4 pb-4">
-                          <div className="grid gap-2">
-                            {categoryItems.map(item => (
+          ) : categories && categories.length > 0 && menuItems && menuItems.filter(i => i.isAvailable).length > 0 ? (
+            <ScrollArea className="flex-1 p-4">
+              <Accordion type="multiple" defaultValue={categories.map(c => c.id)} className="space-y-2">
+                {categories.map(category => {
+                  const categoryItems = getItemsByCategory(category.id);
+                  if (categoryItems.length === 0) return null;
+                  return (
+                    <AccordionItem key={category.id} value={category.id} className="border rounded-md">
+                      <AccordionTrigger className="px-4 hover:no-underline" data-testid={`accordion-category-${category.id}`}>
+                        <span className="font-medium">{category.name}</span>
+                        <Badge variant="secondary" className="ml-2 no-default-active-elevate">{categoryItems.length}</Badge>
+                      </AccordionTrigger>
+                      <AccordionContent className="px-4 pb-4">
+                        <div className="grid gap-2">
+                          {categoryItems.map(item => {
+                            const inCart = currentCart.find(c => c.menuItemId === item.id);
+                            return (
                               <div
                                 key={item.id}
-                                className="flex items-center justify-between p-3 rounded-lg border cursor-pointer hover-elevate"
-                                onClick={() => addToCart(item)}
+                                className="flex items-center justify-between p-3 rounded-md border cursor-pointer hover-elevate"
+                                onClick={() => addToCart(item, targetCart)}
                                 data-testid={`menu-item-${item.id}`}
                               >
-                                <div>
+                                <div className="min-w-0 flex-1">
                                   <p className="font-medium">{item.name}</p>
                                   {item.description && (
-                                    <p className="text-sm text-muted-foreground line-clamp-1">
-                                      {item.description}
-                                    </p>
+                                    <p className="text-sm text-muted-foreground line-clamp-1">{item.description}</p>
                                   )}
                                 </div>
-                                <div className="flex items-center gap-3">
+                                <div className="flex items-center gap-3 ml-2">
                                   <span className="font-semibold">${parseFloat(item.price).toFixed(2)}</span>
-                                  <Button size="icon" variant="ghost">
-                                    <Plus className="h-4 w-4" />
-                                  </Button>
+                                  {inCart ? (
+                                    <Badge variant="secondary" className="no-default-active-elevate">{inCart.quantity}</Badge>
+                                  ) : (
+                                    <Button size="icon" variant="ghost">
+                                      <Plus className="h-4 w-4" />
+                                    </Button>
+                                  )}
                                 </div>
                               </div>
-                            ))}
-                          </div>
-                        </AccordionContent>
-                      </AccordionItem>
-                    );
-                  })}
-                </Accordion>
-              </ScrollArea>
-            ) : menuItems && menuItems.length > 0 ? (
-              <ScrollArea className="flex-1 p-4">
-                <div className="grid gap-2">
-                  {menuItems.filter(i => i.isAvailable).map(item => (
-                    <div
-                      key={item.id}
-                      className="flex items-center justify-between p-3 rounded-lg border cursor-pointer hover-elevate"
-                      onClick={() => addToCart(item)}
-                      data-testid={`menu-item-${item.id}`}
-                    >
-                      <div>
-                        <p className="font-medium">{item.name}</p>
-                        {item.description && (
-                          <p className="text-sm text-muted-foreground line-clamp-1">
-                            {item.description}
-                          </p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="font-semibold">${parseFloat(item.price).toFixed(2)}</span>
-                        <Button size="icon" variant="ghost">
-                          <Plus className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </ScrollArea>
-            ) : (
-              <div className="flex-1 flex flex-col items-center justify-center p-8">
-                <UtensilsCrossed className="h-12 w-12 text-muted-foreground" />
-                <h3 className="mt-4 text-lg font-medium">No menu items</h3>
-                <p className="text-muted-foreground text-center">
-                  Add menu items in the Dashboard first to create orders.
-                </p>
-                <Button 
-                  className="mt-4" 
-                  variant="outline"
-                  onClick={() => setLocation("/dashboard/menu")}
-                >
-                  Go to Menu Manager
-                </Button>
-              </div>
-            )}
+                            );
+                          })}
+                        </div>
+                      </AccordionContent>
+                    </AccordionItem>
+                  );
+                })}
+              </Accordion>
+            </ScrollArea>
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center p-8">
+              <UtensilsCrossed className="h-12 w-12 text-muted-foreground" />
+              <h3 className="mt-4 text-lg font-medium">No menu items available</h3>
+              <p className="text-muted-foreground text-center mt-1">
+                Create categories and items in the Menu Manager first.
+              </p>
+              <Button className="mt-4" variant="outline" onClick={() => setLocation("/dashboard/menu")} data-testid="button-go-to-menu">
+                Go to Menu Manager
+              </Button>
+            </div>
+          )}
+        </div>
+
+        <div className="w-80 border-l flex flex-col bg-muted/30">
+          <div className="p-4 border-b flex items-center gap-2">
+            <ShoppingCart className="h-5 w-5" />
+            <h2 className="font-medium">{targetCart === "new" ? "New Order" : "Add Items"}</h2>
+            <Badge variant="secondary" className="no-default-active-elevate">{currentCart.reduce((sum, i) => sum + i.quantity, 0)}</Badge>
           </div>
 
-          {/* Cart Panel */}
-          <div className="w-80 border-l flex flex-col bg-muted/30">
-            <div className="p-4 border-b flex items-center gap-2">
-              <ShoppingCart className="h-5 w-5" />
-              <h2 className="font-medium">Current Order</h2>
-              <Badge variant="secondary">{cart.length}</Badge>
-            </div>
-            
-            <ScrollArea className="flex-1 p-4">
-              {cart.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <ShoppingCart className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                  <p>Cart is empty</p>
-                  <p className="text-sm">Click items to add them</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {cart.map(item => (
-                    <Card key={item.menuItemId} className="p-3">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium truncate">{item.name}</p>
-                          <p className="text-sm text-muted-foreground">
-                            ${item.price.toFixed(2)} each
-                          </p>
-                        </div>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-6 w-6 text-destructive"
-                          onClick={() => removeFromCart(item.menuItemId)}
-                        >
-                          <Trash2 className="h-3 w-3" />
+          <ScrollArea className="flex-1 p-4">
+            {currentCart.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <ShoppingCart className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p>Cart is empty</p>
+                <p className="text-sm">Click items to add them</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {currentCart.map(item => (
+                  <Card key={item.menuItemId} className="p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium truncate">{item.name}</p>
+                        <p className="text-sm text-muted-foreground">${item.price.toFixed(2)} each</p>
+                      </div>
+                      <Button size="icon" variant="ghost" onClick={() => removeFromCart(item.menuItemId, targetCart)}>
+                        <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                      </Button>
+                    </div>
+                    <div className="flex items-center justify-between mt-2">
+                      <div className="flex items-center gap-2">
+                        <Button size="icon" variant="outline" onClick={() => updateCartQuantity(item.menuItemId, -1, targetCart)} data-testid={`button-decrease-${item.menuItemId}`}>
+                          <Minus className="h-3 w-3" />
+                        </Button>
+                        <span className="w-8 text-center font-medium">{item.quantity}</span>
+                        <Button size="icon" variant="outline" onClick={() => updateCartQuantity(item.menuItemId, 1, targetCart)} data-testid={`button-increase-${item.menuItemId}`}>
+                          <Plus className="h-3 w-3" />
                         </Button>
                       </div>
-                      <div className="flex items-center justify-between mt-2">
-                        <div className="flex items-center gap-2">
-                          <Button
-                            size="icon"
-                            variant="outline"
-                            className="h-7 w-7"
-                            onClick={() => updateCartQuantity(item.menuItemId, -1)}
-                          >
-                            <Minus className="h-3 w-3" />
-                          </Button>
-                          <span className="w-8 text-center font-medium">{item.quantity}</span>
-                          <Button
-                            size="icon"
-                            variant="outline"
-                            className="h-7 w-7"
-                            onClick={() => updateCartQuantity(item.menuItemId, 1)}
-                          >
-                            <Plus className="h-3 w-3" />
-                          </Button>
-                        </div>
-                        <span className="font-semibold">
-                          ${(item.price * item.quantity).toFixed(2)}
-                        </span>
-                      </div>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </ScrollArea>
-
-            <div className="p-4 border-t space-y-4">
-              <div className="flex items-center justify-between text-lg font-semibold">
-                <span>Total</span>
-                <span>${cartTotal.toFixed(2)}</span>
+                      <span className="font-semibold">${(item.price * item.quantity).toFixed(2)}</span>
+                    </div>
+                  </Card>
+                ))}
               </div>
+            )}
+          </ScrollArea>
+
+          <div className="p-4 border-t space-y-3">
+            <div className="flex items-center justify-between text-lg font-semibold">
+              <span>Total</span>
+              <span>${currentTotal.toFixed(2)}</span>
+            </div>
+            {targetCart === "new" ? (
               <Button
                 className="w-full"
                 size="lg"
@@ -484,122 +581,403 @@ export default function OrdersPage() {
                 data-testid="button-place-order"
               >
                 {createOrderMutation.isPending ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Creating Order...
-                  </>
+                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Creating Order...</>
                 ) : (
-                  <>
-                    <CheckCircle className="mr-2 h-4 w-4" />
-                    Place Order
-                  </>
+                  <><CheckCircle className="mr-2 h-4 w-4" />Place Order</>
                 )}
               </Button>
-            </div>
+            ) : (
+              <Button
+                className="w-full"
+                size="lg"
+                disabled={addItemsCart.length === 0 || addItemsMutation.isPending}
+                onClick={() => {
+                  if (detailOrderId) {
+                    addItemsMutation.mutate({ orderId: detailOrderId, items: addItemsCart });
+                  }
+                }}
+                data-testid="button-add-items-to-order"
+              >
+                {addItemsMutation.isPending ? (
+                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Adding Items...</>
+                ) : (
+                  <><Plus className="mr-2 h-4 w-4" />Add to Order</>
+                )}
+              </Button>
+            )}
           </div>
         </div>
       </div>
     );
+  };
+
+  if (isNewOrder && tableId) {
+    return (
+      <div className="h-full flex flex-col">
+        <div className="flex items-center gap-4 p-4 border-b">
+          <Button variant="ghost" size="icon" onClick={() => setLocation("/pos")} data-testid="button-back">
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div>
+            <h1 className="text-xl font-semibold" data-testid="text-new-order-title">New Order</h1>
+            <p className="text-sm text-muted-foreground">Table {tableId.slice(0, 8)}...</p>
+          </div>
+        </div>
+        {renderMenuPicker("new")}
+      </div>
+    );
   }
 
-  // Default orders list view
+  if (addingItemsToOrder && detailOrderId) {
+    return (
+      <div className="h-full flex flex-col">
+        <div className="flex items-center gap-4 p-4 border-b">
+          <Button variant="ghost" size="icon" onClick={() => { setAddingItemsToOrder(false); setAddItemsCart([]); }} data-testid="button-back-from-add">
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div>
+            <h1 className="text-xl font-semibold">Add Items to Order</h1>
+            <p className="text-sm text-muted-foreground">#{orderDetailData?.order?.orderNumber}</p>
+          </div>
+        </div>
+        {renderMenuPicker("add")}
+      </div>
+    );
+  }
+
+  const activeOrders = activeOrdersData?.orders || [];
+  const completedOrders = completedOrdersData?.orders || [];
+
   return (
     <div className="h-full flex flex-col p-6">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold" data-testid="text-page-title">Orders</h1>
           <p className="text-muted-foreground">Manage and track all orders</p>
         </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-40" data-testid="select-status-filter">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="active">Active Orders</SelectItem>
-            <SelectItem value="pending">Pending</SelectItem>
-            <SelectItem value="confirmed">Confirmed</SelectItem>
-            <SelectItem value="preparing">Preparing</SelectItem>
-            <SelectItem value="ready">Ready</SelectItem>
-            <SelectItem value="served">Served</SelectItem>
-            <SelectItem value="completed">Completed</SelectItem>
-          </SelectContent>
-        </Select>
       </div>
 
-      <div className="flex-1 overflow-hidden">
-        {isLoading ? (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {[1, 2, 3].map((i) => (
-              <Skeleton key={i} className="h-64 w-full" />
-            ))}
-          </div>
-        ) : orders && orders.length > 0 ? (
-          <ScrollArea className="h-full">
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 pr-4">
-              {orders.map((order) => (
-                <Card key={order.id} data-testid={`order-card-${order.id}`}>
-                  <CardHeader className="flex flex-row items-start justify-between gap-2 pb-2">
-                    <div>
-                      <CardTitle className="text-lg">#{order.orderNumber}</CardTitle>
-                      <p className="text-sm text-muted-foreground">
-                        {formatTime(order.createdAt)}
-                      </p>
-                    </div>
-                    {getStatusBadge(order.status)}
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="space-y-2">
-                      {order.items?.slice(0, 3).map((item) => (
-                        <div key={item.id} className="flex justify-between text-sm">
-                          <span>
-                            {item.quantity}x {item.name}
-                          </span>
-                          <span className="text-muted-foreground">${item.totalPrice}</span>
-                        </div>
-                      ))}
-                      {order.items?.length > 3 && (
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
+        <TabsList className="w-fit mb-4">
+          <TabsTrigger value="active" data-testid="tab-active-orders">
+            <ClipboardList className="mr-2 h-4 w-4" />
+            Active Orders
+            {activeOrders.length > 0 && (
+              <Badge variant="secondary" className="ml-2 no-default-active-elevate">{activeOrders.length}</Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="history" data-testid="tab-order-history">
+            <History className="mr-2 h-4 w-4" />
+            Order History
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="active" className="flex-1 overflow-auto mt-0">
+          {loadingActive ? (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {[1, 2, 3].map(i => <Skeleton key={i} className="h-48 w-full" />)}
+            </div>
+          ) : activeOrders.length > 0 ? (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {activeOrders.map(order => {
+                const nextStatus = getNextStatus(order.status);
+                return (
+                  <Card key={order.id} data-testid={`order-card-${order.id}`}>
+                    <CardHeader className="flex flex-row items-start justify-between gap-2 pb-2">
+                      <div className="min-w-0">
+                        <CardTitle className="text-lg">#{order.orderNumber}</CardTitle>
                         <p className="text-sm text-muted-foreground">
-                          +{order.items.length - 3} more items
+                          {order.tableNumber ? `Table ${order.tableNumber}` : "No table"}
+                          {" - "}
+                          {formatTime(order.createdAt)}
                         </p>
-                      )}
-                    </div>
-                    <div className="flex items-center justify-between pt-2 border-t">
-                      <span className="font-semibold">Total: ${order.total}</span>
-                      {getNextStatus(order.status) && (
+                      </div>
+                      {getStatusBadge(order.status)}
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-lg font-semibold">${parseFloat(order.total).toFixed(2)}</span>
+                        <Badge variant="outline" className="no-default-active-elevate">{order.source.toUpperCase()}</Badge>
+                      </div>
+                      <div className="flex gap-2 flex-wrap">
                         <Button
                           size="sm"
-                          onClick={() => updateStatusMutation.mutate({
-                            orderId: order.id,
-                            status: getNextStatus(order.status)!,
-                          })}
-                          disabled={updateStatusMutation.isPending}
-                          data-testid={`button-next-status-${order.id}`}
+                          variant="outline"
+                          onClick={() => openOrderDetail(order.id)}
+                          data-testid={`button-view-order-${order.id}`}
                         >
-                          {updateStatusMutation.isPending ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            `Mark ${getNextStatus(order.status)}`
-                          )}
+                          <Eye className="mr-1 h-3.5 w-3.5" />
+                          View
                         </Button>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+                        {nextStatus && (
+                          <Button
+                            size="sm"
+                            onClick={() => updateStatusMutation.mutate({ orderId: order.id, status: nextStatus })}
+                            disabled={updateStatusMutation.isPending}
+                            data-testid={`button-next-status-${order.id}`}
+                          >
+                            {updateStatusMutation.isPending ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              `Mark ${ORDER_STATUSES.find(s => s.value === nextStatus)?.label || nextStatus}`
+                            )}
+                          </Button>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
-          </ScrollArea>
-        ) : (
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center py-12">
-              <Clock className="h-12 w-12 text-muted-foreground" />
-              <h3 className="mt-4 text-lg font-medium">No orders</h3>
-              <p className="text-muted-foreground">
-                {statusFilter === "active" ? "No active orders at the moment." : "No orders with this status."}
-              </p>
-            </CardContent>
-          </Card>
-        )}
-      </div>
+          ) : (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-12">
+                <ClipboardList className="h-12 w-12 text-muted-foreground" />
+                <h3 className="mt-4 text-lg font-medium">No active orders</h3>
+                <p className="text-muted-foreground">
+                  Start a new order from the Tables view.
+                </p>
+                <Button className="mt-4" variant="outline" onClick={() => setLocation("/pos")} data-testid="button-go-to-tables">
+                  Go to Tables
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="history" className="flex-1 overflow-auto mt-0">
+          {loadingCompleted ? (
+            <div className="space-y-2">
+              {[1, 2, 3].map(i => <Skeleton key={i} className="h-12 w-full" />)}
+            </div>
+          ) : completedOrders.length > 0 ? (
+            <Card>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Order #</TableHead>
+                      <TableHead>Table</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Source</TableHead>
+                      <TableHead className="text-right">Total</TableHead>
+                      <TableHead>Created</TableHead>
+                      <TableHead>Completed</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {completedOrders.map(order => (
+                      <TableRow key={order.id} data-testid={`history-row-${order.id}`}>
+                        <TableCell className="font-medium">{order.orderNumber}</TableCell>
+                        <TableCell>{order.tableNumber ? `Table ${order.tableNumber}` : "-"}</TableCell>
+                        <TableCell>{getStatusBadge(order.status)}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="no-default-active-elevate">{order.source.toUpperCase()}</Badge>
+                        </TableCell>
+                        <TableCell className="text-right font-semibold">${parseFloat(order.total).toFixed(2)}</TableCell>
+                        <TableCell className="text-muted-foreground">{formatDateTime(order.createdAt)}</TableCell>
+                        <TableCell className="text-muted-foreground">{order.completedAt ? formatDateTime(order.completedAt) : "-"}</TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => openOrderDetail(order.id)}
+                            data-testid={`button-view-history-${order.id}`}
+                          >
+                            <Eye className="mr-1 h-3.5 w-3.5" />
+                            Details
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-12">
+                <History className="h-12 w-12 text-muted-foreground" />
+                <h3 className="mt-4 text-lg font-medium">No completed orders yet</h3>
+                <p className="text-muted-foreground">
+                  Completed orders will appear here.
+                </p>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+      </Tabs>
+
+      <Dialog open={detailDialogOpen} onOpenChange={(open: boolean) => {
+        setDetailDialogOpen(open);
+        if (!open) {
+          setDetailOrderId(null);
+          setAddingItemsToOrder(false);
+          setAddItemsCart([]);
+        }
+      }}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-auto">
+          {loadingDetail ? (
+            <div className="space-y-4">
+              <Skeleton className="h-8 w-48" />
+              <Skeleton className="h-40 w-full" />
+            </div>
+          ) : orderDetailData ? (
+            <>
+              <DialogHeader>
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <div>
+                    <DialogTitle className="text-xl">Order #{orderDetailData.order.orderNumber}</DialogTitle>
+                    <DialogDescription>
+                      {orderDetailData.order.tableNumber ? `Table ${orderDetailData.order.tableNumber}` : "No table"}
+                      {" - "}
+                      {formatDateTime(orderDetailData.order.createdAt)}
+                    </DialogDescription>
+                  </div>
+                  {getStatusBadge(orderDetailData.order.status)}
+                </div>
+              </DialogHeader>
+
+              <div className="space-y-6 mt-4">
+                <div>
+                  <h3 className="font-medium mb-3">Order Items</h3>
+                  {orderDetailData.items.length > 0 ? (
+                    <div className="space-y-2">
+                      {orderDetailData.items.map(item => (
+                        <div key={item.id} className="flex items-center justify-between p-3 rounded-md border" data-testid={`order-item-${item.id}`}>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="font-medium">{item.name}</p>
+                              {getStatusBadge(item.status)}
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              {item.quantity} x ${parseFloat(item.unitPrice).toFixed(2)}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2 ml-2">
+                            <span className="font-semibold">${parseFloat(item.totalPrice).toFixed(2)}</span>
+                            {!["completed", "cancelled"].includes(orderDetailData.order.status) && (
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="text-destructive"
+                                onClick={() => removeItemMutation.mutate({ orderId: orderDetailData.order.id, itemId: item.id })}
+                                disabled={removeItemMutation.isPending}
+                                data-testid={`button-remove-item-${item.id}`}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-muted-foreground text-sm">No items in this order.</p>
+                  )}
+                </div>
+
+                <div className="rounded-md border p-4 space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Subtotal</span>
+                    <span>${parseFloat(orderDetailData.order.subtotal).toFixed(2)}</span>
+                  </div>
+                  {parseFloat(orderDetailData.order.taxAmount) > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Tax</span>
+                      <span>${parseFloat(orderDetailData.order.taxAmount).toFixed(2)}</span>
+                    </div>
+                  )}
+                  {parseFloat(orderDetailData.order.discountAmount || "0") > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Discount</span>
+                      <span>-${parseFloat(orderDetailData.order.discountAmount).toFixed(2)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between font-semibold text-lg pt-2 border-t">
+                    <span>Total</span>
+                    <span>${parseFloat(orderDetailData.order.total).toFixed(2)}</span>
+                  </div>
+                  {parseFloat(orderDetailData.order.paidAmount) > 0 && (
+                    <div className="flex justify-between text-sm text-green-600 dark:text-green-400">
+                      <span>Paid</span>
+                      <span>${parseFloat(orderDetailData.order.paidAmount).toFixed(2)}</span>
+                    </div>
+                  )}
+                </div>
+
+                {!["completed", "cancelled"].includes(orderDetailData.order.status) && (
+                  <div className="flex gap-2 flex-wrap">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setDetailDialogOpen(false);
+                        setAddingItemsToOrder(true);
+                      }}
+                      data-testid="button-add-more-items"
+                    >
+                      <Plus className="mr-2 h-4 w-4" />
+                      Add More Items
+                    </Button>
+                    {getNextStatus(orderDetailData.order.status) && (
+                      <Button
+                        onClick={() => updateStatusMutation.mutate({
+                          orderId: orderDetailData.order.id,
+                          status: getNextStatus(orderDetailData.order.status)!,
+                        })}
+                        disabled={updateStatusMutation.isPending}
+                        data-testid="button-advance-status"
+                      >
+                        {updateStatusMutation.isPending ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : null}
+                        Mark {ORDER_STATUSES.find(s => s.value === getNextStatus(orderDetailData.order.status))?.label}
+                      </Button>
+                    )}
+                    {orderDetailData.order.status === "served" && (
+                      <Button
+                        variant="default"
+                        onClick={() => updateStatusMutation.mutate({
+                          orderId: orderDetailData.order.id,
+                          status: "completed",
+                        })}
+                        disabled={updateStatusMutation.isPending}
+                        data-testid="button-complete-order"
+                      >
+                        {updateStatusMutation.isPending ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <CheckCircle className="mr-2 h-4 w-4" />
+                        )}
+                        Complete Order
+                      </Button>
+                    )}
+                  </div>
+                )}
+
+                {orderDetailData.statusHistory.length > 0 && (
+                  <div>
+                    <h3 className="font-medium mb-3">Status History</h3>
+                    <div className="space-y-2">
+                      {orderDetailData.statusHistory.map(entry => (
+                        <div key={entry.id} className="flex items-center gap-3 text-sm">
+                          <span className="text-muted-foreground w-20 shrink-0">{formatTime(entry.createdAt)}</span>
+                          <span>{entry.fromStatus || "created"}</span>
+                          <span className="text-muted-foreground">&rarr;</span>
+                          <span className="font-medium">{entry.toStatus}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <p className="text-muted-foreground">Order not found</p>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

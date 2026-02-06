@@ -1,0 +1,150 @@
+STRICT IMPLEMENTATION SPEC — READ CAREFULLY AND DO NOT SKIP ANY ITEM.
+WORK ONLY ON BRANCH: sohaib-dev (DO NOT TOUCH main).
+FIRST: print current branch using: git branch --show-current
+If not sohaib-dev: git checkout sohaib-dev && git pull origin sohaib-dev
+
+Goal: Implement missing PROFESSIONAL, DYNAMIC workflows for Restaurant Menu + POS Orders, end-to-end (backend + frontend). No UI-only workarounds. All data must persist in DB and be correctly scoped to restaurantId.
+
+========================================================
+1) RESTAURANT MENU TAB — CATEGORY + MENU ITEMS WORKFLOW (MANDATORY)
+========================================================
+
+You MUST implement a proper hierarchical menu system exactly like this workflow:
+
+WORKFLOW:
+- The restaurant owner manages the menu in TWO levels:
+  1) Categories (example: Pizza, Burgers, Drinks)
+  2) Menu Items inside a selected category (example: “Italian Pizza”, “Pepperoni Pizza” inside Pizza)
+
+REQUIREMENTS:
+A) Data model (DB):
+- Ensure there is a clear relationship:
+  - Category: id, restaurantId, name, description(optional), sortOrder(optional), createdAt
+  - MenuItem: id, restaurantId, categoryId, name, description(optional), price, image(optional), isAvailable(boolean default true), sortOrder(optional), createdAt
+- Enforce restaurant scoping on all queries and writes.
+
+B) Backend APIs:
+- Implement or fix endpoints to support:
+  - GET categories (option 1: include items nested) OR (option 2: separate GET items by category) — choose one and make frontend match it.
+  - POST create category
+  - PATCH category (optional but preferred)
+  - DELETE category (optional but preferred, with safe behavior)
+  - POST create menu item under a category (categoryId required)
+  - PATCH menu item (optional but preferred)
+  - DELETE menu item (optional but preferred)
+- Ensure response shapes are consistent and documented in code.
+- Fix any mismatches between frontend expectations and backend responses.
+
+C) Frontend Menu UI (Restaurant dashboard):
+- Menu page must show:
+  - A category list (left or top) and an item list grouped under each category OR expandable accordion layout.
+- Add Category flow:
+  - Button “Add Category” -> modal/form -> creates category -> immediately appears without refresh.
+- Add Item flow:
+  - Must select a category first (or an inline “Add Item” inside category section)
+  - Button “Add Item” -> form -> creates item linked to category -> appears under that category immediately.
+- Professional UX:
+  - Loading states, empty states (“No categories yet”, “No items in this category”)
+  - Validation for required fields (category name, item name, price)
+  - Proper error messages from API.
+
+ACCEPTANCE TESTS:
+- Create category “Pizza” -> appears immediately.
+- Add “Italian Pizza” under Pizza -> appears under Pizza immediately.
+- Refresh page -> category + items persist and render correctly.
+- Create multiple categories -> items show under correct category only.
+
+========================================================
+2) POS ORDER FLOW + ORDER HISTORY TABLE (MANDATORY)
+========================================================
+
+You MUST implement a complete POS order lifecycle:
+- Start Order (from POS tab table)
+- Add items to order (from Menu Items)
+- Complete Order
+- Store completed order permanently
+- Display Order History as a TABLE (records of all orders)
+
+A) POS ORDER FLOW (Restaurant dashboard):
+- When POS feature is enabled for restaurant:
+  1) Restaurant selects a table
+  2) Click “Start New Order” -> creates a new Order in DB (status = OPEN)
+  3) POS screen must display:
+     - Current Order details
+     - Menu categories and items (from Menu system above) for adding to order
+     - Add item -> quantity increments
+     - Remove/decrease quantity
+     - Subtotal/total calculations
+  4) “Complete Order”:
+     - Changes status to COMPLETED
+     - Stores completion timestamp
+     - Locks order items (no further edits)
+
+B) Data model for Orders (DB):
+- Create or fix tables such that:
+  - Order: id, restaurantId, tableId, status (OPEN/COMPLETED/CANCELLED), subtotal, tax(optional), total, createdAt, completedAt(optional)
+  - OrderItem: id, orderId, menuItemId, nameSnapshot(optional), priceSnapshot(optional), quantity, lineTotal
+- IMPORTANT:
+  - Use snapshots for name/price OR join live menu item, but ensure completed order remains stable if menu changes later.
+  - Ensure strict restaurant scoping.
+
+C) Backend APIs for Orders:
+- Implement or fix:
+  - POST /orders (create order for table)
+  - GET /orders/:id (fetch order with items)
+  - POST /orders/:id/items (add item or increment quantity)
+  - PATCH /orders/:id/items/:itemId (update qty)
+  - DELETE /orders/:id/items/:itemId (remove)
+  - POST /orders/:id/complete (mark completed)
+  - GET /orders?status=COMPLETED (order history list for restaurant, pageable if possible)
+
+D) Frontend: POS UI wiring
+- “Start New Order” MUST navigate/open an Order view with actual content:
+  - Show categories/items and allow adding items
+  - Show order summary panel and totals
+  - Show “Complete Order” button
+- Handle empty menu professionally: show message “No menu items yet — create categories/items in Menu first”.
+
+E) Order History (Restaurant dashboard):
+- Add a tab/section "Orders" OR within POS add "Order History"
+- Show completed orders in a TABLE with at minimum:
+  - Order ID (short display)
+  - Table name/number
+  - Items count
+  - Total amount
+  - Status
+  - Created time
+  - Completed time
+  - View details action (opens order detail showing line items)
+
+ACCEPTANCE TESTS:
+- Create category + item in Menu.
+- Go to POS -> select table -> Start New Order:
+  - order screen opens
+  - add items -> totals update
+  - complete order -> status becomes COMPLETED
+- Go to Order History table:
+  - completed order appears instantly without refresh
+  - refresh page -> order is still listed
+  - view details shows correct line items and totals
+
+========================================================
+EXECUTION RULES (MANDATORY)
+========================================================
+1) Do not refactor unrelated code.
+2) Fix server-side first, then UI.
+3) Standardize FE/BE response shapes (no mismatches like expecting {menus:...} when backend returns []).
+4) Use TanStack Query properly:
+   - invalidate queries after create/update/complete so UI updates instantly without refresh.
+5) Enforce feature flags: if POS disabled, POS routes should not render and backend should return 403 for POS endpoints.
+6) Commit and push to origin/sohaib-dev with clear commits:
+   - "feat: menu categories and items hierarchy"
+   - "feat: pos order lifecycle + complete order"
+   - "feat: order history table + order detail"
+   - "fix: query invalidation for realtime UI updates"
+
+DELIVERABLE:
+- Menu Category + Items workflow fully working.
+- POS Start/Complete order working.
+- Completed orders stored and visible in an Orders History table.
+- All changes pushed to sohaib-dev.
