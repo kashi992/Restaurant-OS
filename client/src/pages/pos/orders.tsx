@@ -341,8 +341,11 @@ export default function OrdersPage() {
       }
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "orders"] });
+      if (variables.status === "completed" || variables.status === "cancelled") {
+        queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "tables"] });
+      }
       toast({ title: "Order status updated" });
     },
     onError: (error: Error) => {
@@ -433,6 +436,7 @@ export default function OrdersPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "tables"] });
       toast({ title: "Payment recorded & order completed!" });
       setPayDialogOpen(false);
       setPayOrderId(null);

@@ -51,6 +51,7 @@ export default function POSHome() {
       return res.json();
     },
     enabled: !!accessToken && !!restaurantId,
+    refetchInterval: 10000,
   });
 
   const { data: activeOrders } = useQuery<Order[]>({
