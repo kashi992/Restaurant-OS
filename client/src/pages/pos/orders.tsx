@@ -956,31 +956,48 @@ export default function OrdersPage() {
                   {orderDetailData.items.length > 0 ? (
                     <div className="space-y-2">
                       {orderDetailData.items.map(item => (
-                        <div key={item.id} className="flex items-center justify-between p-3 rounded-md border" data-testid={`order-item-${item.id}`}>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <p className="font-medium">{item.name}</p>
-                              {getStatusBadge(item.status)}
+                        <div key={item.id} className="p-3 rounded-md border space-y-1" data-testid={`order-item-${item.id}`}>
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="font-medium">{item.name}</p>
+                                {getStatusBadge(item.status)}
+                              </div>
+                              <p className="text-sm text-muted-foreground">
+                                {item.quantity} x ${parseFloat(item.unitPrice).toFixed(2)}
+                                {parseFloat(item.modifiersPrice) > 0 && (
+                                  <span> (+${parseFloat(item.modifiersPrice).toFixed(2)} addons)</span>
+                                )}
+                              </p>
                             </div>
-                            <p className="text-sm text-muted-foreground">
-                              {item.quantity} x ${parseFloat(item.unitPrice).toFixed(2)}
-                            </p>
+                            <div className="flex items-center gap-2 ml-2">
+                              <span className="font-semibold">${parseFloat(item.totalPrice).toFixed(2)}</span>
+                              {!["completed", "cancelled"].includes(orderDetailData.order.status) && (
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="text-destructive"
+                                  onClick={() => removeItemMutation.mutate({ orderId: orderDetailData.order.id, itemId: item.id })}
+                                  disabled={removeItemMutation.isPending}
+                                  data-testid={`button-remove-item-${item.id}`}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              )}
+                            </div>
                           </div>
-                          <div className="flex items-center gap-2 ml-2">
-                            <span className="font-semibold">${parseFloat(item.totalPrice).toFixed(2)}</span>
-                            {!["completed", "cancelled"].includes(orderDetailData.order.status) && (
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                className="text-destructive"
-                                onClick={() => removeItemMutation.mutate({ orderId: orderDetailData.order.id, itemId: item.id })}
-                                disabled={removeItemMutation.isPending}
-                                data-testid={`button-remove-item-${item.id}`}
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            )}
-                          </div>
+                          {item.modifiers && item.modifiers.length > 0 && (
+                            <div className="pl-3 border-l-2 border-muted ml-1 space-y-0.5" data-testid={`order-item-modifiers-${item.id}`}>
+                              {item.modifiers.map((mod: any, idx: number) => (
+                                <p key={idx} className="text-sm text-muted-foreground">
+                                  {mod.name}
+                                  {parseFloat(mod.price) > 0 && (
+                                    <span className="ml-1">(+${parseFloat(mod.price).toFixed(2)})</span>
+                                  )}
+                                </p>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>

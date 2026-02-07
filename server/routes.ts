@@ -4772,7 +4772,27 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
           ))
           .orderBy(orders.createdAt);
 
-        res.json({ orders: liveOrders });
+        const ordersWithItems = await Promise.all(
+          liveOrders.map(async (order) => {
+            const items = await db
+              .select({
+                id: orderItems.id,
+                name: orderItems.name,
+                quantity: orderItems.quantity,
+                unitPrice: orderItems.unitPrice,
+                modifiersPrice: orderItems.modifiersPrice,
+                totalPrice: orderItems.totalPrice,
+                modifiers: orderItems.modifiers,
+                notes: orderItems.notes,
+                status: orderItems.status,
+              })
+              .from(orderItems)
+              .where(eq(orderItems.orderId, order.id));
+            return { ...order, items };
+          })
+        );
+
+        res.json({ orders: ordersWithItems });
       } catch (error) {
         console.error("Get live orders error:", error);
         res.status(500).json({ error: "Failed to fetch live orders" });

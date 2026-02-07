@@ -28,6 +28,7 @@ interface OrderItem {
   name: string;
   quantity: number;
   notes: string | null;
+  modifiers: Array<{ id: string; name: string; price: string }>;
 }
 
 export default function KitchenDisplay() {
@@ -146,13 +147,22 @@ export default function KitchenDisplay() {
                       </CardHeader>
                       <CardContent className="space-y-4">
                         <div className="space-y-2">
-                          {order.items?.map((item) => (
+                          {order.items?.map((item: any) => (
                             <div key={item.id} className="flex items-start gap-2 text-lg">
                               <Badge variant="secondary" className="font-bold">
                                 {item.quantity}x
                               </Badge>
                               <div>
                                 <span className="font-medium">{item.name}</span>
+                                {item.modifiers && item.modifiers.length > 0 && (
+                                  <div className="space-y-0.5 mt-0.5">
+                                    {item.modifiers.map((mod: any, idx: number) => (
+                                      <p key={idx} className="text-sm text-muted-foreground">
+                                        {mod.name}
+                                      </p>
+                                    ))}
+                                  </div>
+                                )}
                                 {item.notes && (
                                   <p className="text-sm text-orange-600 dark:text-orange-400">
                                     Note: {item.notes}
@@ -215,13 +225,22 @@ export default function KitchenDisplay() {
                       </CardHeader>
                       <CardContent className="space-y-4">
                         <div className="space-y-2">
-                          {order.items?.map((item) => (
+                          {order.items?.map((item: any) => (
                             <div key={item.id} className="flex items-start gap-2 text-lg">
                               <Badge variant="secondary" className="font-bold">
                                 {item.quantity}x
                               </Badge>
                               <div>
                                 <span className="font-medium">{item.name}</span>
+                                {item.modifiers && item.modifiers.length > 0 && (
+                                  <div className="space-y-0.5 mt-0.5">
+                                    {item.modifiers.map((mod: any, idx: number) => (
+                                      <p key={idx} className="text-sm text-muted-foreground">
+                                        {mod.name}
+                                      </p>
+                                    ))}
+                                  </div>
+                                )}
                                 {item.notes && (
                                   <p className="text-sm text-orange-600 dark:text-orange-400">
                                     Note: {item.notes}
@@ -232,7 +251,7 @@ export default function KitchenDisplay() {
                           ))}
                         </div>
                         <Button
-                          className="w-full bg-green-600 hover:bg-green-700"
+                          className="w-full bg-green-600"
                           size="lg"
                           onClick={() => updateStatusMutation.mutate({
                             orderId: order.id,

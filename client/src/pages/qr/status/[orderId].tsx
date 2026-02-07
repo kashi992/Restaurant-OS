@@ -13,12 +13,17 @@ import {
   Loader2,
 } from "lucide-react";
 
-interface OrderStatus {
-  id: string;
-  orderNumber: string;
-  status: string;
-  total: string;
-  createdAt: string;
+interface OrderStatusResponse {
+  order: {
+    id: string;
+    orderNumber: string;
+    displayNumber: number | null;
+    status: string;
+    total: string;
+    table: string | null;
+    estimatedReadyAt: string | null;
+    createdAt: string;
+  };
   items: OrderItem[];
   statusHistory: StatusHistory[];
 }
@@ -27,12 +32,16 @@ interface OrderItem {
   id: string;
   name: string;
   quantity: number;
-  unitPrice: string;
+  totalPrice: string;
+  status: string;
+  modifiers: Array<{ id: string; name: string; price: string }>;
 }
 
 interface StatusHistory {
-  status: string;
-  changedAt: string;
+  fromStatus: string | null;
+  toStatus: string;
+  notes: string | null;
+  createdAt: string;
 }
 
 const STATUS_STEPS = [
@@ -51,7 +60,7 @@ export default function OrderStatusPage({ orderId }: { orderId: string }) {
     setTrackingToken(params.get("token"));
   }, []);
 
-  const { data: order, isLoading, error } = useQuery<OrderStatus>({
+  const { data, isLoading, error } = useQuery<OrderStatusResponse>({
     queryKey: ["/api/order", orderId, "status"],
     queryFn: async () => {
       const res = await fetch(`/api/order/${orderId}/status`);
@@ -60,6 +69,10 @@ export default function OrderStatusPage({ orderId }: { orderId: string }) {
     },
     refetchInterval: 5000,
   });
+
+  const order = data?.order;
+  const orderItems = data?.items || [];
+  const statusHistory = data?.statusHistory || [];
 
   const getCurrentStepIndex = () => {
     if (!order) return 0;
@@ -85,7 +98,7 @@ export default function OrderStatusPage({ orderId }: { orderId: string }) {
     );
   }
 
-  if (error || !order) {
+  if (error || !data || !order) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <Card className="max-w-md w-full text-center">
@@ -112,7 +125,7 @@ export default function OrderStatusPage({ orderId }: { orderId: string }) {
             <currentStep.icon className="h-8 w-8 text-primary" />
           </div>
           <h1 className="text-2xl font-bold" data-testid="text-order-number">
-            Order #{order.orderNumber}
+            Order #{order.displayNumber || order.orderNumber}
           </h1>
           <p className="text-lg text-muted-foreground mt-1">
             {currentStep.description}
@@ -128,7 +141,7 @@ export default function OrderStatusPage({ orderId }: { orderId: string }) {
                 const currentIndex = getCurrentStepIndex();
                 const isCompleted = index <= currentIndex;
                 const isCurrent = index === currentIndex;
-                const historyEntry = order.statusHistory?.find(h => h.status === step.key);
+                const historyEntry = statusHistory.find(h => h.toStatus === step.key);
 
                 return (
                   <div
@@ -157,7 +170,7 @@ export default function OrderStatusPage({ orderId }: { orderId: string }) {
                       </p>
                       {historyEntry && (
                         <p className="text-sm text-muted-foreground">
-                          {formatTime(historyEntry.changedAt)}
+                          {formatTime(historyEntry.createdAt)}
                         </p>
                       )}
                     </div>
@@ -177,21 +190,32 @@ export default function OrderStatusPage({ orderId }: { orderId: string }) {
             <CardTitle className="text-lg">Order Details</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
-              {order.items?.map((item) => (
-                <div key={item.id} className="flex justify-between">
-                  <span>
-                    {item.quantity}x {item.name}
-                  </span>
-                  <span className="text-muted-foreground">
-                    ${(parseFloat(item.unitPrice) * item.quantity).toFixed(2)}
-                  </span>
+            <div className="space-y-3">
+              {orderItems.map((item) => (
+                <div key={item.id} className="space-y-1" data-testid={`order-item-${item.id}`}>
+                  <div className="flex justify-between">
+                    <span className="font-medium">
+                      {item.quantity}x {item.name}
+                    </span>
+                    <span className="text-muted-foreground">
+                      ${parseFloat(item.totalPrice).toFixed(2)}
+                    </span>
+                  </div>
+                  {item.modifiers && item.modifiers.length > 0 && (
+                    <div className="pl-4 space-y-0.5">
+                      {item.modifiers.map((mod, idx) => (
+                        <p key={idx} className="text-sm text-muted-foreground">
+                          {mod.name}{parseFloat(mod.price) > 0 ? ` (+$${parseFloat(mod.price).toFixed(2)})` : ""}
+                        </p>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
             <div className="flex justify-between border-t pt-4 font-semibold text-lg">
               <span>Total</span>
-              <span>${order.total}</span>
+              <span>${parseFloat(order.total).toFixed(2)}</span>
             </div>
           </CardContent>
         </Card>
