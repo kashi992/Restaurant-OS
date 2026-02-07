@@ -54,7 +54,7 @@ export default function POSHome() {
   });
 
   const { data: activeOrders } = useQuery<Order[]>({
-    queryKey: ["/api/restaurants", restaurantId, "orders", "live"],
+    queryKey: ["/api/restaurants", restaurantId, "orders", "live", "tables-view"],
     queryFn: async () => {
       const res = await fetch(`/api/restaurants/${restaurantId}/orders/live`, {
         headers: { Authorization: `Bearer ${accessToken}` },
@@ -69,7 +69,8 @@ export default function POSHome() {
   });
 
   const getTableStatus = (table: Table) => {
-    const hasOrder = activeOrders?.some(o => o.tableId === table.id);
+    const orders = Array.isArray(activeOrders) ? activeOrders : [];
+    const hasOrder = orders.some(o => o.tableId === table.id);
     if (hasOrder) return "occupied";
     return table.status;
   };
