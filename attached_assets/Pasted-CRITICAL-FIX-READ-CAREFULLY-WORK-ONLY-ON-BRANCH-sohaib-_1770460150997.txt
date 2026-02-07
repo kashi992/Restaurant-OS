@@ -1,0 +1,110 @@
+CRITICAL FIX — READ CAREFULLY.
+WORK ONLY ON BRANCH: sohaib-dev (DO NOT TOUCH main).
+
+FIRST STEP (MANDATORY):
+- Print current branch: git branch --show-current
+- If not sohaib-dev → git checkout sohaib-dev && git pull origin sohaib-dev
+
+GOAL:
+Fix POS PAYMENT MODULE VISIBILITY issue. Payment module must NEVER disappear silently. POS must behave like a real production system.
+
+========================================================
+ISSUE: PAYMENT MODULE DISAPPEARED FROM POS (CRITICAL)
+========================================================
+
+Problem Description:
+- In Restaurant POS screen, the Payment section/modal is no longer visible.
+- This happened after previous changes related to payment methods.
+- POS order flow is now broken because payment UI does not appear at all.
+
+ROOT CAUSE YOU MUST IDENTIFY AND FIX:
+One or more of the following is happening:
+- Frontend hides payment UI due to incorrect conditional rendering
+- Restaurant paymentMethods config is undefined / empty / not returned
+- Feature gating logic incorrectly hides payment module
+- Payment component depends on at least one enabled method and fails silently
+- Backend does not return payment configuration in restaurant session (/me endpoint)
+
+YOU MUST FIND THE ACTUAL CAUSE AND FIX IT — NOT A GUESS.
+
+========================================================
+REQUIRED BEHAVIOR (NON-NEGOTIABLE)
+========================================================
+
+A) PAYMENT MODULE VISIBILITY RULES
+- Payment module MUST be visible in POS if:
+  - At least ONE payment method is enabled for the restaurant
+- Payment module MUST NOT disappear silently.
+- If no payment method is enabled:
+  - Show a clear message: “No payment methods enabled. Please contact admin.”
+  - DO NOT hide the entire payment section.
+
+B) BACKEND REQUIREMENTS
+- Ensure restaurant login / me endpoint ALWAYS returns:
+  - paymentMethods configuration (even if only cash is enabled)
+  Example:
+    paymentMethods: {
+      cash: true,
+      card: false,
+      stripe: false
+    }
+- Never return undefined or null for paymentMethods.
+- Backend must validate:
+  - Payment method used exists AND is enabled
+  - Return 403 if disabled, with clear message
+
+C) FRONTEND REQUIREMENTS (POS SCREEN)
+- Payment UI rendering logic MUST:
+  - Default safely if paymentMethods is missing
+  - Treat CASH as a valid fallback method
+- If only CASH is enabled:
+  - Payment module MUST still render
+  - CASH option MUST be selectable
+- Do NOT wrap entire payment UI inside conditions that can evaluate to false incorrectly.
+
+D) CASH FALLBACK RULE (IMPORTANT)
+- CASH payment MUST ALWAYS allow:
+  - Order completion
+  - No gateway checks
+  - No transaction ID required
+- CASH must NEVER cause the payment UI to disappear.
+
+========================================================
+ACCEPTANCE TESTS (MUST ALL PASS)
+========================================================
+
+1) Restaurant with CASH enabled only:
+   - POS shows payment module
+   - CASH option visible
+   - Proceed Payment completes order successfully
+
+2) Restaurant with CARD enabled:
+   - POS shows payment module
+   - Card option visible
+
+3) Restaurant with NO payment methods enabled:
+   - POS shows message “No payment methods enabled”
+   - POS does NOT crash or hide entire section
+
+4) Refresh POS page:
+   - Payment module still visible
+   - No console errors
+   - No blank screen
+
+========================================================
+EXECUTION RULES (MANDATORY)
+========================================================
+
+1) Fix backend first, then frontend.
+2) Do NOT remove payment UI to “avoid errors”.
+3) Do NOT hardcode payment methods in frontend.
+4) Ensure FE/BE contracts are aligned.
+5) Add defensive rendering (never assume undefined = false).
+6) Commit and push to origin/sohaib-dev with message:
+   "fix: restore POS payment module visibility and cash fallback"
+
+DELIVERABLE:
+- POS payment module visible again.
+- Cash payment works.
+- No silent UI disappearance.
+- Code pushed to sohaib-dev.

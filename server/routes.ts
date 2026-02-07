@@ -393,6 +393,14 @@ export async function registerRoutes(
         path: "/",
       });
 
+      const paymentMethods = {
+        cash: restaurantContext.features?.counter_payments ?? false,
+        counter: restaurantContext.features?.counter_payments ?? false,
+        card: restaurantContext.features?.stripe_payments ?? false,
+        stripe: restaurantContext.features?.stripe_payments ?? false,
+        paypal: restaurantContext.features?.paypal_payments ?? false,
+      };
+
       res.json({
         accessToken,
         accessTokenExpiresAt: accessExpiresAt.toISOString(),
@@ -403,6 +411,7 @@ export async function registerRoutes(
           lastName: user.lastName,
           isSuperAdmin: user.isSuperAdmin,
           ...restaurantContext,
+          paymentMethods,
         },
       });
     } catch (error) {
@@ -616,6 +625,14 @@ export async function registerRoutes(
         }), {} as Record<string, boolean>);
       }
 
+      const paymentMethods = user.restaurantId ? {
+        cash: currentRestaurantFeatures.counter_payments ?? false,
+        counter: currentRestaurantFeatures.counter_payments ?? false,
+        card: currentRestaurantFeatures.stripe_payments ?? false,
+        stripe: currentRestaurantFeatures.stripe_payments ?? false,
+        paypal: currentRestaurantFeatures.paypal_payments ?? false,
+      } : { cash: false, counter: false, card: false, stripe: false, paypal: false };
+
       res.json({
         id: user.userId,
         email: user.email,
@@ -630,6 +647,7 @@ export async function registerRoutes(
           roleName: user.roleName,
           permissions: user.permissions,
           features: currentRestaurantFeatures,
+          paymentMethods,
         } : null,
         restaurants: restaurantsWithFeatures,
       });
@@ -5594,6 +5612,25 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
         const validMethods = ['cash', 'counter', 'card', 'mobile', 'gift_card', 'other'];
         if (!validMethods.includes(method)) {
           return res.status(400).json({ error: `Invalid method. Must be one of: ${validMethods.join(', ')}` });
+        }
+
+        const featureList = await db
+          .select()
+          .from(restaurantFeatureAllowlist)
+          .where(eq(restaurantFeatureAllowlist.restaurantId, restaurantId));
+        const featureFlags = featureList.reduce((acc, f) => ({
+          ...acc,
+          [f.featureKey]: f.isEnabled ?? false
+        }), {} as Record<string, boolean>);
+
+        const methodFeatureMap: Record<string, string> = {
+          cash: 'counter_payments',
+          counter: 'counter_payments',
+          card: 'stripe_payments',
+        };
+        const requiredFeature = methodFeatureMap[method];
+        if (requiredFeature && featureFlags[requiredFeature] === false) {
+          return res.status(403).json({ error: `Payment method '${method}' is not enabled for this restaurant` });
         }
 
         // Verify order exists

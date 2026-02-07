@@ -1,6 +1,14 @@
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { apiRequest } from "./queryClient";
 
+interface PaymentMethodsConfig {
+  cash: boolean;
+  counter: boolean;
+  card: boolean;
+  stripe: boolean;
+  paypal: boolean;
+}
+
 interface User {
   id: string;
   email: string;
@@ -11,6 +19,7 @@ interface User {
   isSuperAdmin: boolean;
   permissions: string[];
   features: Record<string, boolean>;
+  paymentMethods: PaymentMethodsConfig;
 }
 
 interface AuthContextType {
@@ -55,7 +64,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
       if (res.ok) {
         const data = await res.json();
-        // Map the response to our User interface
+        const defaultPaymentMethods = { cash: false, counter: false, card: false, stripe: false, paypal: false };
         setUser({
           id: data.id,
           email: data.email,
@@ -66,6 +75,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           isSuperAdmin: data.isSuperAdmin || false,
           permissions: data.currentRestaurant?.permissions || [],
           features: data.currentRestaurant?.features || {},
+          paymentMethods: data.currentRestaurant?.paymentMethods || defaultPaymentMethods,
         });
       } else {
         setUser(null);
@@ -109,7 +119,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     console.log("🔐 Login response:", data);
     setAccessToken(data.accessToken);
 
-   // ✅ Set user immediately from login response
+  const defaultPaymentMethods = { cash: false, counter: false, card: false, stripe: false, paypal: false };
   const userObj = {
     id: data.user.id,
     email: data.user.email,
@@ -120,6 +130,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isSuperAdmin: data.user.isSuperAdmin || false,
     permissions: data.user.permissions || [],
     features: data.user.features || {},
+    paymentMethods: data.user.paymentMethods || defaultPaymentMethods,
   };
   
    console.log("👤 Setting user:", userObj); // ✅ DEBUG LOG
