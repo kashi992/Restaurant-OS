@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,10 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import {
+  Dialog,
+  DialogContent,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -29,6 +33,11 @@ import {
   Utensils,
   Loader2,
   MapPin,
+  X,
+  ChevronUp,
+  ChevronDown,
+  Check,
+  Circle,
 } from "lucide-react";
 
 interface TokenData {
@@ -53,16 +62,21 @@ interface TokenData {
   requiresTableSelection: boolean;
 }
 
-interface Menu {
+interface Modifier {
   id: string;
   name: string;
-  categories: Category[];
+  price: string;
+  isDefault: boolean;
+  isAvailable: boolean;
 }
 
-interface Category {
+interface ModifierGroup {
   id: string;
   name: string;
-  items: MenuItem[];
+  minSelections: number;
+  maxSelections: number;
+  isRequired: boolean;
+  modifiers: Modifier[];
 }
 
 interface MenuItem {
@@ -71,12 +85,41 @@ interface MenuItem {
   description: string | null;
   price: string;
   imageUrl: string | null;
-  isAvailable: boolean;
+  isAvailable?: boolean;
+  allergens?: string[];
+  tags?: string[];
+  isPopular?: boolean;
+  isNew?: boolean;
+  modifierGroups?: ModifierGroup[];
+}
+
+interface Category {
+  id: string;
+  name: string;
+  description?: string | null;
+  items: MenuItem[];
+}
+
+interface MenuResponse {
+  menus: {
+    id: string;
+    name: string;
+    categories: Category[];
+  }[];
+}
+
+interface SelectedModifier {
+  id: string;
+  name: string;
+  price: string;
 }
 
 interface CartItem {
+  cartId: string;
   menuItem: MenuItem;
   quantity: number;
+  selectedModifiers: SelectedModifier[];
+  modifiersTotal: number;
 }
 
 interface Table {
@@ -86,6 +129,287 @@ interface Table {
   label: string;
 }
 
+function generateCartId(): string {
+  return Math.random().toString(36).substring(2, 10);
+}
+
+function ItemDetailDialog({
+  item,
+  open,
+  onClose,
+  onAddToCart,
+  currency,
+}: {
+  item: MenuItem;
+  open: boolean;
+  onClose: () => void;
+  onAddToCart: (item: MenuItem, quantity: number, selectedModifiers: SelectedModifier[]) => void;
+  currency: string;
+}) {
+  const [quantity, setQuantity] = useState(1);
+  const [selectedModifiers, setSelectedModifiers] = useState<Record<string, string[]>>({});
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    if (open) {
+      setQuantity(1);
+      setCollapsedGroups({});
+      const defaults: Record<string, string[]> = {};
+      item.modifierGroups?.forEach((group) => {
+        const defaultMods = group.modifiers.filter((m) => m.isDefault).map((m) => m.id);
+        if (defaultMods.length > 0) {
+          defaults[group.id] = defaultMods;
+        } else if (group.isRequired && group.maxSelections === 1 && group.modifiers.length > 0) {
+          defaults[group.id] = [group.modifiers[0].id];
+        }
+      });
+      setSelectedModifiers(defaults);
+    }
+  }, [open, item]);
+
+  const toggleGroupCollapse = (groupId: string) => {
+    setCollapsedGroups((prev) => ({ ...prev, [groupId]: !prev[groupId] }));
+  };
+
+  const handleRadioSelect = (groupId: string, modifierId: string) => {
+    setSelectedModifiers((prev) => ({ ...prev, [groupId]: [modifierId] }));
+  };
+
+  const handleCheckboxToggle = (groupId: string, modifierId: string, maxSelections: number) => {
+    setSelectedModifiers((prev) => {
+      const current = prev[groupId] || [];
+      if (current.includes(modifierId)) {
+        return { ...prev, [groupId]: current.filter((id) => id !== modifierId) };
+      }
+      if (maxSelections > 0 && current.length >= maxSelections) {
+        return prev;
+      }
+      return { ...prev, [groupId]: [...current, modifierId] };
+    });
+  };
+
+  const allModifiers = useMemo(() => {
+    const result: SelectedModifier[] = [];
+    item.modifierGroups?.forEach((group) => {
+      const selected = selectedModifiers[group.id] || [];
+      group.modifiers.forEach((mod) => {
+        if (selected.includes(mod.id)) {
+          result.push({ id: mod.id, name: mod.name, price: mod.price });
+        }
+      });
+    });
+    return result;
+  }, [selectedModifiers, item.modifierGroups]);
+
+  const modifiersTotal = allModifiers.reduce((sum, m) => sum + parseFloat(m.price), 0);
+  const itemPrice = parseFloat(item.price);
+  const totalPerItem = itemPrice + modifiersTotal;
+  const totalPrice = totalPerItem * quantity;
+
+  const isValid = useMemo(() => {
+    if (!item.modifierGroups) return true;
+    return item.modifierGroups.every((group) => {
+      if (!group.isRequired) return true;
+      const selected = selectedModifiers[group.id] || [];
+      return selected.length >= (group.minSelections || 1);
+    });
+  }, [selectedModifiers, item.modifierGroups]);
+
+  const handleAdd = () => {
+    if (!isValid) return;
+    onAddToCart(item, quantity, allModifiers);
+    onClose();
+  };
+
+  const isRadioGroup = (group: ModifierGroup) => group.maxSelections === 1;
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-lg p-0 gap-0 max-h-[90vh] flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between p-4 border-b">
+          <h2 className="text-lg font-semibold" data-testid="text-item-detail-name">{item.name}</h2>
+          <Button size="icon" variant="ghost" onClick={onClose} data-testid="button-close-item-detail">
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+
+        <ScrollArea className="flex-1 overflow-y-auto">
+          <div className="p-0">
+            {item.imageUrl && (
+              <img
+                src={item.imageUrl}
+                alt={item.name}
+                className="w-full h-48 object-cover"
+                data-testid="img-item-detail"
+              />
+            )}
+
+            <div className="p-4 space-y-1">
+              {item.description && (
+                <p className="text-sm text-muted-foreground" data-testid="text-item-description">
+                  {item.description}
+                </p>
+              )}
+              <p className="font-semibold text-lg" data-testid="text-item-base-price">
+                {currency}{itemPrice.toFixed(2)}
+              </p>
+            </div>
+
+            {item.modifierGroups && item.modifierGroups.length > 0 && (
+              <div className="space-y-0">
+                {item.modifierGroups.map((group) => {
+                  const isRadio = isRadioGroup(group);
+                  const isCollapsed = collapsedGroups[group.id];
+                  const selected = selectedModifiers[group.id] || [];
+
+                  return (
+                    <div key={group.id} className="border-t" data-testid={`modifier-group-${group.id}`}>
+                      <button
+                        type="button"
+                        className="w-full flex items-center justify-between px-4 py-3 bg-primary/10 text-left"
+                        onClick={() => toggleGroupCollapse(group.id)}
+                        data-testid={`button-toggle-group-${group.id}`}
+                      >
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-semibold text-sm">{group.name}</span>
+                          {group.isRequired && (
+                            <Badge variant="secondary" className="no-default-active-elevate text-xs">
+                              Required
+                            </Badge>
+                          )}
+                        </div>
+                        {isCollapsed ? (
+                          <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                        ) : (
+                          <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0" />
+                        )}
+                      </button>
+
+                      {!isCollapsed && (
+                        <div className="px-4 py-3">
+                          <div className="grid grid-cols-2 gap-3">
+                            {group.modifiers.map((mod) => {
+                              const isSelected = selected.includes(mod.id);
+                              const price = parseFloat(mod.price);
+
+                              if (isRadio) {
+                                return (
+                                  <label
+                                    key={mod.id}
+                                    className="flex items-start gap-2 cursor-pointer"
+                                    data-testid={`modifier-option-${mod.id}`}
+                                  >
+                                    <button
+                                      type="button"
+                                      className="mt-0.5 shrink-0"
+                                      onClick={() => handleRadioSelect(group.id, mod.id)}
+                                      data-testid={`radio-${mod.id}`}
+                                    >
+                                      {isSelected ? (
+                                        <div className="h-5 w-5 rounded-full bg-primary flex items-center justify-center">
+                                          <div className="h-2 w-2 rounded-full bg-primary-foreground" />
+                                        </div>
+                                      ) : (
+                                        <Circle className="h-5 w-5 text-muted-foreground" />
+                                      )}
+                                    </button>
+                                    <div
+                                      className="flex-1 min-w-0"
+                                      onClick={() => handleRadioSelect(group.id, mod.id)}
+                                    >
+                                      <span className="text-sm leading-tight block">{mod.name}</span>
+                                      {price > 0 && (
+                                        <span className="text-xs text-muted-foreground">
+                                          + {currency}{price.toFixed(2)}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </label>
+                                );
+                              }
+
+                              return (
+                                <label
+                                  key={mod.id}
+                                  className="flex items-start gap-2 cursor-pointer"
+                                  data-testid={`modifier-option-${mod.id}`}
+                                >
+                                  <button
+                                    type="button"
+                                    className="mt-0.5 shrink-0"
+                                    onClick={() => handleCheckboxToggle(group.id, mod.id, group.maxSelections)}
+                                    data-testid={`checkbox-${mod.id}`}
+                                  >
+                                    {isSelected ? (
+                                      <div className="h-5 w-5 rounded-md bg-primary flex items-center justify-center">
+                                        <Check className="h-3 w-3 text-primary-foreground" />
+                                      </div>
+                                    ) : (
+                                      <div className="h-5 w-5 rounded-md border-2 border-muted-foreground/40" />
+                                    )}
+                                  </button>
+                                  <div
+                                    className="flex-1 min-w-0"
+                                    onClick={() => handleCheckboxToggle(group.id, mod.id, group.maxSelections)}
+                                  >
+                                    <span className="text-sm leading-tight block">{mod.name}</span>
+                                    {price > 0 && (
+                                      <span className="text-xs text-muted-foreground">
+                                        + {currency}{price.toFixed(2)}
+                                      </span>
+                                    )}
+                                  </div>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </ScrollArea>
+
+        <div className="border-t p-4 flex items-center gap-3 bg-background">
+          <div className="flex items-center gap-2">
+            <Button
+              size="icon"
+              variant="outline"
+              onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+              disabled={quantity <= 1}
+              data-testid="button-detail-decrease"
+            >
+              <Minus className="h-4 w-4" />
+            </Button>
+            <span className="w-8 text-center font-semibold" data-testid="text-detail-quantity">
+              {quantity}
+            </span>
+            <Button
+              size="icon"
+              variant="outline"
+              onClick={() => setQuantity((q) => q + 1)}
+              data-testid="button-detail-increase"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
+          <Button
+            className="flex-1"
+            onClick={handleAdd}
+            disabled={!isValid}
+            data-testid="button-add-to-cart"
+          >
+            Add {quantity} for {currency}{totalPrice.toFixed(2)}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function QROrderingPage({ token }: { token: string }) {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -93,6 +417,7 @@ export default function QROrderingPage({ token }: { token: string }) {
   const [cartOpen, setCartOpen] = useState(false);
   const [selectedTable, setSelectedTable] = useState<string>("");
   const [selectedCategory, setSelectedCategory] = useState<string>("");
+  const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null);
 
   const { data: tokenData, isLoading: loadingToken, error: tokenError } = useQuery<TokenData>({
     queryKey: ["/api/order", token],
@@ -103,7 +428,7 @@ export default function QROrderingPage({ token }: { token: string }) {
     },
   });
 
-  const { data: menu, isLoading: loadingMenu } = useQuery<Menu>({
+  const { data: menuResponse, isLoading: loadingMenu } = useQuery<MenuResponse>({
     queryKey: ["/api/order", token, "menu"],
     queryFn: async () => {
       const res = await fetch(`/api/order/${token}/menu`);
@@ -112,6 +437,8 @@ export default function QROrderingPage({ token }: { token: string }) {
     },
     enabled: !!tokenData,
   });
+
+  const menu = menuResponse?.menus?.[0];
 
   const { data: tablesData } = useQuery<{ tables: Table[] }>({
     queryKey: ["/api/order", token, "tables"],
@@ -124,6 +451,7 @@ export default function QROrderingPage({ token }: { token: string }) {
   });
 
   const tables = tablesData?.tables;
+  const currency = tokenData?.restaurant?.currency === "USD" ? "$" : tokenData?.restaurant?.currency || "$";
 
   useEffect(() => {
     if (menu?.categories?.[0]?.id) {
@@ -143,17 +471,24 @@ export default function QROrderingPage({ token }: { token: string }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          token,
+          qrTokenId: tokenData?.qrToken?.id,
           tableId: selectedTable || tokenData?.table?.id,
-          items: cart.map(item => ({
-            menuItemId: item.menuItem.id,
-            quantity: item.quantity,
+          items: cart.map((ci) => ({
+            menuItemId: ci.menuItem.id,
+            name: ci.menuItem.name,
+            quantity: ci.quantity,
+            unitPrice: ci.menuItem.price,
+            modifiers: ci.selectedModifiers.map((m) => ({
+              id: m.id,
+              name: m.name,
+              price: m.price,
+            })),
           })),
         }),
       });
       if (!res.ok) {
         const error = await res.json();
-        throw new Error(error.message || "Failed to place order");
+        throw new Error(error.message || error.error || "Failed to place order");
       }
       return res.json();
     },
@@ -161,53 +496,57 @@ export default function QROrderingPage({ token }: { token: string }) {
       toast({ title: "Order placed successfully!" });
       setCart([]);
       setCartOpen(false);
-      setLocation(`/order/status/${data.order.id}?token=${data.trackingToken}`);
+      const orderId = data.orderId || data.order?.id;
+      if (orderId) {
+        setLocation(`/order/status/${orderId}?token=${data.trackingToken}`);
+      }
     },
     onError: (error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
 
-  const addToCart = (item: MenuItem) => {
-    setCart(prev => {
-      const existing = prev.find(i => i.menuItem.id === item.id);
-      if (existing) {
-        return prev.map(i => 
-          i.menuItem.id === item.id 
-            ? { ...i, quantity: i.quantity + 1 }
-            : i
-        );
-      }
-      return [...prev, { menuItem: item, quantity: 1 }];
-    });
+  const addToCart = (item: MenuItem, quantity: number, selectedMods: SelectedModifier[]) => {
+    const modifiersTotal = selectedMods.reduce((sum, m) => sum + parseFloat(m.price), 0);
+    setCart((prev) => [
+      ...prev,
+      {
+        cartId: generateCartId(),
+        menuItem: item,
+        quantity,
+        selectedModifiers: selectedMods,
+        modifiersTotal,
+      },
+    ]);
     toast({ title: `Added ${item.name} to cart` });
   };
 
-  const updateQuantity = (itemId: string, delta: number) => {
-    setCart(prev => {
-      const updated = prev.map(item => {
-        if (item.menuItem.id === itemId) {
-          const newQuantity = item.quantity + delta;
-          return newQuantity > 0 ? { ...item, quantity: newQuantity } : null;
-        }
-        return item;
-      }).filter(Boolean) as CartItem[];
-      return updated;
+  const updateCartQuantity = (cartId: string, delta: number) => {
+    setCart((prev) => {
+      return prev
+        .map((item) => {
+          if (item.cartId === cartId) {
+            const newQuantity = item.quantity + delta;
+            return newQuantity > 0 ? { ...item, quantity: newQuantity } : null;
+          }
+          return item;
+        })
+        .filter(Boolean) as CartItem[];
     });
   };
 
-  const removeFromCart = (itemId: string) => {
-    setCart(prev => prev.filter(item => item.menuItem.id !== itemId));
+  const removeFromCart = (cartId: string) => {
+    setCart((prev) => prev.filter((item) => item.cartId !== cartId));
   };
 
   const cartTotal = cart.reduce(
-    (sum, item) => sum + parseFloat(item.menuItem.price) * item.quantity,
+    (sum, item) => sum + (parseFloat(item.menuItem.price) + item.modifiersTotal) * item.quantity,
     0
   );
 
   const cartItemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
-  const currentCategory = menu?.categories?.find(c => c.id === selectedCategory);
+  const currentCategory = menu?.categories?.find((c) => c.id === selectedCategory);
 
   if (loadingToken) {
     return (
@@ -235,28 +574,27 @@ export default function QROrderingPage({ token }: { token: string }) {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      {/* Header */}
       <header className="sticky top-0 z-50 bg-background border-b px-4 py-3">
-        <div className="max-w-2xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary">
+        <div className="max-w-2xl mx-auto flex items-center justify-between gap-2">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary shrink-0">
               <Utensils className="h-5 w-5 text-primary-foreground" />
             </div>
-            <div>
-              <h1 className="font-semibold" data-testid="text-restaurant-name">
+            <div className="min-w-0">
+              <h1 className="font-semibold truncate" data-testid="text-restaurant-name">
                 {tokenData.restaurant.name}
               </h1>
               {tokenData.table && (
                 <p className="text-sm text-muted-foreground flex items-center gap-1">
-                  <MapPin className="h-3 w-3" />
-                  {tokenData.table.label}
+                  <MapPin className="h-3 w-3 shrink-0" />
+                  <span className="truncate">{tokenData.table.label}</span>
                 </p>
               )}
             </div>
           </div>
           <Sheet open={cartOpen} onOpenChange={setCartOpen}>
             <SheetTrigger asChild>
-              <Button variant="outline" className="relative" data-testid="button-cart">
+              <Button variant="outline" className="relative shrink-0" data-testid="button-cart">
                 <ShoppingCart className="h-5 w-5" />
                 {cartItemCount > 0 && (
                   <Badge className="absolute -top-2 -right-2 h-5 w-5 flex items-center justify-center p-0">
@@ -265,50 +603,65 @@ export default function QROrderingPage({ token }: { token: string }) {
                 )}
               </Button>
             </SheetTrigger>
-            <SheetContent className="flex flex-col">
+            <SheetContent className="flex flex-col w-full sm:max-w-md">
               <SheetHeader>
                 <SheetTitle>Your Order</SheetTitle>
               </SheetHeader>
               <ScrollArea className="flex-1 -mx-6 px-6">
                 {cart.length > 0 ? (
                   <div className="space-y-4 py-4">
-                    {cart.map((item) => (
-                      <div key={item.menuItem.id} className="flex items-center justify-between gap-3">
-                        <div className="flex-1">
-                          <p className="font-medium">{item.menuItem.name}</p>
-                          <p className="text-sm text-muted-foreground">
-                            ${(parseFloat(item.menuItem.price) * item.quantity).toFixed(2)}
-                          </p>
+                    {cart.map((ci) => {
+                      const unitTotal = parseFloat(ci.menuItem.price) + ci.modifiersTotal;
+                      return (
+                        <div key={ci.cartId} className="border rounded-md p-3 space-y-2" data-testid={`cart-item-${ci.cartId}`}>
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium">{ci.menuItem.name}</p>
+                              {ci.selectedModifiers.length > 0 && (
+                                <div className="mt-1 space-y-0.5">
+                                  {ci.selectedModifiers.map((mod) => (
+                                    <p key={mod.id} className="text-xs text-muted-foreground">
+                                      {mod.name}
+                                      {parseFloat(mod.price) > 0 && ` (+${currency}${parseFloat(mod.price).toFixed(2)})`}
+                                    </p>
+                                  ))}
+                                </div>
+                              )}
+                              <p className="text-sm font-semibold mt-1">
+                                {currency}{(unitTotal * ci.quantity).toFixed(2)}
+                              </p>
+                            </div>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => removeFromCart(ci.cartId)}
+                              data-testid={`button-remove-${ci.cartId}`}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              size="icon"
+                              variant="outline"
+                              onClick={() => updateCartQuantity(ci.cartId, -1)}
+                              data-testid={`button-decrease-${ci.cartId}`}
+                            >
+                              <Minus className="h-4 w-4" />
+                            </Button>
+                            <span className="w-8 text-center font-medium">{ci.quantity}</span>
+                            <Button
+                              size="icon"
+                              variant="outline"
+                              onClick={() => updateCartQuantity(ci.cartId, 1)}
+                              data-testid={`button-increase-${ci.cartId}`}
+                            >
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            size="icon"
-                            variant="outline"
-                            onClick={() => updateQuantity(item.menuItem.id, -1)}
-                            data-testid={`button-decrease-${item.menuItem.id}`}
-                          >
-                            <Minus className="h-4 w-4" />
-                          </Button>
-                          <span className="w-8 text-center font-medium">{item.quantity}</span>
-                          <Button
-                            size="icon"
-                            variant="outline"
-                            onClick={() => updateQuantity(item.menuItem.id, 1)}
-                            data-testid={`button-increase-${item.menuItem.id}`}
-                          >
-                            <Plus className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => removeFromCart(item.menuItem.id)}
-                            data-testid={`button-remove-${item.menuItem.id}`}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center py-12">
@@ -338,7 +691,7 @@ export default function QROrderingPage({ token }: { token: string }) {
                   )}
                   <div className="flex justify-between text-lg font-semibold">
                     <span>Total</span>
-                    <span>${cartTotal.toFixed(2)}</span>
+                    <span data-testid="text-cart-total">{currency}{cartTotal.toFixed(2)}</span>
                   </div>
                   <Button
                     className="w-full"
@@ -360,7 +713,6 @@ export default function QROrderingPage({ token }: { token: string }) {
         </div>
       </header>
 
-      {/* Category Pills */}
       {menu?.categories && menu.categories.length > 0 && (
         <div className="sticky top-[61px] z-40 bg-background border-b">
           <ScrollArea className="max-w-2xl mx-auto">
@@ -371,6 +723,7 @@ export default function QROrderingPage({ token }: { token: string }) {
                   variant={selectedCategory === category.id ? "default" : "secondary"}
                   size="sm"
                   onClick={() => setSelectedCategory(category.id)}
+                  className="shrink-0"
                   data-testid={`button-category-${category.id}`}
                 >
                   {category.name}
@@ -381,7 +734,6 @@ export default function QROrderingPage({ token }: { token: string }) {
         </div>
       )}
 
-      {/* Menu Items */}
       <main className="flex-1 px-4 py-6">
         <div className="max-w-2xl mx-auto">
           {loadingMenu ? (
@@ -391,51 +743,77 @@ export default function QROrderingPage({ token }: { token: string }) {
               ))}
             </div>
           ) : currentCategory?.items && currentCategory.items.length > 0 ? (
-            <div className="space-y-4">
-              {currentCategory.items.map((item) => (
-                <Card 
-                  key={item.id} 
-                  className={!item.isAvailable ? "opacity-60" : ""}
-                  data-testid={`menu-item-${item.id}`}
-                >
-                  <CardContent className="flex gap-4 p-4">
-                    {item.imageUrl && (
-                      <img
-                        src={item.imageUrl}
-                        alt={item.name}
-                        className="w-24 h-24 rounded-lg object-cover"
-                      />
-                    )}
-                    <div className="flex-1">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <h3 className="font-semibold">{item.name}</h3>
-                          {item.description && (
-                            <p className="text-sm text-muted-foreground mt-1">
-                              {item.description}
-                            </p>
-                          )}
+            <div className="space-y-3">
+              {currentCategory.items.map((item) => {
+                const isAvailable = item.isAvailable !== false;
+                const hasModifiers = item.modifierGroups && item.modifierGroups.length > 0;
+
+                return (
+                  <Card
+                    key={item.id}
+                    className={`${!isAvailable ? "opacity-60" : "hover-elevate cursor-pointer"}`}
+                    onClick={() => isAvailable && setSelectedItem(item)}
+                    data-testid={`menu-item-${item.id}`}
+                  >
+                    <CardContent className="flex gap-4 p-4">
+                      {item.imageUrl && (
+                        <img
+                          src={item.imageUrl}
+                          alt={item.name}
+                          className="w-24 h-24 rounded-md object-cover shrink-0"
+                        />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex justify-between items-start gap-2">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h3 className="font-semibold">{item.name}</h3>
+                              {item.isPopular && (
+                                <Badge variant="secondary" className="no-default-active-elevate text-xs">Popular</Badge>
+                              )}
+                              {item.isNew && (
+                                <Badge variant="secondary" className="no-default-active-elevate text-xs">New</Badge>
+                              )}
+                            </div>
+                            {item.description && (
+                              <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
+                                {item.description}
+                              </p>
+                            )}
+                          </div>
+                          <p className="font-semibold text-primary shrink-0">{currency}{parseFloat(item.price).toFixed(2)}</p>
                         </div>
-                        <p className="font-semibold text-primary">${item.price}</p>
+                        <div className="mt-3 flex items-center justify-between gap-2 flex-wrap">
+                          {hasModifiers && (
+                            <p className="text-xs text-muted-foreground">Customizable</p>
+                          )}
+                          <div className="ml-auto">
+                            {isAvailable ? (
+                              <Button
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (hasModifiers) {
+                                    setSelectedItem(item);
+                                  } else {
+                                    addToCart(item, 1, []);
+                                  }
+                                }}
+                                data-testid={`button-add-${item.id}`}
+                              >
+                                <Plus className="mr-1 h-4 w-4" />
+                                Add
+                              </Button>
+                            ) : (
+                              <Badge variant="secondary" className="no-default-active-elevate">Unavailable</Badge>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                      <div className="mt-3 flex justify-end">
-                        {item.isAvailable ? (
-                          <Button
-                            size="sm"
-                            onClick={() => addToCart(item)}
-                            data-testid={`button-add-${item.id}`}
-                          >
-                            <Plus className="mr-1 h-4 w-4" />
-                            Add
-                          </Button>
-                        ) : (
-                          <Badge variant="secondary">Unavailable</Badge>
-                        )}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
           ) : (
             <Card>
@@ -448,18 +826,27 @@ export default function QROrderingPage({ token }: { token: string }) {
         </div>
       </main>
 
-      {/* Floating Cart Button */}
       {cart.length > 0 && !cartOpen && (
-        <div className="fixed bottom-4 left-4 right-4 max-w-2xl mx-auto">
+        <div className="fixed bottom-4 left-4 right-4 max-w-2xl mx-auto z-30">
           <Button
             className="w-full h-14 text-lg"
             onClick={() => setCartOpen(true)}
             data-testid="button-view-cart"
           >
             <ShoppingCart className="mr-2 h-5 w-5" />
-            View Cart ({cartItemCount} items) - ${cartTotal.toFixed(2)}
+            View Cart ({cartItemCount} items) - {currency}{cartTotal.toFixed(2)}
           </Button>
         </div>
+      )}
+
+      {selectedItem && (
+        <ItemDetailDialog
+          item={selectedItem}
+          open={!!selectedItem}
+          onClose={() => setSelectedItem(null)}
+          onAddToCart={addToCart}
+          currency={currency}
+        />
       )}
     </div>
   );

@@ -3605,9 +3605,9 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
 
         // Feature gating: validate that the setting change doesn't enable something not allowed
         const featureRequirements: Record<string, string> = {
-          split_billing: "split_payments",
-          qr_ordering: "qr",
-          payment_methods: "pos", // Need POS feature for payment methods
+          split_billing: "split_billing",
+          qr_ordering: "qr_ordering",
+          payment_methods: "pos",
         };
 
         const requiredFeature = featureRequirements[settingKey];
@@ -3703,8 +3703,8 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
 
         // Feature gating validation
         const featureRequirements: Record<string, string> = {
-          split_billing: "split_payments",
-          qr_ordering: "qr",
+          split_billing: "split_billing",
+          qr_ordering: "qr_ordering",
           payment_methods: "pos",
         };
 
@@ -3935,7 +3935,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
         }
 
         // Check if QR ordering feature is enabled
-        const hasQrFeature = await checkFeature(qrToken.restaurantId, "qr");
+        const hasQrFeature = await checkFeature(qrToken.restaurantId, "qr_ordering");
         if (!hasQrFeature) {
           return res.status(403).json({
             error: "QR Ordering Unavailable",
@@ -4311,7 +4311,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
         }
 
         // Check QR feature and settings
-        const hasQrFeature = await checkFeature(restaurantId, "qr");
+        const hasQrFeature = await checkFeature(restaurantId, "qr_ordering");
         if (!hasQrFeature) {
           return res.status(400).json({ error: "QR ordering is not available" });
         }
