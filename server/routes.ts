@@ -5,7 +5,7 @@ import { db, pool, testConnection } from "./db";
 import { log } from "./index";
 import bcrypt from "bcryptjs";
 import rateLimit from "express-rate-limit";
-import { eq, and, isNull, gt, sql, or } from "drizzle-orm";
+import { eq, and, isNull, gt, sql, or, notInArray } from "drizzle-orm";
 import {
   users,
   restaurants,
@@ -5635,7 +5635,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
 
         // Verify order exists
         const [order] = await db
-          .select({ id: orders.id, total: orders.total, paidAmount: orders.paidAmount, status: orders.status })
+          .select({ id: orders.id, total: orders.total, paidAmount: orders.paidAmount, status: orders.status, tableId: orders.tableId })
           .from(orders)
           .where(and(eq(orders.id, orderId), eq(orders.restaurantId, restaurantId)));
 
@@ -5676,21 +5676,19 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
         await db.update(orders).set(orderUpdates).where(eq(orders.id, orderId));
 
         // Free table if order completed
-        if (newPaidAmount >= orderTotal && order.status !== 'completed') {
-          const [updatedOrder] = await db.select({ tableId: orders.tableId }).from(orders).where(eq(orders.id, orderId));
-          if (updatedOrder?.tableId) {
-            const [otherOrders] = await db
-              .select({ count: sql<number>`count(*)` })
-              .from(orders)
-              .where(and(
-                eq(orders.tableId, updatedOrder.tableId),
-                sql`${orders.status} NOT IN ('completed', 'cancelled')`,
-                sql`${orders.id} != ${orderId}`
-              ));
+        if (newPaidAmount >= orderTotal && order.status !== 'completed' && order.tableId) {
+          const otherActiveOrders = await db
+            .select({ id: orders.id })
+            .from(orders)
+            .where(and(
+              eq(orders.tableId, order.tableId),
+              notInArray(orders.status, ['completed', 'cancelled']),
+              sql`${orders.id} != ${orderId}`
+            ))
+            .limit(1);
 
-            if (!otherOrders || otherOrders.count === 0) {
-              await db.update(diningTables).set({ status: 'available', updatedAt: new Date() }).where(eq(diningTables.id, updatedOrder.tableId));
-            }
+          if (otherActiveOrders.length === 0) {
+            await db.update(diningTables).set({ status: 'available', updatedAt: new Date() }).where(eq(diningTables.id, order.tableId));
           }
         }
 
