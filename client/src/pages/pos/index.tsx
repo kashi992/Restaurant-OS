@@ -62,7 +62,7 @@ export default function POSHome() {
       });
       if (!res.ok) return [];
       const data = await res.json();
-      return data.orders;
+      return Array.isArray(data.orders) ? data.orders : Array.isArray(data) ? data : [];
     },
     enabled: !!accessToken && !!restaurantId,
     refetchInterval: 10000,

@@ -41,6 +41,10 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
+import {
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import {
   Plus,
@@ -56,6 +60,10 @@ import {
   Eye,
   History,
   ClipboardList,
+  DollarSign,
+  Banknote,
+  CreditCard,
+  AlertTriangle,
 } from "lucide-react";
 import { useLocation } from "wouter";
 
@@ -181,6 +189,32 @@ export default function OrdersPage() {
   const [detailDialogOpen, setDetailDialogOpen] = useState(!!viewOrderId);
   const [addingItemsToOrder, setAddingItemsToOrder] = useState(false);
   const [addItemsCart, setAddItemsCart] = useState<CartItem[]>([]);
+
+  const [payDialogOpen, setPayDialogOpen] = useState(false);
+  const [payOrderId, setPayOrderId] = useState<string | null>(null);
+  const [payOrderNumber, setPayOrderNumber] = useState<string>("");
+  const [payOrderTotal, setPayOrderTotal] = useState<string>("0");
+  const [payOrderPaid, setPayOrderPaid] = useState<string>("0");
+  const [selectedPayMethod, setSelectedPayMethod] = useState("");
+  const [tipAmount, setTipAmount] = useState("0");
+
+  const userPaymentMethods = user?.paymentMethods;
+  const userFeatures = user?.features as Record<string, boolean> | undefined;
+
+  const availablePayMethods: { id: string; label: string; icon: "cash" | "card"; method: string }[] = (() => {
+    const methods: { id: string; label: string; icon: "cash" | "card"; method: string }[] = [];
+    const cashEnabled = userPaymentMethods
+      ? (userPaymentMethods.cash === true || userPaymentMethods.counter === true)
+      : (userFeatures?.counter_payments !== false);
+    const cardEnabled = userPaymentMethods
+      ? (userPaymentMethods.card === true || userPaymentMethods.stripe === true)
+      : (userFeatures?.stripe_payments === true);
+    if (cashEnabled) methods.push({ id: "counter", label: "Cash / Counter", icon: "cash", method: "counter" });
+    if (cardEnabled) methods.push({ id: "card", label: "Card", icon: "card", method: "card" });
+    return methods;
+  })();
+  const hasPayMethod = availablePayMethods.length > 0;
+  const defaultPayMethod = hasPayMethod ? availablePayMethods[0].method : "";
 
   const { data: activeOrdersData, isLoading: loadingActive } = useQuery<{ orders: OrderSummary[] }>({
     queryKey: ["/api/restaurants", restaurantId, "orders", "live"],
@@ -370,6 +404,69 @@ export default function OrdersPage() {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
+
+  const recordPaymentMutation = useMutation({
+    mutationFn: async ({ orderId, amount, method, tip }: {
+      orderId: string;
+      amount: string;
+      method: string;
+      tip: string;
+    }) => {
+      const res = await fetch(`/api/restaurants/${restaurantId}/orders/${orderId}/payments`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          amount: parseFloat(amount),
+          method,
+          tipAmount: parseFloat(tip) || 0,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || err.error || "Failed to record payment");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "orders"] });
+      toast({ title: "Payment recorded & order completed!" });
+      setPayDialogOpen(false);
+      setPayOrderId(null);
+      setTipAmount("0");
+      setDetailDialogOpen(false);
+      setDetailOrderId(null);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Payment Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const openPaymentDialog = (order: { id: string; orderNumber: string; total: string; paidAmount: string }) => {
+    setPayOrderId(order.id);
+    setPayOrderNumber(order.orderNumber);
+    setPayOrderTotal(order.total);
+    setPayOrderPaid(order.paidAmount || "0");
+    setSelectedPayMethod(defaultPayMethod);
+    setTipAmount("0");
+    setPayDialogOpen(true);
+  };
+
+  const payBalance = () => {
+    if (!payOrderId || !selectedPayMethod) return;
+    const remaining = (parseFloat(payOrderTotal) - parseFloat(payOrderPaid)).toFixed(2);
+    recordPaymentMutation.mutate({
+      orderId: payOrderId,
+      amount: remaining,
+      method: selectedPayMethod,
+      tip: tipAmount,
+    });
+  };
+
+  const payRemainingBalance = (parseFloat(payOrderTotal) - parseFloat(payOrderPaid)).toFixed(2);
 
   const addToCart = (item: MenuItem, targetCart: "new" | "add") => {
     const setter = targetCart === "new" ? setCart : setAddItemsCart;
@@ -709,7 +806,7 @@ export default function OrdersPage() {
                           <Eye className="mr-1 h-3.5 w-3.5" />
                           View
                         </Button>
-                        {nextStatus && (
+                        {nextStatus && nextStatus !== "completed" && (
                           <Button
                             size="sm"
                             onClick={() => updateStatusMutation.mutate({ orderId: order.id, status: nextStatus })}
@@ -721,6 +818,16 @@ export default function OrdersPage() {
                             ) : (
                               `Mark ${ORDER_STATUSES.find(s => s.value === nextStatus)?.label || nextStatus}`
                             )}
+                          </Button>
+                        )}
+                        {order.status === "served" && (
+                          <Button
+                            size="sm"
+                            onClick={() => openPaymentDialog(order)}
+                            data-testid={`button-complete-pay-${order.id}`}
+                          >
+                            <DollarSign className="mr-1 h-3.5 w-3.5" />
+                            Pay & Complete
                           </Button>
                         )}
                       </div>
@@ -920,7 +1027,7 @@ export default function OrdersPage() {
                       <Plus className="mr-2 h-4 w-4" />
                       Add More Items
                     </Button>
-                    {getNextStatus(orderDetailData.order.status) && (
+                    {getNextStatus(orderDetailData.order.status) && getNextStatus(orderDetailData.order.status) !== "completed" && (
                       <Button
                         onClick={() => updateStatusMutation.mutate({
                           orderId: orderDetailData.order.id,
@@ -938,19 +1045,11 @@ export default function OrdersPage() {
                     {orderDetailData.order.status === "served" && (
                       <Button
                         variant="default"
-                        onClick={() => updateStatusMutation.mutate({
-                          orderId: orderDetailData.order.id,
-                          status: "completed",
-                        })}
-                        disabled={updateStatusMutation.isPending}
+                        onClick={() => openPaymentDialog(orderDetailData.order)}
                         data-testid="button-complete-order"
                       >
-                        {updateStatusMutation.isPending ? (
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        ) : (
-                          <CheckCircle className="mr-2 h-4 w-4" />
-                        )}
-                        Complete Order
+                        <DollarSign className="mr-2 h-4 w-4" />
+                        Pay & Complete
                       </Button>
                     )}
                   </div>
@@ -976,6 +1075,132 @@ export default function OrdersPage() {
           ) : (
             <p className="text-muted-foreground">Order not found</p>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={payDialogOpen} onOpenChange={setPayDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Payment - Order #{payOrderNumber}</DialogTitle>
+            <DialogDescription>Select payment method to complete this order</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="p-4 rounded-lg bg-muted">
+              <div className="flex justify-between mb-2">
+                <span>Order Total</span>
+                <span className="font-bold">${parseFloat(payOrderTotal).toFixed(2)}</span>
+              </div>
+              {parseFloat(payOrderPaid) > 0 && (
+                <div className="flex justify-between mb-2 text-sm text-green-600 dark:text-green-400">
+                  <span>Already Paid</span>
+                  <span>${parseFloat(payOrderPaid).toFixed(2)}</span>
+                </div>
+              )}
+              <div className="flex justify-between font-bold text-lg border-t pt-2">
+                <span>Balance Due</span>
+                <span>${payRemainingBalance}</span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Payment Method</label>
+              {availablePayMethods.length > 1 ? (
+                <Select value={selectedPayMethod} onValueChange={setSelectedPayMethod}>
+                  <SelectTrigger data-testid="select-pay-method">
+                    <SelectValue placeholder="Select method" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availablePayMethods.map((m) => (
+                      <SelectItem key={m.id} value={m.method} data-testid={`option-pay-${m.id}`}>
+                        <div className="flex items-center gap-2">
+                          {m.icon === "cash" ? <Banknote className="h-4 w-4" /> : <CreditCard className="h-4 w-4" />}
+                          {m.label}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : availablePayMethods.length === 1 ? (
+                <div className="flex items-center gap-2 p-2 rounded-md border bg-muted/50" data-testid="text-pay-method-single">
+                  {availablePayMethods[0].icon === "cash" ? <Banknote className="h-4 w-4" /> : <CreditCard className="h-4 w-4" />}
+                  <span className="text-sm">{availablePayMethods[0].label}</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 p-3 rounded-md border border-destructive/50 bg-destructive/10" data-testid="text-no-pay-methods">
+                  <AlertTriangle className="h-4 w-4 text-destructive" />
+                  <span className="text-sm text-destructive">No payment methods enabled. Contact admin.</span>
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Tip Amount (optional)</label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                value={tipAmount}
+                onChange={(e) => setTipAmount(e.target.value)}
+                placeholder="0.00"
+                data-testid="input-order-tip"
+              />
+            </div>
+
+            <div className="p-4 rounded-lg bg-primary/10 border border-primary/20">
+              <div className="flex justify-between text-lg font-bold">
+                <span>Total to Collect</span>
+                <span data-testid="text-collect-total">
+                  ${(parseFloat(payRemainingBalance) + parseFloat(tipAmount || "0")).toFixed(2)}
+                </span>
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button variant="outline" onClick={() => setPayDialogOpen(false)} data-testid="button-cancel-pay">
+              Cancel
+            </Button>
+            {!hasPayMethod && payOrderId && (
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  if (payOrderId) {
+                    updateStatusMutation.mutate({ orderId: payOrderId, status: "completed" });
+                    setPayDialogOpen(false);
+                    setPayOrderId(null);
+                    setDetailDialogOpen(false);
+                    setDetailOrderId(null);
+                  }
+                }}
+                disabled={updateStatusMutation.isPending}
+                data-testid="button-complete-no-pay"
+              >
+                {updateStatusMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <>
+                    <CheckCircle className="mr-2 h-4 w-4" />
+                    Complete Without Payment
+                  </>
+                )}
+              </Button>
+            )}
+            {hasPayMethod && (
+              <Button
+                onClick={payBalance}
+                disabled={recordPaymentMutation.isPending || !selectedPayMethod}
+                data-testid="button-confirm-pay"
+              >
+                {recordPaymentMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <>
+                    <CheckCircle className="mr-2 h-4 w-4" />
+                    Complete Payment
+                  </>
+                )}
+              </Button>
+            )}
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
