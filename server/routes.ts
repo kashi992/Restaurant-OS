@@ -2472,10 +2472,30 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
     async (req, res) => {
       try {
         const { restaurantId } = req.params;
-        const { menuId, name, description, imageUrl, isActive, sortOrder } = req.body;
+        let { menuId, name, description, imageUrl, isActive, sortOrder } = req.body;
 
         if (!name) {
           return res.status(400).json({ error: "Category name is required" });
+        }
+
+        if (!menuId) {
+          const [defaultMenu] = await db
+            .select({ id: menus.id })
+            .from(menus)
+            .where(and(eq(menus.restaurantId, restaurantId), eq(menus.isActive, true)))
+            .orderBy(menus.createdAt)
+            .limit(1);
+
+          if (defaultMenu) {
+            menuId = defaultMenu.id;
+          } else {
+            const [newMenu] = await db.insert(menus).values({
+              restaurantId,
+              name: "Main Menu",
+              isActive: true,
+            }).returning();
+            menuId = newMenu.id;
+          }
         }
 
         const [category] = await db
@@ -5571,7 +5591,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
           return res.status(400).json({ error: "Payment method is required" });
         }
 
-        const validMethods = ['cash', 'card', 'mobile', 'gift_card', 'other'];
+        const validMethods = ['cash', 'counter', 'card', 'mobile', 'gift_card', 'other'];
         if (!validMethods.includes(method)) {
           return res.status(400).json({ error: `Invalid method. Must be one of: ${validMethods.join(', ')}` });
         }

@@ -39,24 +39,33 @@ interface Order {
   paidAmount: string;
 }
 
-interface Payment {
+interface PaymentMethodConfig {
   id: string;
-  orderId: string;
-  amount: string;
+  label: string;
+  icon: "cash" | "card";
   method: string;
-  status: string;
-  tipAmount: string | null;
 }
 
 export default function PaymentsPage() {
   const { accessToken, user } = useAuth();
   const { toast } = useToast();
   const restaurantId = user?.restaurantId;
+  const features = user?.features as Record<string, boolean> | undefined;
 
   const [payDialogOpen, setPayDialogOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState("counter");
+  const [paymentMethod, setPaymentMethod] = useState("");
   const [tipAmount, setTipAmount] = useState("0");
+
+  const availableMethods: PaymentMethodConfig[] = [];
+  if (features?.counter_payments !== false) {
+    availableMethods.push({ id: "counter", label: "Cash / Counter", icon: "cash", method: "counter" });
+  }
+  if (features?.stripe_payments) {
+    availableMethods.push({ id: "card", label: "Card", icon: "card", method: "card" });
+  }
+
+  const defaultMethod = availableMethods.length > 0 ? availableMethods[0].method : "";
 
   const { data: orders, isLoading } = useQuery<Order[]>({
     queryKey: ["/api/restaurants", restaurantId, "orders", "unpaid"],
@@ -95,7 +104,10 @@ export default function PaymentsPage() {
           tipAmount: parseFloat(tip) || 0,
         }),
       });
-      if (!res.ok) throw new Error("Failed to record payment");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to record payment");
+      }
       return res.json();
     },
     onSuccess: () => {
@@ -112,6 +124,8 @@ export default function PaymentsPage() {
 
   const openPayDialog = (order: Order) => {
     setSelectedOrder(order);
+    setPaymentMethod(defaultMethod);
+    setTipAmount("0");
     setPayDialogOpen(true);
   };
 
@@ -199,7 +213,6 @@ export default function PaymentsPage() {
         )}
       </div>
 
-      {/* Payment Dialog */}
       <Dialog open={payDialogOpen} onOpenChange={setPayDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -218,28 +231,34 @@ export default function PaymentsPage() {
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Payment Method</label>
-                <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-                  <SelectTrigger data-testid="select-payment-method">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="counter">
-                      <div className="flex items-center gap-2">
-                        <Banknote className="h-4 w-4" />
-                        Cash / Counter
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="card">
-                      <div className="flex items-center gap-2">
-                        <CreditCard className="h-4 w-4" />
-                        Card
-                      </div>
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              {availableMethods.length > 1 ? (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Payment Method</label>
+                  <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+                    <SelectTrigger data-testid="select-payment-method">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableMethods.map((m) => (
+                        <SelectItem key={m.id} value={m.method}>
+                          <div className="flex items-center gap-2">
+                            {m.icon === "cash" ? <Banknote className="h-4 w-4" /> : <CreditCard className="h-4 w-4" />}
+                            {m.label}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : availableMethods.length === 1 ? (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Payment Method</label>
+                  <div className="flex items-center gap-2 p-2 rounded-md border bg-muted/50">
+                    {availableMethods[0].icon === "cash" ? <Banknote className="h-4 w-4" /> : <CreditCard className="h-4 w-4" />}
+                    <span className="text-sm">{availableMethods[0].label}</span>
+                  </div>
+                </div>
+              ) : null}
 
               <div className="space-y-2">
                 <label className="text-sm font-medium">Tip Amount (optional)</label>
@@ -269,13 +288,13 @@ export default function PaymentsPage() {
               Cancel
             </Button>
             <Button
-              onClick={() => selectedOrder && recordPaymentMutation.mutate({
+              onClick={() => selectedOrder && paymentMethod && recordPaymentMutation.mutate({
                 orderId: selectedOrder.id,
                 amount: getRemainingBalance(selectedOrder),
                 method: paymentMethod,
                 tip: tipAmount,
               })}
-              disabled={recordPaymentMutation.isPending}
+              disabled={recordPaymentMutation.isPending || !paymentMethod}
               data-testid="button-confirm-payment"
             >
               {recordPaymentMutation.isPending ? (

@@ -1,0 +1,165 @@
+STRICT IMPLEMENTATION SPEC — READ CAREFULLY.
+THIS IS NOT NEGOTIABLE. DO NOT ADD EXTRA STRUCTURES.
+WORK ONLY ON BRANCH: sohaib-dev (DO NOT TOUCH main).
+
+FIRST STEP (MANDATORY):
+- Print current branch using: git branch --show-current
+- If not sohaib-dev → git checkout sohaib-dev && git pull origin sohaib-dev
+
+GOAL:
+Fix Menu, POS Payment, and Payment Method visibility to behave exactly as a professional restaurant POS product.
+DO NOT OVERCOMPLICATE. FOLLOW EXACT WORKFLOW BELOW.
+
+========================================================
+1) MENU TAB — ONLY TWO ENTITIES (CATEGORY + MENU ITEM)
+========================================================
+
+IMPORTANT CLARIFICATION (DO NOT MISUNDERSTAND):
+- There is ONLY ONE MENU per restaurant.
+- The Menu tab MUST ONLY contain:
+  1) Categories
+  2) Menu Items
+- There is NO separate “menu list”, “menu versions”, or “multiple menus”.
+- Each restaurant:
+  - creates MULTIPLE categories
+  - each category contains MULTIPLE menu items
+
+Correct mental model:
+Restaurant
+  → Menu (single, implicit)
+      → Categories (Pizza, Burger, Drinks)
+          → Menu Items (Italian Pizza, Pepperoni Pizza, etc.)
+
+REQUIREMENTS:
+A) Backend / DB
+- Ensure ONLY these two entities exist and are used:
+  - Category:
+      id, restaurantId, name, sortOrder, createdAt
+  - MenuItem:
+      id, restaurantId, categoryId, name, description, price, isAvailable, createdAt
+- REMOVE or IGNORE any extra “menu” tables/logic if present.
+- Enforce restaurantId scoping everywhere.
+
+B) Backend APIs (MUST MATCH FRONTEND EXACTLY)
+- GET /categories (returns categories for restaurant)
+- GET /categories-with-items (or categories with nested items)
+- POST /categories
+- POST /menu-items (requires categoryId)
+- NO API should suggest multiple menus per restaurant.
+
+C) Frontend Menu Tab (Restaurant Login)
+- Menu tab shows:
+  - List of categories
+  - Items grouped under each category
+- Add Category:
+  - Button → creates category → appears instantly
+- Add Menu Item:
+  - Must belong to a category
+  - Appears ONLY under that category
+- NO dropdown to select “menu”
+- NO concept of switching menus
+
+ACCEPTANCE TESTS:
+- Create category “Pizza”
+- Add item “Italian Pizza” under Pizza
+- Add category “Drinks”
+- Add item “Coke” under Drinks
+- Refresh → same structure persists
+- Items NEVER appear outside their category
+
+========================================================
+2) POS PAYMENT — CASH METHOD ERROR ON PROCEED PAYMENT
+========================================================
+
+Problem:
+- Clicking “Proceed Payment” throws error EVEN when Cash is selected.
+
+REQUIRED FIX (SERVER + UI):
+A) Backend
+- Payment method “CASH” MUST:
+  - NOT require payment gateway integration
+  - Immediately allow order completion
+- Fix any validation that incorrectly expects:
+  - transactionId
+  - paymentIntentId
+  - gateway response
+- On CASH:
+  - Mark order as PAID or COMPLETED
+  - paymentMethod = "CASH"
+  - paymentStatus = "SUCCESS"
+
+B) Frontend
+- When CASH is selected:
+  - Do NOT send gateway-related fields
+  - Proceed directly to complete order
+- Show success confirmation
+- No error toast allowed for CASH payments
+
+ACCEPTANCE TEST:
+- Start POS order
+- Add items
+- Select CASH
+- Click Proceed Payment
+- Order completes successfully without any error
+
+========================================================
+3) PAYMENT METHODS — SHOW ONLY ENABLED METHODS PER RESTAURANT
+========================================================
+
+IMPORTANT BUSINESS RULE:
+- Payment methods are NOT global.
+- Each restaurant sees ONLY the payment methods enabled for it.
+- Integration logic appears ONLY if enabled.
+
+REQUIREMENTS:
+A) Backend
+- Store per-restaurant payment configuration:
+  Example:
+  paymentMethods: {
+    cash: true,
+    card: false,
+    stripe: false,
+    paypal: false
+  }
+- Ensure restaurant login / me endpoint returns this config.
+
+B) Frontend (Restaurant Login)
+- On POS Payment screen:
+  - Render ONLY methods enabled for that restaurant
+- If ONLY cash is enabled:
+  - Cash is the ONLY visible option
+- If Stripe/Card enabled:
+  - Show card UI
+- If disabled:
+  - DO NOT render button or option at all
+
+C) Validation
+- Backend must reject payment attempts using a method that is disabled for that restaurant.
+
+ACCEPTANCE TESTS:
+- Disable Card/Stripe for restaurant
+- Login as restaurant:
+  - POS shows ONLY Cash
+- Enable Card later:
+  - Card option appears without logout
+- Attempt disabled method via API → returns 403
+
+========================================================
+EXECUTION RULES (MANDATORY)
+========================================================
+1) DO NOT introduce new menu layers or abstractions.
+2) DO NOT create multiple menus per restaurant.
+3) Fix backend logic FIRST, then UI.
+4) Standardize FE/BE response shapes — no mismatches.
+5) Use TanStack Query invalidation so UI updates instantly.
+6) Add proper loading and error states (no silent failures).
+7) Commit + push to origin/sohaib-dev with clear commits:
+   - "fix: single menu with categories and menu items only"
+   - "fix: cash payment flow without gateway errors"
+   - "feat: per-restaurant payment method visibility"
+
+DELIVERABLE:
+- Menu tab has ONLY categories + menu items.
+- Cash payment works without error.
+- Payment methods appear dynamically per restaurant.
+- Code pushed to sohaib-dev.
