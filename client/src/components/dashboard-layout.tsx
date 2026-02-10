@@ -43,7 +43,7 @@ import {
 const navItems = [
   { title: "Overview", url: "/dashboard", icon: LayoutDashboard, feature: null },
   { title: "Menu", url: "/dashboard/menu", icon: UtensilsCrossed, feature: null },
-  { title: "Tables & QR", url: "/dashboard/tables", icon: QrCode, feature: "qr_ordering" },
+  { title: "Tables", url: "/dashboard/tables", icon: Grid3X3, feature: null },
   { title: "Staff", url: "/dashboard/staff", icon: Users, feature: null },
   { title: "Settings", url: "/dashboard/settings", icon: Settings, feature: null },
 ];
@@ -87,19 +87,24 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
               <SidebarGroupLabel>Management</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  {navItems.filter((item) => isFeatureEnabled(item.feature)).map((item) => (
-                    <SidebarMenuItem key={item.title}>
-                      <SidebarMenuButton
-                        asChild
-                        isActive={location === item.url}
-                      >
-                        <Link href={item.url}>
-                          <item.icon className="h-4 w-4" />
-                          <span>{item.title}</span>
-                        </Link>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
+                  {navItems.filter((item) => isFeatureEnabled(item.feature)).map((item) => {
+                    const isTablesWithQr = item.url === "/dashboard/tables" && isFeatureEnabled("qr_ordering");
+                    const label = isTablesWithQr ? "Tables & QR" : item.title;
+                    const Icon = isTablesWithQr ? QrCode : item.icon;
+                    return (
+                      <SidebarMenuItem key={item.title}>
+                        <SidebarMenuButton
+                          asChild
+                          isActive={location === item.url}
+                        >
+                          <Link href={item.url}>
+                            <Icon className="h-4 w-4" />
+                            <span>{label}</span>
+                          </Link>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    );
+                  })}
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>

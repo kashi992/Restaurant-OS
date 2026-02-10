@@ -59,6 +59,7 @@ export default function TablesManager() {
   const { accessToken, user } = useAuth();
   const { toast } = useToast();
   const restaurantId = user?.restaurantId;
+  const qrEnabled = !user?.features || user.features["qr_ordering"] !== false;
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [qrDialogOpen, setQrDialogOpen] = useState(false);
@@ -164,7 +165,7 @@ export default function TablesManager() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-semibold" data-testid="text-page-title">Tables Manager</h1>
-          <p className="text-muted-foreground">Manage your tables and QR codes</p>
+          <p className="text-muted-foreground">{qrEnabled ? "Manage your tables and QR codes" : "Manage your restaurant tables"}</p>
         </div>
         <Button onClick={() => setDialogOpen(true)} data-testid="button-add-table">
           <Plus className="mr-2 h-4 w-4" />
@@ -207,15 +208,17 @@ export default function TablesManager() {
                 <div className="flex items-center justify-between">
                   {getStatusBadge(table.status)}
                 </div>
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={() => openQrDialog(table)}
-                  data-testid={`button-qr-${table.id}`}
-                >
-                  <QrCode className="mr-2 h-4 w-4" />
-                  QR Code
-                </Button>
+                {qrEnabled && (
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => openQrDialog(table)}
+                    data-testid={`button-qr-${table.id}`}
+                  >
+                    <QrCode className="mr-2 h-4 w-4" />
+                    QR Code
+                  </Button>
+                )}
               </CardContent>
             </Card>
           ))}
