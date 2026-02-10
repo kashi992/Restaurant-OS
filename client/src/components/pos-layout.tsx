@@ -12,15 +12,21 @@ import {
 } from "lucide-react";
 
 const navItems = [
-  { title: "Tables", url: "/pos", icon: LayoutGrid },
-  { title: "Orders", url: "/pos/orders", icon: ClipboardList },
-  { title: "Kitchen", url: "/pos/kitchen", icon: ChefHat },
-  { title: "Payments", url: "/pos/payments", icon: CreditCard },
+  { title: "Tables", url: "/pos", icon: LayoutGrid, feature: null },
+  { title: "Orders", url: "/pos/orders", icon: ClipboardList, feature: null },
+  { title: "Kitchen", url: "/pos/kitchen", icon: ChefHat, feature: "kitchen_display" },
+  { title: "Payments", url: "/pos/payments", icon: CreditCard, feature: null },
 ];
 
 export function POSLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const { user } = useAuth();
+
+  const isFeatureEnabled = (featureKey: string | null) => {
+    if (!featureKey) return true;
+    if (!user?.features) return true;
+    return user.features[featureKey] !== false;
+  };
 
   return (
     <div className="flex h-screen flex-col bg-background">
@@ -40,7 +46,7 @@ export function POSLayout({ children }: { children: React.ReactNode }) {
         </div>
 
         <nav className="flex items-center gap-1">
-          {navItems.map((item) => (
+          {navItems.filter((item) => isFeatureEnabled(item.feature)).map((item) => (
             <Link key={item.url} href={item.url}>
               <Button
                 variant={location === item.url ? "secondary" : "ghost"}

@@ -19,6 +19,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   Form,
   FormControl,
   FormField,
@@ -34,6 +39,7 @@ import {
   Grid3X3,
   Users,
   Loader2,
+  ExternalLink,
 } from "lucide-react";
 
 interface Table {
@@ -297,10 +303,25 @@ export default function TablesManager() {
                 <p className="mt-4 text-sm text-muted-foreground text-center">
                   {window.location.origin}/order/{selectedTable.qrToken}
                 </p>
-                <Button className="mt-4" onClick={downloadQrCode} data-testid="button-download-qr">
-                  <Download className="mr-2 h-4 w-4" />
-                  Download QR Code
-                </Button>
+                <div className="flex gap-2 mt-4">
+                  <Button onClick={downloadQrCode} data-testid="button-download-qr">
+                    <Download className="mr-2 h-4 w-4" />
+                    Download
+                  </Button>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        onClick={() => window.open(`/order/${selectedTable.qrToken}`, "_blank")}
+                        data-testid="button-test-scan"
+                      >
+                        <ExternalLink className="mr-2 h-4 w-4" />
+                        Test Scan
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Opens the QR ordering page in a new tab</TooltipContent>
+                  </Tooltip>
+                </div>
               </>
             ) : (
               <div className="text-center py-8">

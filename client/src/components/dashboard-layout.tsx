@@ -34,12 +34,16 @@ import {
   LogOut,
   Utensils,
   Monitor,
+  ChefHat,
+  QrCode,
+  CreditCard,
+  SplitSquareHorizontal,
 } from "lucide-react";
 
 const navItems = [
   { title: "Overview", url: "/dashboard", icon: LayoutDashboard, feature: null },
   { title: "Menu", url: "/dashboard/menu", icon: UtensilsCrossed, feature: null },
-  { title: "Tables", url: "/dashboard/tables", icon: Grid3X3, feature: null },
+  { title: "Tables & QR", url: "/dashboard/tables", icon: QrCode, feature: "qr_ordering" },
   { title: "Staff", url: "/dashboard/staff", icon: Users, feature: null },
   { title: "Settings", url: "/dashboard/settings", icon: Settings, feature: null },
 ];
@@ -83,7 +87,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
               <SidebarGroupLabel>Management</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  {navItems.map((item) => (
+                  {navItems.filter((item) => isFeatureEnabled(item.feature)).map((item) => (
                     <SidebarMenuItem key={item.title}>
                       <SidebarMenuButton
                         asChild
@@ -99,19 +103,31 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
-            {isFeatureEnabled("pos") && (
+            {(isFeatureEnabled("pos") || isFeatureEnabled("kitchen_display")) && (
               <SidebarGroup>
-                <SidebarGroupLabel>POS</SidebarGroupLabel>
+                <SidebarGroupLabel>Operations</SidebarGroupLabel>
                 <SidebarGroupContent>
                   <SidebarMenu>
-                    <SidebarMenuItem>
-                      <SidebarMenuButton asChild>
-                        <Link href="/pos">
-                          <Monitor className="h-4 w-4" />
-                          <span>Open POS</span>
-                        </Link>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
+                    {isFeatureEnabled("pos") && (
+                      <SidebarMenuItem>
+                        <SidebarMenuButton asChild isActive={location === "/pos"}>
+                          <Link href="/pos">
+                            <Monitor className="h-4 w-4" />
+                            <span>Open POS</span>
+                          </Link>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    )}
+                    {isFeatureEnabled("kitchen_display") && (
+                      <SidebarMenuItem>
+                        <SidebarMenuButton asChild isActive={location === "/pos/kitchen"}>
+                          <Link href="/pos/kitchen">
+                            <ChefHat className="h-4 w-4" />
+                            <span>Kitchen Display</span>
+                          </Link>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    )}
                   </SidebarMenu>
                 </SidebarGroupContent>
               </SidebarGroup>
