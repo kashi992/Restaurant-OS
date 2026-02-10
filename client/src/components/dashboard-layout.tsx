@@ -55,8 +55,8 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   // Check if a feature is enabled (defaults to true if no feature requirement or no features loaded)
   const isFeatureEnabled = (featureKey: string | null) => {
     if (!featureKey) return true;
-    if (!user?.features) return true;
-    return user.features[featureKey] !== false;
+    if (!user?.features) return false;
+    return user.features[featureKey] === true;
   };
 
   const handleLogout = async () => {

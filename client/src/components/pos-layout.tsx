@@ -24,8 +24,8 @@ export function POSLayout({ children }: { children: React.ReactNode }) {
 
   const isFeatureEnabled = (featureKey: string | null) => {
     if (!featureKey) return true;
-    if (!user?.features) return true;
-    return user.features[featureKey] !== false;
+    if (!user?.features) return false;
+    return user.features[featureKey] === true;
   };
 
   return (
