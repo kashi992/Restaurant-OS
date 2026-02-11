@@ -64,6 +64,7 @@ import {
   Banknote,
   CreditCard,
   AlertTriangle,
+  XCircle,
 } from "lucide-react";
 import { useLocation } from "wouter";
 
@@ -213,6 +214,10 @@ export default function OrdersPage() {
   const [addingItemsToOrder, setAddingItemsToOrder] = useState(false);
   const [addItemsCart, setAddItemsCart] = useState<CartItem[]>([]);
 
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [cancelOrderId, setCancelOrderId] = useState<string | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
+
   const [payDialogOpen, setPayDialogOpen] = useState(false);
   const [payOrderId, setPayOrderId] = useState<string | null>(null);
   const [payOrderNumber, setPayOrderNumber] = useState<string>("");
@@ -348,7 +353,7 @@ export default function OrdersPage() {
   });
 
   const updateStatusMutation = useMutation({
-    mutationFn: async ({ orderId, status }: { orderId: string; status: string }) => {
+    mutationFn: async ({ orderId, status, notes }: { orderId: string; status: string; notes?: string }) => {
       const res = await fetch(`/api/restaurants/${restaurantId}/orders/${orderId}/status`, {
         method: "PATCH",
         headers: {
@@ -356,7 +361,7 @@ export default function OrdersPage() {
           Authorization: `Bearer ${accessToken}`,
         },
         credentials: "include",
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ status, notes }),
       });
       if (!res.ok) {
         const error = await res.json().catch(() => ({}));
@@ -368,13 +373,37 @@ export default function OrdersPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "orders"] });
       if (variables.status === "completed" || variables.status === "cancelled") {
         queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "tables"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "stats"] });
       }
-      toast({ title: "Order status updated" });
+      if (variables.status === "cancelled") {
+        toast({ title: "Order cancelled" });
+        setCancelDialogOpen(false);
+        setCancelOrderId(null);
+        setCancelReason("");
+        setDetailDialogOpen(false);
+      } else {
+        toast({ title: "Order status updated" });
+      }
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
+
+  const openCancelDialog = (orderId: string) => {
+    setCancelOrderId(orderId);
+    setCancelReason("");
+    setCancelDialogOpen(true);
+  };
+
+  const confirmCancelOrder = () => {
+    if (!cancelOrderId) return;
+    updateStatusMutation.mutate({
+      orderId: cancelOrderId,
+      status: "cancelled",
+      notes: cancelReason.trim() || undefined,
+    });
+  };
 
   const addItemsMutation = useMutation({
     mutationFn: async ({ orderId, items }: { orderId: string; items: CartItem[] }) => {
@@ -857,6 +886,16 @@ export default function OrdersPage() {
                             Pay & Complete
                           </Button>
                         )}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-destructive"
+                          onClick={() => openCancelDialog(order.id)}
+                          data-testid={`button-cancel-order-${order.id}`}
+                        >
+                          <XCircle className="mr-1 h-3.5 w-3.5" />
+                          Cancel
+                        </Button>
                       </div>
                     </CardContent>
                   </Card>
@@ -1096,6 +1135,15 @@ export default function OrdersPage() {
                         Pay & Complete
                       </Button>
                     )}
+                    <Button
+                      variant="outline"
+                      className="text-destructive"
+                      onClick={() => openCancelDialog(orderDetailData.order.id)}
+                      data-testid="button-cancel-order-detail"
+                    >
+                      <XCircle className="mr-2 h-4 w-4" />
+                      Cancel Order
+                    </Button>
                   </div>
                 )}
 
@@ -1119,6 +1167,63 @@ export default function OrdersPage() {
           ) : (
             <p className="text-muted-foreground">Order not found</p>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={cancelDialogOpen} onOpenChange={(open: boolean) => {
+        setCancelDialogOpen(open);
+        if (!open) {
+          setCancelOrderId(null);
+          setCancelReason("");
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cancel Order</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to cancel this order? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium mb-1.5 block" htmlFor="cancel-reason">
+                Reason for cancellation (optional)
+              </label>
+              <Input
+                id="cancel-reason"
+                placeholder="e.g. Customer changed their mind"
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                data-testid="input-cancel-reason"
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setCancelDialogOpen(false);
+                setCancelOrderId(null);
+                setCancelReason("");
+              }}
+              data-testid="button-cancel-dismiss"
+            >
+              Go Back
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmCancelOrder}
+              disabled={updateStatusMutation.isPending}
+              data-testid="button-cancel-confirm"
+            >
+              {updateStatusMutation.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <XCircle className="mr-2 h-4 w-4" />
+              )}
+              Cancel Order
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
