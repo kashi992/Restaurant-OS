@@ -286,6 +286,7 @@ export async function registerRoutes(
       // Get user's restaurant association (if any)
       let restaurantContext: {
         restaurantId?: string;
+        restaurantName?: string;
         roleId?: string;
         roleName?: string;
         permissions?: string[];
@@ -342,6 +343,7 @@ export async function registerRoutes(
 
           restaurantContext = {
             restaurantId: restaurantUser.restaurant.id,
+            restaurantName: restaurantUser.restaurant.name,
             roleId: restaurantUser.role.id,
             roleName: restaurantUser.role.name,
             permissions: (restaurantUser.role.permissions as string[]) || [],

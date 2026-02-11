@@ -16,6 +16,7 @@ interface User {
   lastName: string;
   role: string;
   restaurantId?: string;
+  restaurantName?: string; // Resturant name
   isSuperAdmin: boolean;
   permissions: string[];
   features: Record<string, boolean>;
@@ -72,6 +73,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           lastName: data.lastName || "",
           role: data.currentRestaurant?.roleName || "",
           restaurantId: data.currentRestaurant?.restaurantId,
+          restaurantName: data.currentRestaurant?.restaurantName || data.currentRestaurant?.name || "", // ✅ fetch resturant name
           isSuperAdmin: data.isSuperAdmin || false,
           permissions: data.currentRestaurant?.permissions || [],
           features: data.currentRestaurant?.features || {},
@@ -127,6 +129,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     lastName: data.user.lastName || "",
     role: data.user.roleName || "",
     restaurantId: data.user.restaurantId || null,
+    restaurantName: data.user.restaurantName || data.user.restaurant?.name || "",
     isSuperAdmin: data.user.isSuperAdmin || false,
     permissions: data.user.permissions || [],
     features: data.user.features || {},
