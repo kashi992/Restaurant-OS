@@ -1890,7 +1890,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
           .from(orders)
           .where(eq(orders.restaurantId, restaurantId))
           .orderBy(sql`${orders.createdAt} DESC`)
-          .limit(10);
+          .limit(5);
 
         res.json({
           ordersToday: orderStats?.ordersToday ?? 0,

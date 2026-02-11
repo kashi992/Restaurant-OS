@@ -140,7 +140,7 @@ export default function DashboardHome() {
       title: "Kitchen Display",
       description: "View kitchen orders",
       icon: ChefHat,
-      href: "/kitchen",
+      href: "/pos/kitchen",
     }] : []),
   ];
 
@@ -195,28 +195,29 @@ export default function DashboardHome() {
               </div>
             ) : stats?.recentOrders && stats.recentOrders.length > 0 ? (
               <div className="space-y-3">
-                {stats.recentOrders.map((order) => (
-                  <div
-                    key={order.id}
-                    className="flex items-center justify-between gap-2 rounded-md border p-3"
-                    data-testid={`row-order-${order.id}`}
-                  >
-                    <div className="flex flex-col gap-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-medium text-sm">#{order.displayNumber || order.orderNumber}</span>
-                        {getStatusBadge(order.status)}
-                        <Badge variant="outline" className="text-xs">
-                          {order.source.toUpperCase()}
-                        </Badge>
+                {stats.recentOrders.slice(0, 5).map((order) => (
+                  <Link key={order.id} href={`/pos/orders`}>
+                    <div
+                      className="flex items-center justify-between gap-2 rounded-md border p-3 hover-elevate cursor-pointer"
+                      data-testid={`row-order-${order.id}`}
+                    >
+                      <div className="flex flex-col gap-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-medium text-sm">#{order.displayNumber || order.orderNumber}</span>
+                          {getStatusBadge(order.status)}
+                          <Badge variant="outline" className="text-xs">
+                            {order.source.toUpperCase()}
+                          </Badge>
+                        </div>
+                        <span className="text-xs text-muted-foreground">
+                          {order.customerName || "Walk-in"} · {formatTimeAgo(order.createdAt)}
+                        </span>
                       </div>
-                      <span className="text-xs text-muted-foreground">
-                        {order.customerName || "Walk-in"} · {formatTimeAgo(order.createdAt)}
+                      <span className="font-semibold text-sm whitespace-nowrap" data-testid={`text-order-total-${order.id}`}>
+                        ${parseFloat(order.total).toFixed(2)}
                       </span>
                     </div>
-                    <span className="font-semibold text-sm whitespace-nowrap" data-testid={`text-order-total-${order.id}`}>
-                      ${parseFloat(order.total).toFixed(2)}
-                    </span>
-                  </div>
+                  </Link>
                 ))}
               </div>
             ) : (
