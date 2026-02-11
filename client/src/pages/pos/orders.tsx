@@ -182,11 +182,34 @@ export default function OrdersPage() {
   const tableId = urlParams.get("table");
   const isNewOrder = urlParams.get("new") === "true";
   const viewOrderId = urlParams.get("order");
+  const initialTab = urlParams.get("tab") || "active";
+  const highlightOrderId = urlParams.get("highlight");
 
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [activeTab, setActiveTab] = useState("active");
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [detailOrderId, setDetailOrderId] = useState<string | null>(viewOrderId);
   const [detailDialogOpen, setDetailDialogOpen] = useState(!!viewOrderId);
+  const [highlightedOrder, setHighlightedOrder] = useState<string | null>(highlightOrderId);
+
+  useEffect(() => {
+    if (!highlightedOrder) return;
+    const tryScroll = () => {
+      const el = document.querySelector(`[data-order-id="${highlightedOrder}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        const timer = setTimeout(() => setHighlightedOrder(null), 3000);
+        return () => clearTimeout(timer);
+      }
+    };
+    const cleanup = tryScroll();
+    if (cleanup) return cleanup;
+    const retryTimer = setTimeout(() => {
+      tryScroll();
+      setTimeout(() => setHighlightedOrder(null), 3000);
+    }, 1500);
+    return () => clearTimeout(retryTimer);
+  }, [highlightedOrder, activeTab]);
+
   const [addingItemsToOrder, setAddingItemsToOrder] = useState(false);
   const [addItemsCart, setAddItemsCart] = useState<CartItem[]>([]);
 
@@ -783,7 +806,7 @@ export default function OrdersPage() {
               {activeOrders.map(order => {
                 const nextStatus = getNextStatus(order.status);
                 return (
-                  <Card key={order.id} data-testid={`order-card-${order.id}`}>
+                  <Card key={order.id} data-testid={`order-card-${order.id}`} data-order-id={order.id} className={highlightedOrder === order.id ? "ring-2 ring-primary animate-pulse" : ""}>
                     <CardHeader className="flex flex-row items-start justify-between gap-2 pb-2">
                       <div className="min-w-0">
                         <CardTitle className="text-lg">#{order.orderNumber}</CardTitle>
@@ -879,7 +902,7 @@ export default function OrdersPage() {
                   </TableHeader>
                   <TableBody>
                     {completedOrders.map(order => (
-                      <TableRow key={order.id} data-testid={`history-row-${order.id}`}>
+                      <TableRow key={order.id} data-testid={`history-row-${order.id}`} data-order-id={order.id} className={highlightedOrder === order.id ? "bg-primary/10" : ""}>
                         <TableCell className="font-medium">{order.orderNumber}</TableCell>
                         <TableCell>{order.tableNumber ? `Table ${order.tableNumber}` : "-"}</TableCell>
                         <TableCell>{getStatusBadge(order.status)}</TableCell>

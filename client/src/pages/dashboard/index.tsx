@@ -36,6 +36,19 @@ interface DashboardStats {
   recentOrders: RecentOrder[];
 }
 
+const ACTIVE_STATUSES = ["pending", "confirmed", "preparing", "ready", "served"];
+
+function isActiveOrder(status: string) {
+  return ACTIVE_STATUSES.includes(status);
+}
+
+function getOrderLink(order: RecentOrder) {
+  if (isActiveOrder(order.status)) {
+    return `/pos/orders?tab=active&highlight=${order.id}`;
+  }
+  return `/pos/orders?tab=history&highlight=${order.id}`;
+}
+
 function getStatusBadge(status: string) {
   const styles: Record<string, string> = {
     pending: "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400",
@@ -87,7 +100,7 @@ export default function DashboardHome() {
       return res.json();
     },
     enabled: !!accessToken && !!user?.restaurantId,
-    refetchInterval: 30000,
+    refetchInterval: 5000,
   });
 
   const statCards = [
@@ -96,24 +109,28 @@ export default function DashboardHome() {
       value: stats?.ordersToday ?? 0,
       icon: ClipboardList,
       description: "Total orders placed today",
+      href: "/pos/orders",
     },
     {
       title: "Revenue Today",
       value: `$${(stats?.revenueToday ?? 0).toFixed(2)}`,
       icon: DollarSign,
       description: "Total revenue generated",
+      href: "/pos/payments",
     },
     {
       title: "Active Orders",
       value: stats?.activeOrders ?? 0,
       icon: TrendingUp,
       description: "Orders in progress",
+      href: "/pos/orders?tab=active",
     },
     {
       title: "Tables Occupied",
       value: stats?.tablesOccupied ?? 0,
       icon: Users,
       description: "Currently seated",
+      href: "/dashboard/tables",
     },
   ];
 
@@ -166,16 +183,18 @@ export default function DashboardHome() {
           ))
         ) : (
           statCards.map((stat) => (
-            <Card key={stat.title} data-testid={`card-stat-${stat.title.toLowerCase().replace(/\s+/g, "-")}`}>
-              <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
-                <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
-                <stat.icon className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <p className="text-2xl font-bold" data-testid={`text-stat-value-${stat.title.toLowerCase().replace(/\s+/g, "-")}`}>{stat.value}</p>
-                <p className="text-xs text-muted-foreground">{stat.description}</p>
-              </CardContent>
-            </Card>
+            <Link key={stat.title} href={stat.href}>
+              <Card className="hover-elevate cursor-pointer" data-testid={`card-stat-${stat.title.toLowerCase().replace(/\s+/g, "-")}`}>
+                <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
+                  <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
+                  <stat.icon className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <p className="text-2xl font-bold" data-testid={`text-stat-value-${stat.title.toLowerCase().replace(/\s+/g, "-")}`}>{stat.value}</p>
+                  <p className="text-xs text-muted-foreground">{stat.description}</p>
+                </CardContent>
+              </Card>
+            </Link>
           ))
         )}
       </div>
@@ -186,7 +205,7 @@ export default function DashboardHome() {
             <CardTitle>Recent Orders</CardTitle>
             <CardDescription>Latest orders from your restaurant</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-3">
             {isLoading ? (
               <div className="space-y-3">
                 {[1, 2, 3].map((i) => (
@@ -194,32 +213,30 @@ export default function DashboardHome() {
                 ))}
               </div>
             ) : stats?.recentOrders && stats.recentOrders.length > 0 ? (
-              <div className="space-y-3">
-                {stats.recentOrders.slice(0, 5).map((order) => (
-                  <Link key={order.id} href={`/pos/orders`}>
-                    <div
-                      className="flex items-center justify-between gap-2 rounded-md border p-3 hover-elevate cursor-pointer"
-                      data-testid={`row-order-${order.id}`}
-                    >
-                      <div className="flex flex-col gap-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-medium text-sm">#{order.displayNumber || order.orderNumber}</span>
-                          {getStatusBadge(order.status)}
-                          <Badge variant="outline" className="text-xs">
-                            {order.source.toUpperCase()}
-                          </Badge>
-                        </div>
-                        <span className="text-xs text-muted-foreground">
-                          {order.customerName || "Walk-in"} · {formatTimeAgo(order.createdAt)}
-                        </span>
+              stats.recentOrders.slice(0, 5).map((order) => (
+                <Link key={order.id} href={getOrderLink(order)}>
+                  <div
+                    className="flex items-center justify-between gap-2 rounded-md border p-3 hover-elevate cursor-pointer"
+                    data-testid={`row-order-${order.id}`}
+                  >
+                    <div className="flex flex-col gap-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium text-sm">#{order.displayNumber || order.orderNumber}</span>
+                        {getStatusBadge(order.status)}
+                        <Badge variant="outline" className="text-xs">
+                          {order.source.toUpperCase()}
+                        </Badge>
                       </div>
-                      <span className="font-semibold text-sm whitespace-nowrap" data-testid={`text-order-total-${order.id}`}>
-                        ${parseFloat(order.total).toFixed(2)}
+                      <span className="text-xs text-muted-foreground">
+                        {order.customerName || "Walk-in"} · {formatTimeAgo(order.createdAt)}
                       </span>
                     </div>
-                  </Link>
-                ))}
-              </div>
+                    <span className="font-semibold text-sm whitespace-nowrap" data-testid={`text-order-total-${order.id}`}>
+                      ${parseFloat(order.total).toFixed(2)}
+                    </span>
+                  </div>
+                </Link>
+              ))
             ) : (
               <p className="text-muted-foreground text-sm" data-testid="text-no-orders">No recent orders to display.</p>
             )}
@@ -231,7 +248,7 @@ export default function DashboardHome() {
             <CardTitle>Quick Actions</CardTitle>
             <CardDescription>Common tasks you might want to do</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-2">
+          <CardContent className="space-y-3">
             {quickActions.map((action) => (
               <Link key={action.href} href={action.href}>
                 <div
