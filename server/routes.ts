@@ -635,6 +635,10 @@ export async function registerRoutes(
         paypal: currentRestaurantFeatures.paypal_payments ?? false,
       } : { cash: false, counter: false, card: false, stripe: false, paypal: false };
 
+      const currentRestaurantAssoc = restaurantAssociations.find(
+        ra => ra.restaurant.id === user.restaurantId
+      );
+
       res.json({
         id: user.userId,
         email: user.email,
@@ -645,6 +649,7 @@ export async function registerRoutes(
         isSuperAdmin: user.isSuperAdmin,
         currentRestaurant: user.restaurantId ? {
           restaurantId: user.restaurantId,
+          restaurantName: currentRestaurantAssoc?.restaurant.name || "",
           roleId: user.roleId,
           roleName: user.roleName,
           permissions: user.permissions,
@@ -1837,6 +1842,69 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
       });
     }
   });
+
+  // ============================================================================
+  // Restaurant Dashboard Stats
+  // ============================================================================
+
+  app.get(
+    "/api/restaurants/:restaurantId/stats",
+    authenticate,
+    resolveTenantFromToken,
+    requireRestaurantAccess, requireActiveRestaurant,
+    async (req, res) => {
+      try {
+        const { restaurantId } = req.params;
+
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+
+        const [orderStats] = await db
+          .select({
+            ordersToday: sql<number>`COUNT(CASE WHEN ${orders.createdAt} >= ${todayStart} THEN 1 END)::int`,
+            revenueToday: sql<number>`COALESCE(SUM(CASE WHEN ${orders.createdAt} >= ${todayStart} AND ${orders.status} NOT IN ('cancelled') THEN ${orders.total}::numeric ELSE 0 END), 0)`,
+            activeOrders: sql<number>`COUNT(CASE WHEN ${orders.status} IN ('pending', 'confirmed', 'preparing', 'ready') THEN 1 END)::int`,
+          })
+          .from(orders)
+          .where(eq(orders.restaurantId, restaurantId));
+
+        const [tableStats] = await db
+          .select({
+            tablesOccupied: sql<number>`COUNT(CASE WHEN ${diningTables.status} = 'occupied' THEN 1 END)::int`,
+          })
+          .from(diningTables)
+          .where(eq(diningTables.restaurantId, restaurantId));
+
+        const recentOrders = await db
+          .select({
+            id: orders.id,
+            orderNumber: orders.orderNumber,
+            displayNumber: orders.displayNumber,
+            status: orders.status,
+            total: orders.total,
+            source: orders.source,
+            orderType: orders.orderType,
+            customerName: orders.customerName,
+            createdAt: orders.createdAt,
+          })
+          .from(orders)
+          .where(eq(orders.restaurantId, restaurantId))
+          .orderBy(sql`${orders.createdAt} DESC`)
+          .limit(10);
+
+        res.json({
+          ordersToday: orderStats?.ordersToday ?? 0,
+          revenueToday: parseFloat(String(orderStats?.revenueToday ?? 0)),
+          activeOrders: orderStats?.activeOrders ?? 0,
+          tablesOccupied: tableStats?.tablesOccupied ?? 0,
+          recentOrders,
+        });
+      } catch (error) {
+        console.error("Dashboard stats error:", error);
+        res.status(500).json({ error: "Failed to fetch dashboard stats" });
+      }
+    }
+  );
 
   // ============================================================================
   // Restaurant Staff Management Endpoints
