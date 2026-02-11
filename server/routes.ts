@@ -4785,6 +4785,9 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
             customerName: orders.customerName,
             guestCount: orders.guestCount,
             notes: orders.notes,
+            completedAt: orders.completedAt,
+            cancelledAt: orders.cancelledAt,
+            cancelReason: orders.cancelReason,
             createdAt: orders.createdAt,
             updatedAt: orders.updatedAt,
           })

@@ -65,6 +65,7 @@ import {
   CreditCard,
   AlertTriangle,
   XCircle,
+  Filter,
 } from "lucide-react";
 import { useLocation } from "wouter";
 
@@ -86,6 +87,8 @@ interface OrderSummary {
   guestCount: number;
   notes: string | null;
   completedAt: string | null;
+  cancelledAt: string | null;
+  cancelReason: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -214,6 +217,8 @@ export default function OrdersPage() {
   const [addingItemsToOrder, setAddingItemsToOrder] = useState(false);
   const [addItemsCart, setAddItemsCart] = useState<CartItem[]>([]);
 
+  const [historyFilter, setHistoryFilter] = useState<"all" | "completed" | "cancelled">("all");
+
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [cancelOrderId, setCancelOrderId] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState("");
@@ -258,7 +263,7 @@ export default function OrdersPage() {
     refetchInterval: 5000,
   });
 
-  const { data: completedOrdersData, isLoading: loadingCompleted } = useQuery<{ orders: OrderSummary[] }>({
+  const { data: completedOrdersRaw, isLoading: loadingCompletedRaw } = useQuery<{ orders: OrderSummary[] }>({
     queryKey: ["/api/restaurants", restaurantId, "orders", "completed"],
     queryFn: async () => {
       const res = await fetch(`/api/restaurants/${restaurantId}/orders?status=completed`, {
@@ -270,6 +275,31 @@ export default function OrdersPage() {
     },
     enabled: !!accessToken && !!restaurantId && !isNewOrder && activeTab === "history",
   });
+
+  const { data: cancelledOrdersRaw, isLoading: loadingCancelledRaw } = useQuery<{ orders: OrderSummary[] }>({
+    queryKey: ["/api/restaurants", restaurantId, "orders", "cancelled"],
+    queryFn: async () => {
+      const res = await fetch(`/api/restaurants/${restaurantId}/orders?status=cancelled`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        credentials: "include",
+      });
+      if (!res.ok) return { orders: [] };
+      return res.json();
+    },
+    enabled: !!accessToken && !!restaurantId && !isNewOrder && activeTab === "history",
+  });
+
+  const loadingCompleted = loadingCompletedRaw || loadingCancelledRaw;
+  const allHistoryOrders = [
+    ...(completedOrdersRaw?.orders || []),
+    ...(cancelledOrdersRaw?.orders || []),
+  ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  const completedOrdersData = {
+    orders: historyFilter === "all"
+      ? allHistoryOrders
+      : allHistoryOrders.filter(o => o.status === historyFilter),
+  };
 
   const { data: orderDetailData, isLoading: loadingDetail } = useQuery<{
     order: OrderDetail;
@@ -919,6 +949,20 @@ export default function OrdersPage() {
         </TabsContent>
 
         <TabsContent value="history" className="flex-1 overflow-auto mt-0">
+          <div className="flex items-center gap-2 mb-4 flex-wrap">
+            <Filter className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">Filter:</span>
+            <Select value={historyFilter} onValueChange={(v) => setHistoryFilter(v as "all" | "completed" | "cancelled")}>
+              <SelectTrigger className="w-[160px]" data-testid="select-history-filter">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all" data-testid="filter-all">All Orders</SelectItem>
+                <SelectItem value="completed" data-testid="filter-completed">Completed</SelectItem>
+                <SelectItem value="cancelled" data-testid="filter-cancelled">Cancelled</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           {loadingCompleted ? (
             <div className="space-y-2">
               {[1, 2, 3].map(i => <Skeleton key={i} className="h-12 w-full" />)}
@@ -935,7 +979,7 @@ export default function OrdersPage() {
                       <TableHead>Source</TableHead>
                       <TableHead className="text-right">Total</TableHead>
                       <TableHead>Created</TableHead>
-                      <TableHead>Completed</TableHead>
+                      <TableHead>Resolved</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -950,7 +994,11 @@ export default function OrdersPage() {
                         </TableCell>
                         <TableCell className="text-right font-semibold">${parseFloat(order.total).toFixed(2)}</TableCell>
                         <TableCell className="text-muted-foreground">{formatDateTime(order.createdAt)}</TableCell>
-                        <TableCell className="text-muted-foreground">{order.completedAt ? formatDateTime(order.completedAt) : "-"}</TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {order.status === "cancelled"
+                            ? (order.cancelledAt ? formatDateTime(order.cancelledAt) : "-")
+                            : (order.completedAt ? formatDateTime(order.completedAt) : "-")}
+                        </TableCell>
                         <TableCell className="text-right">
                           <Button
                             size="sm"
@@ -972,9 +1020,11 @@ export default function OrdersPage() {
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12">
                 <History className="h-12 w-12 text-muted-foreground" />
-                <h3 className="mt-4 text-lg font-medium">No completed orders yet</h3>
+                <h3 className="mt-4 text-lg font-medium">
+                  {historyFilter === "all" ? "No order history yet" : historyFilter === "completed" ? "No completed orders" : "No cancelled orders"}
+                </h3>
                 <p className="text-muted-foreground">
-                  Completed orders will appear here.
+                  {historyFilter === "cancelled" ? "Cancelled orders will appear here." : "Completed and cancelled orders will appear here."}
                 </p>
               </CardContent>
             </Card>
