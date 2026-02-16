@@ -305,19 +305,20 @@ export default function MenuManager() {
     mutationFn: async (data: z.infer<typeof categorySchema>) => {
       setUploadingImage(true);
       try {
-        let imageUrl: string | undefined;
+        let imageUrl: string | null | undefined;
         if (categoryImageFile) {
           imageUrl = await uploadImage(categoryImageFile);
+        } else if (editingCategory && editingCategory.imageUrl && !categoryImagePreview) {
+          imageUrl = null;
         }
         const url = editingCategory
           ? `/api/restaurants/${restaurantId}/categories/${editingCategory.id}`
           : `/api/restaurants/${restaurantId}/categories`;
         const body: Record<string, unknown> = { ...data };
-        if (imageUrl) body.imageUrl = imageUrl;
-        const res = await fetch(url, {
+        if (imageUrl !== undefined) body.imageUrl = imageUrl;
+        const res = await authFetch(url, {
           method: editingCategory ? "PATCH" : "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-          credentials: "include",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         });
         if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.message || "Failed to save category"); }
@@ -342,20 +343,21 @@ export default function MenuManager() {
     mutationFn: async (data: z.infer<typeof menuItemSchema>) => {
       setUploadingImage(true);
       try {
-        let imageUrl: string | undefined;
+        let imageUrl: string | null | undefined;
         if (itemImageFile) {
           imageUrl = await uploadImage(itemImageFile);
+        } else if (editingItem && editingItem.imageUrl && !itemImagePreview) {
+          imageUrl = null;
         }
         const targetCategoryId = editingItem ? editingItem.categoryId : addItemToCategoryId;
         const url = editingItem
           ? `/api/restaurants/${restaurantId}/menu-items/${editingItem.id}`
           : `/api/restaurants/${restaurantId}/menu-items`;
         const body: Record<string, unknown> = { ...data, categoryId: targetCategoryId };
-        if (imageUrl) body.imageUrl = imageUrl;
-        const res = await fetch(url, {
+        if (imageUrl !== undefined) body.imageUrl = imageUrl;
+        const res = await authFetch(url, {
           method: editingItem ? "PATCH" : "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-          credentials: "include",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         });
         if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.message || "Failed to save item"); }
