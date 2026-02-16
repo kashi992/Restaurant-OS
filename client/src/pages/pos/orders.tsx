@@ -242,8 +242,12 @@ export default function OrdersPage() {
     const cardEnabled = userPaymentMethods
       ? (userPaymentMethods.card === true || userPaymentMethods.stripe === true)
       : (userFeatures?.stripe_payments === true);
+    const paypalEnabled = userPaymentMethods
+      ? (userPaymentMethods.paypal === true)
+      : (userFeatures?.paypal_payments === true);
     if (cashEnabled) methods.push({ id: "counter", label: "Cash / Counter", icon: "cash", method: "counter" });
-    if (cardEnabled) methods.push({ id: "card", label: "Card", icon: "card", method: "card" });
+    if (cardEnabled) methods.push({ id: "card", label: "Card (Stripe)", icon: "card", method: "card" });
+    if (paypalEnabled) methods.push({ id: "paypal", label: "PayPal", icon: "card", method: "paypal" });
     return methods;
   })();
   const hasPayMethod = availablePayMethods.length > 0;

@@ -78,6 +78,43 @@ import {
 import { z } from "zod";
 import { desc } from "drizzle-orm";
 
+async function buildPaymentMethods(
+  restaurantId: string,
+  features: Record<string, boolean>
+): Promise<Record<string, boolean>> {
+  const settings = await db
+    .select()
+    .from(restaurantSettings)
+    .where(eq(restaurantSettings.restaurantId, restaurantId));
+
+  const settingsMap: Record<string, unknown> = {};
+  for (const s of settings) {
+    settingsMap[s.settingKey] = s.settingValue;
+  }
+
+  const stripeFeatureEnabled = features.stripe_payments ?? false;
+  const paypalFeatureEnabled = features.paypal_payments ?? false;
+  const counterFeatureEnabled = features.counter_payments ?? false;
+
+  const stripeToggled = settingsMap.stripe_enabled !== undefined
+    ? (settingsMap.stripe_enabled === "true" || settingsMap.stripe_enabled === true)
+    : stripeFeatureEnabled;
+  const paypalToggled = settingsMap.paypal_enabled !== undefined
+    ? (settingsMap.paypal_enabled === "true" || settingsMap.paypal_enabled === true)
+    : paypalFeatureEnabled;
+  const counterToggled = settingsMap.counter_payments_enabled !== undefined
+    ? (settingsMap.counter_payments_enabled === "true" || settingsMap.counter_payments_enabled === true)
+    : counterFeatureEnabled;
+
+  return {
+    cash: counterFeatureEnabled && counterToggled,
+    counter: counterFeatureEnabled && counterToggled,
+    card: stripeFeatureEnabled && stripeToggled,
+    stripe: stripeFeatureEnabled && stripeToggled,
+    paypal: paypalFeatureEnabled && paypalToggled,
+  };
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -395,13 +432,9 @@ export async function registerRoutes(
         path: "/",
       });
 
-      const paymentMethods = {
-        cash: restaurantContext.features?.counter_payments ?? false,
-        counter: restaurantContext.features?.counter_payments ?? false,
-        card: restaurantContext.features?.stripe_payments ?? false,
-        stripe: restaurantContext.features?.stripe_payments ?? false,
-        paypal: restaurantContext.features?.paypal_payments ?? false,
-      };
+      const paymentMethods = restaurantContext.restaurantId
+        ? await buildPaymentMethods(restaurantContext.restaurantId, restaurantContext.features || {})
+        : { cash: false, counter: false, card: false, stripe: false, paypal: false };
 
       res.json({
         accessToken,
@@ -627,13 +660,9 @@ export async function registerRoutes(
         }), {} as Record<string, boolean>);
       }
 
-      const paymentMethods = user.restaurantId ? {
-        cash: currentRestaurantFeatures.counter_payments ?? false,
-        counter: currentRestaurantFeatures.counter_payments ?? false,
-        card: currentRestaurantFeatures.stripe_payments ?? false,
-        stripe: currentRestaurantFeatures.stripe_payments ?? false,
-        paypal: currentRestaurantFeatures.paypal_payments ?? false,
-      } : { cash: false, counter: false, card: false, stripe: false, paypal: false };
+      const paymentMethods = user.restaurantId
+        ? await buildPaymentMethods(user.restaurantId, currentRestaurantFeatures)
+        : { cash: false, counter: false, card: false, stripe: false, paypal: false };
 
       const currentRestaurantAssoc = restaurantAssociations.find(
         ra => ra.restaurant.id === user.restaurantId

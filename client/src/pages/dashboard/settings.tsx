@@ -60,7 +60,7 @@ interface RestaurantSettings {
 }
 
 export default function SettingsPage() {
-  const { accessToken, user } = useAuth();
+  const { accessToken, user, refreshUser } = useAuth();
   const { toast } = useToast();
   const restaurantId = user?.restaurantId;
 
@@ -116,8 +116,12 @@ export default function SettingsPage() {
       if (!res.ok) throw new Error("Failed to update settings");
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "settings"] });
+      const paymentKeys = ["stripe_enabled", "paypal_enabled", "counter_payments_enabled"];
+      if (paymentKeys.includes(variables.key)) {
+        refreshUser();
+      }
       toast({ title: "Settings updated successfully" });
     },
     onError: (error: Error) => {
@@ -310,6 +314,7 @@ export default function SettingsPage() {
                         size="sm"
                         variant="outline"
                         className="text-destructive"
+                        disabled={!settings.stripeEnabled}
                         onClick={() => setDeleteDialogOpen("stripe")}
                         data-testid="button-delete-stripe"
                       >
@@ -319,6 +324,7 @@ export default function SettingsPage() {
                     <Button
                       size="sm"
                       variant="outline"
+                      disabled={!settings.stripeEnabled}
                       onClick={() => {
                         resetStripeForm();
                         setStripeDialogOpen(true);
@@ -380,6 +386,7 @@ export default function SettingsPage() {
                         size="sm"
                         variant="outline"
                         className="text-destructive"
+                        disabled={!settings.paypalEnabled}
                         onClick={() => setDeleteDialogOpen("paypal")}
                         data-testid="button-delete-paypal"
                       >
@@ -389,6 +396,7 @@ export default function SettingsPage() {
                     <Button
                       size="sm"
                       variant="outline"
+                      disabled={!settings.paypalEnabled}
                       onClick={() => {
                         resetPaypalForm();
                         if (settings.paypalCredentials.configured && settings.paypalCredentials.mode) {

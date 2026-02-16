@@ -62,11 +62,18 @@ function buildAvailableMethods(
     ? (paymentMethods.card === true || paymentMethods.stripe === true)
     : (features?.stripe_payments === true);
 
+  const paypalEnabled = paymentMethods
+    ? (paymentMethods.paypal === true)
+    : (features?.paypal_payments === true);
+
   if (cashEnabled) {
     methods.push({ id: "counter", label: "Cash / Counter", icon: "cash", method: "counter" });
   }
   if (cardEnabled) {
-    methods.push({ id: "card", label: "Card", icon: "card", method: "card" });
+    methods.push({ id: "card", label: "Card (Stripe)", icon: "card", method: "card" });
+  }
+  if (paypalEnabled) {
+    methods.push({ id: "paypal", label: "PayPal", icon: "card", method: "paypal" });
   }
 
   return methods;

@@ -31,6 +31,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshToken: () => Promise<boolean>;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -143,6 +144,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // await fetchUser(data.accessToken);
   };
 
+  const refreshUser = useCallback(async () => {
+    if (accessToken) {
+      await fetchUser(accessToken);
+    }
+  }, [accessToken, fetchUser]);
+
   const logout = async () => {
     try {
       await fetch("/api/auth/logout", {
@@ -166,6 +173,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         login,
         logout,
         refreshToken,
+        refreshUser,
       }}
     >
       {children}
