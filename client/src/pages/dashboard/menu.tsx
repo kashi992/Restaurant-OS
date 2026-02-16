@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useAuth } from "@/lib/auth";
+import { useAuth, useAuthenticatedFetch } from "@/lib/auth";
 import { queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -141,6 +141,7 @@ const modifierSchema = z.object({
 
 export default function MenuManager() {
   const { accessToken, user } = useAuth();
+  const authFetch = useAuthenticatedFetch();
   const { toast } = useToast();
   const restaurantId = user?.restaurantId;
 
@@ -168,13 +169,14 @@ export default function MenuManager() {
   const uploadImage = async (file: File): Promise<string> => {
     const formData = new FormData();
     formData.append("image", file);
-    const res = await fetch("/api/upload", {
+    const res = await authFetch("/api/upload", {
       method: "POST",
-      headers: { Authorization: `Bearer ${accessToken}` },
-      credentials: "include",
       body: formData,
     });
-    if (!res.ok) throw new Error("Failed to upload image");
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || "Failed to upload image");
+    }
     const data = await res.json();
     return data.imageUrl;
   };
@@ -306,8 +308,6 @@ export default function MenuManager() {
         let imageUrl: string | undefined;
         if (categoryImageFile) {
           imageUrl = await uploadImage(categoryImageFile);
-        } else if (!editingCategory) {
-          throw new Error("An image is required when creating a category");
         }
         const url = editingCategory
           ? `/api/restaurants/${restaurantId}/categories/${editingCategory.id}`
@@ -345,8 +345,6 @@ export default function MenuManager() {
         let imageUrl: string | undefined;
         if (itemImageFile) {
           imageUrl = await uploadImage(itemImageFile);
-        } else if (!editingItem) {
-          throw new Error("An image is required when creating a menu item");
         }
         const targetCategoryId = editingItem ? editingItem.categoryId : addItemToCategoryId;
         const url = editingItem
@@ -585,7 +583,9 @@ export default function MenuManager() {
                           data-testid={`img-category-${category.id}`}
                         />
                       ) : (
-                        <FolderOpen className="h-5 w-5 text-muted-foreground" />
+                        <div className="h-10 w-10 rounded-md bg-muted flex items-center justify-center shrink-0">
+                          <FolderOpen className="h-4 w-4 text-muted-foreground" />
+                        </div>
                       )}
                       <div>
                         <CardTitle className="text-lg">{category.name}</CardTitle>
@@ -616,13 +616,17 @@ export default function MenuManager() {
                       {categoryItems.map((item) => (
                         <div key={item.id} className="flex items-center justify-between p-3 rounded-md border group" data-testid={`item-card-${item.id}`}>
                           <div className="flex items-center gap-3 min-w-0 flex-1">
-                            {item.imageUrl && (
+                            {item.imageUrl ? (
                               <img
                                 src={item.imageUrl}
                                 alt={item.name}
                                 className="h-10 w-10 rounded-md object-cover shrink-0"
                                 data-testid={`img-item-${item.id}`}
                               />
+                            ) : (
+                              <div className="h-10 w-10 rounded-md bg-muted flex items-center justify-center shrink-0" data-testid={`img-placeholder-${item.id}`}>
+                                <UtensilsCrossed className="h-4 w-4 text-muted-foreground" />
+                              </div>
                             )}
                             <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2 flex-wrap">
@@ -791,17 +795,9 @@ export default function MenuManager() {
             <DialogDescription>{editingCategory ? "Update category details." : "Create a new category to organize your menu items."}</DialogDescription>
           </DialogHeader>
           <Form {...categoryForm}>
-            <form onSubmit={categoryForm.handleSubmit((data) => {
-              if (!editingCategory && !categoryImageFile) {
-                toast({ title: "Image required", description: "Please upload an image for this category.", variant: "destructive" });
-                return;
-              }
-              createCategoryMutation.mutate(data);
-            })} className="space-y-4">
+            <form onSubmit={categoryForm.handleSubmit((data) => createCategoryMutation.mutate(data))} className="space-y-4">
               <div>
-                <Label className="text-sm font-medium">
-                  Image {!editingCategory && <span className="text-destructive">*</span>}
-                </Label>
+                <Label className="text-sm font-medium">Image (optional)</Label>
                 <div className="mt-1.5">
                   {categoryImagePreview ? (
                     <div className="relative inline-block">
@@ -867,17 +863,9 @@ export default function MenuManager() {
             <DialogDescription>{editingItem ? "Update item details." : "Add a new item to this category."}</DialogDescription>
           </DialogHeader>
           <Form {...itemForm}>
-            <form onSubmit={itemForm.handleSubmit((data) => {
-              if (!editingItem && !itemImageFile) {
-                toast({ title: "Image required", description: "Please upload an image for this menu item.", variant: "destructive" });
-                return;
-              }
-              createItemMutation.mutate(data);
-            })} className="space-y-4">
+            <form onSubmit={itemForm.handleSubmit((data) => createItemMutation.mutate(data))} className="space-y-4">
               <div>
-                <Label className="text-sm font-medium">
-                  Image {!editingItem && <span className="text-destructive">*</span>}
-                </Label>
+                <Label className="text-sm font-medium">Image (optional)</Label>
                 <div className="mt-1.5">
                   {itemImagePreview ? (
                     <div className="relative inline-block">
