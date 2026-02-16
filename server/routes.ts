@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import express, { type Express } from "express";
 import { type Server } from "http";
 import { Server as SocketIOServer } from "socket.io";
 import { db, pool, testConnection } from "./db";
@@ -77,6 +77,10 @@ import {
 } from "./auth/socket-auth";
 import { z } from "zod";
 import { desc } from "drizzle-orm";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
+import crypto from "crypto";
 
 async function buildPaymentMethods(
   restaurantId: string,
@@ -119,6 +123,58 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+
+  // ============================================================================
+  // File Upload Setup
+  // ============================================================================
+  const uploadsDir = path.resolve(process.cwd(), "uploads");
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+
+  const storage = multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, uploadsDir),
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname);
+      const uniqueName = `${Date.now()}-${crypto.randomBytes(8).toString("hex")}${ext}`;
+      cb(null, uniqueName);
+    },
+  });
+
+  const upload = multer({
+    storage,
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+      const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+      if (allowed.includes(file.mimetype)) {
+        cb(null, true);
+      } else {
+        cb(new Error("Only JPEG, PNG, WebP, and GIF images are allowed"));
+      }
+    },
+  });
+
+  app.use("/uploads", (req, res, next) => {
+    const ext = path.extname(req.path).toLowerCase();
+    const allowedExts = [".jpg", ".jpeg", ".png", ".webp", ".gif"];
+    if (!allowedExts.includes(ext)) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+    next();
+  }, express.static(uploadsDir));
+
+  app.post(
+    "/api/upload",
+    authenticate,
+    upload.single("image"),
+    (req, res) => {
+      if (!req.file) {
+        return res.status(400).json({ error: "No image file provided" });
+      }
+      const imageUrl = `/uploads/${req.file.filename}`;
+      res.json({ imageUrl });
+    }
+  );
 
   // ============================================================================
   // Socket.IO Setup

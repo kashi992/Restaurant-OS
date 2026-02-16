@@ -57,13 +57,17 @@ import {
   Link2,
   Unlink,
   X,
+  ImagePlus,
+  Upload,
 } from "lucide-react";
+import { Label } from "@/components/ui/label";
 
 interface Category {
   id: string;
   menuId: string | null;
   name: string;
   description: string | null;
+  imageUrl: string | null;
   sortOrder: number;
 }
 
@@ -155,6 +159,41 @@ export default function MenuManager() {
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [linkingItemId, setLinkingItemId] = useState<string | null>(null);
   const [managingItemModifiers, setManagingItemModifiers] = useState<string | null>(null);
+  const [categoryImageFile, setCategoryImageFile] = useState<File | null>(null);
+  const [categoryImagePreview, setCategoryImagePreview] = useState<string | null>(null);
+  const [itemImageFile, setItemImageFile] = useState<File | null>(null);
+  const [itemImagePreview, setItemImagePreview] = useState<string | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+
+  const uploadImage = async (file: File): Promise<string> => {
+    const formData = new FormData();
+    formData.append("image", file);
+    const res = await fetch("/api/upload", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}` },
+      credentials: "include",
+      body: formData,
+    });
+    if (!res.ok) throw new Error("Failed to upload image");
+    const data = await res.json();
+    return data.imageUrl;
+  };
+
+  const handleImageSelect = (
+    file: File | null,
+    setFile: (f: File | null) => void,
+    setPreview: (p: string | null) => void
+  ) => {
+    if (file) {
+      setFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => setPreview(reader.result as string);
+      reader.readAsDataURL(file);
+    } else {
+      setFile(null);
+      setPreview(null);
+    }
+  };
 
   const { data: categories, isLoading: loadingCategories } = useQuery<Category[]>({
     queryKey: ["/api/restaurants", restaurantId, "categories"],
@@ -262,22 +301,37 @@ export default function MenuManager() {
 
   const createCategoryMutation = useMutation({
     mutationFn: async (data: z.infer<typeof categorySchema>) => {
-      const url = editingCategory
-        ? `/api/restaurants/${restaurantId}/categories/${editingCategory.id}`
-        : `/api/restaurants/${restaurantId}/categories`;
-      const res = await fetch(url, {
-        method: editingCategory ? "PATCH" : "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-        credentials: "include",
-        body: JSON.stringify(data),
-      });
-      if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.message || "Failed to save category"); }
-      return res.json();
+      setUploadingImage(true);
+      try {
+        let imageUrl: string | undefined;
+        if (categoryImageFile) {
+          imageUrl = await uploadImage(categoryImageFile);
+        } else if (!editingCategory) {
+          throw new Error("An image is required when creating a category");
+        }
+        const url = editingCategory
+          ? `/api/restaurants/${restaurantId}/categories/${editingCategory.id}`
+          : `/api/restaurants/${restaurantId}/categories`;
+        const body: Record<string, unknown> = { ...data };
+        if (imageUrl) body.imageUrl = imageUrl;
+        const res = await fetch(url, {
+          method: editingCategory ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+          credentials: "include",
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.message || "Failed to save category"); }
+        return res.json();
+      } finally {
+        setUploadingImage(false);
+      }
     },
     onSuccess: () => {
       invalidateAll();
       setCategoryDialogOpen(false);
       setEditingCategory(null);
+      setCategoryImageFile(null);
+      setCategoryImagePreview(null);
       categoryForm.reset();
       toast({ title: editingCategory ? "Category updated" : "Category created successfully" });
     },
@@ -286,24 +340,39 @@ export default function MenuManager() {
 
   const createItemMutation = useMutation({
     mutationFn: async (data: z.infer<typeof menuItemSchema>) => {
-      const targetCategoryId = editingItem ? editingItem.categoryId : addItemToCategoryId;
-      const url = editingItem
-        ? `/api/restaurants/${restaurantId}/menu-items/${editingItem.id}`
-        : `/api/restaurants/${restaurantId}/menu-items`;
-      const res = await fetch(url, {
-        method: editingItem ? "PATCH" : "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-        credentials: "include",
-        body: JSON.stringify({ ...data, categoryId: targetCategoryId }),
-      });
-      if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.message || "Failed to save item"); }
-      return res.json();
+      setUploadingImage(true);
+      try {
+        let imageUrl: string | undefined;
+        if (itemImageFile) {
+          imageUrl = await uploadImage(itemImageFile);
+        } else if (!editingItem) {
+          throw new Error("An image is required when creating a menu item");
+        }
+        const targetCategoryId = editingItem ? editingItem.categoryId : addItemToCategoryId;
+        const url = editingItem
+          ? `/api/restaurants/${restaurantId}/menu-items/${editingItem.id}`
+          : `/api/restaurants/${restaurantId}/menu-items`;
+        const body: Record<string, unknown> = { ...data, categoryId: targetCategoryId };
+        if (imageUrl) body.imageUrl = imageUrl;
+        const res = await fetch(url, {
+          method: editingItem ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+          credentials: "include",
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.message || "Failed to save item"); }
+        return res.json();
+      } finally {
+        setUploadingImage(false);
+      }
     },
     onSuccess: () => {
       invalidateAll();
       setItemDialogOpen(false);
       setEditingItem(null);
       setAddItemToCategoryId(null);
+      setItemImageFile(null);
+      setItemImagePreview(null);
       itemForm.reset({ name: "", description: "", price: "", isAvailable: true });
       toast({ title: editingItem ? "Item updated" : "Item created successfully" });
     },
@@ -425,10 +494,13 @@ export default function MenuManager() {
     if (category) {
       setEditingCategory(category);
       categoryForm.reset({ name: category.name, description: category.description || "" });
+      setCategoryImagePreview(category.imageUrl || null);
     } else {
       setEditingCategory(null);
       categoryForm.reset({ name: "", description: "" });
+      setCategoryImagePreview(null);
     }
+    setCategoryImageFile(null);
     setCategoryDialogOpen(true);
   };
 
@@ -437,11 +509,14 @@ export default function MenuManager() {
       setEditingItem(item);
       setAddItemToCategoryId(null);
       itemForm.reset({ name: item.name, description: item.description || "", price: item.price, isAvailable: item.isAvailable });
+      setItemImagePreview(item.imageUrl || null);
     } else {
       setEditingItem(null);
       setAddItemToCategoryId(categoryId);
       itemForm.reset({ name: "", description: "", price: "", isAvailable: true });
+      setItemImagePreview(null);
     }
+    setItemImageFile(null);
     setItemDialogOpen(true);
   };
 
@@ -502,7 +577,16 @@ export default function MenuManager() {
                 <CardHeader>
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex items-center gap-3">
-                      <FolderOpen className="h-5 w-5 text-muted-foreground" />
+                      {category.imageUrl ? (
+                        <img
+                          src={category.imageUrl}
+                          alt={category.name}
+                          className="h-10 w-10 rounded-md object-cover"
+                          data-testid={`img-category-${category.id}`}
+                        />
+                      ) : (
+                        <FolderOpen className="h-5 w-5 text-muted-foreground" />
+                      )}
                       <div>
                         <CardTitle className="text-lg">{category.name}</CardTitle>
                         {category.description && (
@@ -531,7 +615,16 @@ export default function MenuManager() {
                     <div className="space-y-2">
                       {categoryItems.map((item) => (
                         <div key={item.id} className="flex items-center justify-between p-3 rounded-md border group" data-testid={`item-card-${item.id}`}>
-                          <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
+                            {item.imageUrl && (
+                              <img
+                                src={item.imageUrl}
+                                alt={item.name}
+                                className="h-10 w-10 rounded-md object-cover shrink-0"
+                                data-testid={`img-item-${item.id}`}
+                              />
+                            )}
+                            <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2 flex-wrap">
                               <p className="font-medium">{item.name}</p>
                               {!item.isAvailable && (
@@ -542,6 +635,7 @@ export default function MenuManager() {
                               <p className="text-sm text-muted-foreground mt-0.5 line-clamp-1">{item.description}</p>
                             )}
                             <p className="text-sm font-semibold mt-1">${parseFloat(item.price).toFixed(2)}</p>
+                            </div>
                           </div>
                           <div className="flex items-center gap-1">
                             <Button
@@ -697,7 +791,58 @@ export default function MenuManager() {
             <DialogDescription>{editingCategory ? "Update category details." : "Create a new category to organize your menu items."}</DialogDescription>
           </DialogHeader>
           <Form {...categoryForm}>
-            <form onSubmit={categoryForm.handleSubmit((data) => createCategoryMutation.mutate(data))} className="space-y-4">
+            <form onSubmit={categoryForm.handleSubmit((data) => {
+              if (!editingCategory && !categoryImageFile) {
+                toast({ title: "Image required", description: "Please upload an image for this category.", variant: "destructive" });
+                return;
+              }
+              createCategoryMutation.mutate(data);
+            })} className="space-y-4">
+              <div>
+                <Label className="text-sm font-medium">
+                  Image {!editingCategory && <span className="text-destructive">*</span>}
+                </Label>
+                <div className="mt-1.5">
+                  {categoryImagePreview ? (
+                    <div className="relative inline-block">
+                      <img
+                        src={categoryImagePreview}
+                        alt="Category preview"
+                        className="h-24 w-24 rounded-md object-cover"
+                        data-testid="img-category-preview"
+                      />
+                      <button
+                        type="button"
+                        className="absolute -top-2 -right-2 h-6 w-6 rounded-full bg-secondary text-secondary-foreground flex items-center justify-center hover-elevate"
+                        onClick={() => {
+                          setCategoryImageFile(null);
+                          setCategoryImagePreview(null);
+                        }}
+                        data-testid="button-remove-category-image"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <label
+                      className="flex items-center justify-center w-24 h-24 rounded-md border-2 border-dashed border-muted-foreground/25 cursor-pointer hover-elevate"
+                      data-testid="label-category-image-upload"
+                    >
+                      <div className="flex flex-col items-center gap-1 text-muted-foreground">
+                        <ImagePlus className="h-6 w-6" />
+                        <span className="text-xs">Upload</span>
+                      </div>
+                      <input
+                        type="file"
+                        className="hidden"
+                        accept="image/jpeg,image/png,image/webp,image/gif"
+                        onChange={(e) => handleImageSelect(e.target.files?.[0] || null, setCategoryImageFile, setCategoryImagePreview)}
+                        data-testid="input-category-image"
+                      />
+                    </label>
+                  )}
+                </div>
+              </div>
               <FormField control={categoryForm.control} name="name" render={({ field }) => (
                 <FormItem><FormLabel>Name</FormLabel><FormControl><Input placeholder="e.g. Pizza, Burgers, Drinks" {...field} data-testid="input-category-name" /></FormControl><FormMessage /></FormItem>
               )} />
@@ -705,8 +850,8 @@ export default function MenuManager() {
                 <FormItem><FormLabel>Description (optional)</FormLabel><FormControl><Textarea placeholder="Brief description" {...field} data-testid="input-category-description" /></FormControl><FormMessage /></FormItem>
               )} />
               <DialogFooter>
-                <Button type="submit" disabled={createCategoryMutation.isPending} data-testid="button-submit-category">
-                  {createCategoryMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                <Button type="submit" disabled={createCategoryMutation.isPending || uploadingImage} data-testid="button-submit-category">
+                  {(createCategoryMutation.isPending || uploadingImage) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   {editingCategory ? "Update Category" : "Add Category"}
                 </Button>
               </DialogFooter>
@@ -722,7 +867,58 @@ export default function MenuManager() {
             <DialogDescription>{editingItem ? "Update item details." : "Add a new item to this category."}</DialogDescription>
           </DialogHeader>
           <Form {...itemForm}>
-            <form onSubmit={itemForm.handleSubmit((data) => createItemMutation.mutate(data))} className="space-y-4">
+            <form onSubmit={itemForm.handleSubmit((data) => {
+              if (!editingItem && !itemImageFile) {
+                toast({ title: "Image required", description: "Please upload an image for this menu item.", variant: "destructive" });
+                return;
+              }
+              createItemMutation.mutate(data);
+            })} className="space-y-4">
+              <div>
+                <Label className="text-sm font-medium">
+                  Image {!editingItem && <span className="text-destructive">*</span>}
+                </Label>
+                <div className="mt-1.5">
+                  {itemImagePreview ? (
+                    <div className="relative inline-block">
+                      <img
+                        src={itemImagePreview}
+                        alt="Item preview"
+                        className="h-24 w-24 rounded-md object-cover"
+                        data-testid="img-item-preview"
+                      />
+                      <button
+                        type="button"
+                        className="absolute -top-2 -right-2 h-6 w-6 rounded-full bg-secondary text-secondary-foreground flex items-center justify-center hover-elevate"
+                        onClick={() => {
+                          setItemImageFile(null);
+                          setItemImagePreview(null);
+                        }}
+                        data-testid="button-remove-item-image"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <label
+                      className="flex items-center justify-center w-24 h-24 rounded-md border-2 border-dashed border-muted-foreground/25 cursor-pointer hover-elevate"
+                      data-testid="label-item-image-upload"
+                    >
+                      <div className="flex flex-col items-center gap-1 text-muted-foreground">
+                        <ImagePlus className="h-6 w-6" />
+                        <span className="text-xs">Upload</span>
+                      </div>
+                      <input
+                        type="file"
+                        className="hidden"
+                        accept="image/jpeg,image/png,image/webp,image/gif"
+                        onChange={(e) => handleImageSelect(e.target.files?.[0] || null, setItemImageFile, setItemImagePreview)}
+                        data-testid="input-item-image"
+                      />
+                    </label>
+                  )}
+                </div>
+              </div>
               <FormField control={itemForm.control} name="name" render={({ field }) => (
                 <FormItem><FormLabel>Name</FormLabel><FormControl><Input placeholder="Item name" {...field} data-testid="input-item-name" /></FormControl><FormMessage /></FormItem>
               )} />
@@ -736,8 +932,8 @@ export default function MenuManager() {
                 <FormItem className="flex items-center gap-2"><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} data-testid="switch-item-available" /></FormControl><FormLabel className="!mt-0">Available</FormLabel></FormItem>
               )} />
               <DialogFooter>
-                <Button type="submit" disabled={createItemMutation.isPending} data-testid="button-submit-item">
-                  {createItemMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                <Button type="submit" disabled={createItemMutation.isPending || uploadingImage} data-testid="button-submit-item">
+                  {(createItemMutation.isPending || uploadingImage) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   {editingItem ? "Update Item" : "Add Item"}
                 </Button>
               </DialogFooter>
