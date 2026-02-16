@@ -3644,8 +3644,28 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
           .where(eq(restaurantFeatureAllowlist.restaurantId, restaurantId));
 
         const settingsMap: Record<string, unknown> = {};
+        const credentialKeys = ["stripe_credentials", "paypal_credentials"];
         for (const s of settings) {
-          settingsMap[s.settingKey] = s.settingValue;
+          if (credentialKeys.includes(s.settingKey)) {
+            const cred = s.settingValue as Record<string, string> | null;
+            if (cred && typeof cred === "object") {
+              const masked: Record<string, string | boolean> = { configured: true };
+              for (const [k, v] of Object.entries(cred)) {
+                if (k === "mode") {
+                  masked[k] = v;
+                } else if (typeof v === "string" && v.length > 4) {
+                  masked[k] = "••••" + v.slice(-4);
+                } else {
+                  masked[k] = "••••";
+                }
+              }
+              settingsMap[s.settingKey] = masked;
+            } else {
+              settingsMap[s.settingKey] = { configured: false };
+            }
+          } else {
+            settingsMap[s.settingKey] = s.settingValue;
+          }
         }
 
         const featuresMap: Record<string, boolean> = {};
@@ -3839,6 +3859,130 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
       } catch (error) {
         console.error("Bulk update settings error:", error);
         res.status(500).json({ error: "Failed to update settings" });
+      }
+    }
+  );
+
+  // Save payment credentials for a restaurant
+  app.put(
+    "/api/restaurants/:restaurantId/payment-credentials/:provider",
+    authenticate,
+    requireRestaurantAccess, requireActiveRestaurant,
+    requirePermission("settings:update"),
+    async (req, res) => {
+      try {
+        const { restaurantId, provider } = req.params;
+
+        if (!["stripe", "paypal"].includes(provider)) {
+          return res.status(400).json({ error: "Provider must be 'stripe' or 'paypal'" });
+        }
+
+        const featureKey = provider === "stripe" ? "stripe_payments" : "paypal_payments";
+        const isAllowed = await checkFeature(restaurantId, featureKey);
+        if (!isAllowed) {
+          return res.status(403).json({
+            error: "Feature Not Allowed",
+            message: `${provider} payments feature is not enabled for this restaurant by the platform admin`,
+          });
+        }
+
+        const settingKey = `${provider}_credentials`;
+        let credentials: Record<string, string>;
+
+        if (provider === "stripe") {
+          const { secretKey, publishableKey, webhookSecret } = req.body;
+          if (!secretKey || !publishableKey) {
+            return res.status(400).json({ error: "Secret Key and Publishable Key are required" });
+          }
+          credentials = { secretKey, publishableKey };
+          if (webhookSecret) credentials.webhookSecret = webhookSecret;
+        } else {
+          const { clientId, clientSecret, mode } = req.body;
+          if (!clientId || !clientSecret) {
+            return res.status(400).json({ error: "Client ID and Client Secret are required" });
+          }
+          if (mode && !["sandbox", "live"].includes(mode)) {
+            return res.status(400).json({ error: "Mode must be 'sandbox' or 'live'" });
+          }
+          credentials = { clientId, clientSecret, mode: mode || "sandbox" };
+        }
+
+        // Check for existing credentials - merge to preserve fields not being updated
+        const [existing] = await db
+          .select()
+          .from(restaurantSettings)
+          .where(and(
+            eq(restaurantSettings.restaurantId, restaurantId),
+            eq(restaurantSettings.settingKey, settingKey)
+          ));
+
+        let setting;
+        if (existing) {
+          [setting] = await db
+            .update(restaurantSettings)
+            .set({ settingValue: credentials, updatedAt: new Date() })
+            .where(eq(restaurantSettings.id, existing.id))
+            .returning();
+        } else {
+          [setting] = await db
+            .insert(restaurantSettings)
+            .values({
+              restaurantId,
+              settingKey,
+              settingValue: credentials,
+            })
+            .returning();
+        }
+
+        clearFeatureCache(restaurantId);
+
+        // Return masked version
+        const masked: Record<string, string | boolean> = { configured: true };
+        for (const [k, v] of Object.entries(credentials)) {
+          if (k === "mode") {
+            masked[k] = v;
+          } else if (v.length > 4) {
+            masked[k] = "••••" + v.slice(-4);
+          } else {
+            masked[k] = "••••";
+          }
+        }
+
+        res.json({ message: `${provider} credentials saved successfully`, credentials: masked });
+      } catch (error) {
+        console.error("Save payment credentials error:", error);
+        res.status(500).json({ error: "Failed to save payment credentials" });
+      }
+    }
+  );
+
+  // Delete payment credentials for a restaurant
+  app.delete(
+    "/api/restaurants/:restaurantId/payment-credentials/:provider",
+    authenticate,
+    requireRestaurantAccess, requireActiveRestaurant,
+    requirePermission("settings:update"),
+    async (req, res) => {
+      try {
+        const { restaurantId, provider } = req.params;
+
+        if (!["stripe", "paypal"].includes(provider)) {
+          return res.status(400).json({ error: "Provider must be 'stripe' or 'paypal'" });
+        }
+
+        const settingKey = `${provider}_credentials`;
+        await db
+          .delete(restaurantSettings)
+          .where(and(
+            eq(restaurantSettings.restaurantId, restaurantId),
+            eq(restaurantSettings.settingKey, settingKey)
+          ));
+
+        clearFeatureCache(restaurantId);
+        res.json({ message: `${provider} credentials removed successfully` });
+      } catch (error) {
+        console.error("Delete payment credentials error:", error);
+        res.status(500).json({ error: "Failed to remove payment credentials" });
       }
     }
   );
