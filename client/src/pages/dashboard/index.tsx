@@ -205,7 +205,7 @@ export default function DashboardHome() {
             <CardTitle>Recent Orders</CardTitle>
             <CardDescription>Latest orders from your restaurant</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className="space-y-3 flex flex-col">
             {isLoading ? (
               <div className="space-y-3">
                 {[1, 2, 3].map((i) => (
@@ -248,7 +248,7 @@ export default function DashboardHome() {
             <CardTitle>Quick Actions</CardTitle>
             <CardDescription>Common tasks you might want to do</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className="space-y-3 flex flex-col">
             {quickActions.map((action) => (
               <Link key={action.href} href={action.href}>
                 <div
