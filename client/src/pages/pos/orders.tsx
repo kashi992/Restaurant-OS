@@ -66,8 +66,20 @@ import {
   AlertTriangle,
   XCircle,
   Filter,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 import { useLocation } from "wouter";
+
+function parseUTCDate(dateString: string): Date {
+  if (!dateString) return new Date();
+  let s = dateString.trim();
+  if (!/Z$|[+-]\d{2}:?\d{2}$/.test(s)) {
+    s = s.replace(" ", "T") + "Z";
+  }
+  return new Date(s);
+}
 
 interface OrderSummary {
   id: string;
@@ -218,6 +230,8 @@ export default function OrdersPage() {
   const [addItemsCart, setAddItemsCart] = useState<CartItem[]>([]);
 
   const [historyFilter, setHistoryFilter] = useState<"all" | "completed" | "cancelled">("all");
+  const [sortColumn, setSortColumn] = useState<"orderNumber" | "tableName" | "status" | "source" | "total" | "createdAt" | "resolvedAt">("createdAt");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
 
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [cancelOrderId, setCancelOrderId] = useState<string | null>(null);
@@ -299,10 +313,39 @@ export default function OrdersPage() {
     ...(cancelledOrdersRaw?.orders || []),
   ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-  const completedOrdersData = {
-    orders: historyFilter === "all"
+  const sortedHistoryOrders = (() => {
+    const filtered = historyFilter === "all"
       ? allHistoryOrders
-      : allHistoryOrders.filter(o => o.status === historyFilter),
+      : allHistoryOrders.filter(o => o.status === historyFilter);
+
+    return [...filtered].sort((a, b) => {
+      const dir = sortDirection === "asc" ? 1 : -1;
+      switch (sortColumn) {
+        case "orderNumber":
+          return dir * (a.orderNumber || "").localeCompare(b.orderNumber || "");
+        case "tableName":
+          return dir * (a.tableNumber || "").localeCompare(b.tableNumber || "");
+        case "status":
+          return dir * a.status.localeCompare(b.status);
+        case "source":
+          return dir * a.source.localeCompare(b.source);
+        case "total":
+          return dir * (parseFloat(a.total) - parseFloat(b.total));
+        case "createdAt":
+          return dir * (parseUTCDate(a.createdAt).getTime() - parseUTCDate(b.createdAt).getTime());
+        case "resolvedAt": {
+          const aDate = a.status === "cancelled" ? a.cancelledAt : a.completedAt;
+          const bDate = b.status === "cancelled" ? b.cancelledAt : b.completedAt;
+          return dir * ((aDate ? parseUTCDate(aDate).getTime() : 0) - (bDate ? parseUTCDate(bDate).getTime() : 0));
+        }
+        default:
+          return 0;
+      }
+    });
+  })();
+
+  const completedOrdersData = {
+    orders: sortedHistoryOrders,
   };
 
   const { data: orderDetailData, isLoading: loadingDetail } = useQuery<{
@@ -606,7 +649,7 @@ export default function OrdersPage() {
   };
 
   const formatDateTime = (dateString: string) => {
-    const date = new Date(dateString);
+    const date = parseUTCDate(dateString);
     return date.toLocaleString([], {
       month: "short",
       day: "numeric",
@@ -616,7 +659,7 @@ export default function OrdersPage() {
   };
 
   const formatTime = (dateString: string) => {
-    return new Date(dateString).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return parseUTCDate(dateString).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   };
 
   const getItemsByCategory = (categoryId: string) => {
@@ -835,6 +878,22 @@ export default function OrdersPage() {
   const activeOrders = activeOrdersData?.orders || [];
   const completedOrders = completedOrdersData?.orders || [];
 
+  const handleSort = (column: typeof sortColumn) => {
+    if (sortColumn === column) {
+      setSortDirection(prev => prev === "asc" ? "desc" : "asc");
+    } else {
+      setSortColumn(column);
+      setSortDirection(column === "createdAt" || column === "resolvedAt" ? "desc" : "asc");
+    }
+  };
+
+  const SortIcon = ({ column }: { column: typeof sortColumn }) => {
+    if (sortColumn !== column) return <ArrowUpDown className="ml-1 h-3 w-3 opacity-40" />;
+    return sortDirection === "asc"
+      ? <ArrowUp className="ml-1 h-3 w-3" />
+      : <ArrowDown className="ml-1 h-3 w-3" />;
+  };
+
   return (
     <div className="h-full flex flex-col p-6">
       <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
@@ -977,13 +1036,27 @@ export default function OrdersPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Order #</TableHead>
-                      <TableHead>Table</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Source</TableHead>
-                      <TableHead className="text-right">Total</TableHead>
-                      <TableHead>Created</TableHead>
-                      <TableHead>Resolved</TableHead>
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("orderNumber")} data-testid="sort-order-number">
+                        <span className="flex items-center">Order # <SortIcon column="orderNumber" /></span>
+                      </TableHead>
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("tableName")} data-testid="sort-table">
+                        <span className="flex items-center">Table <SortIcon column="tableName" /></span>
+                      </TableHead>
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("status")} data-testid="sort-status">
+                        <span className="flex items-center">Status <SortIcon column="status" /></span>
+                      </TableHead>
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("source")} data-testid="sort-source">
+                        <span className="flex items-center">Source <SortIcon column="source" /></span>
+                      </TableHead>
+                      <TableHead className="cursor-pointer select-none text-right" onClick={() => handleSort("total")} data-testid="sort-total">
+                        <span className="flex items-center justify-end">Total <SortIcon column="total" /></span>
+                      </TableHead>
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("createdAt")} data-testid="sort-created">
+                        <span className="flex items-center">Created <SortIcon column="createdAt" /></span>
+                      </TableHead>
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("resolvedAt")} data-testid="sort-resolved">
+                        <span className="flex items-center">Resolved <SortIcon column="resolvedAt" /></span>
+                      </TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>

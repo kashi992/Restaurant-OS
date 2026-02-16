@@ -121,7 +121,11 @@ const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return "N/A";
-    return new Date(dateStr).toLocaleDateString();
+    let s = dateStr.trim();
+    if (!/Z$|[+-]\d{2}:?\d{2}$/.test(s)) {
+      s = s.replace(" ", "T") + "Z";
+    }
+    return new Date(s).toLocaleDateString();
   };
 
   const deleteMutation = useMutation({

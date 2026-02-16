@@ -86,7 +86,11 @@ export default function OrderStatusPage({ orderId }: { orderId: string }) {
   };
 
   const formatTime = (dateString: string) => {
-    const date = new Date(dateString);
+    let s = dateString.trim();
+    if (!/Z$|[+-]\d{2}:?\d{2}$/.test(s)) {
+      s = s.replace(" ", "T") + "Z";
+    }
+    const date = new Date(s);
     return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   };
 

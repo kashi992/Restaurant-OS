@@ -66,9 +66,18 @@ function getStatusBadge(status: string) {
   );
 }
 
+function parseUTCDate(dateString: string): Date {
+  if (!dateString) return new Date();
+  let s = dateString.trim();
+  if (!/Z$|[+-]\d{2}:?\d{2}$/.test(s)) {
+    s = s.replace(" ", "T") + "Z";
+  }
+  return new Date(s);
+}
+
 function formatTimeAgo(dateString: string) {
   const now = new Date();
-  const date = new Date(dateString);
+  const date = parseUTCDate(dateString);
   const diffMs = now.getTime() - date.getTime();
   const diffMins = Math.floor(diffMs / 60000);
   if (diffMins < 1) return "Just now";
