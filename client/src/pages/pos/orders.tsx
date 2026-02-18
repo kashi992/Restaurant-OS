@@ -42,6 +42,17 @@ import {
   TabsTrigger,
 } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   DialogFooter,
 } from "@/components/ui/dialog";
@@ -238,6 +249,9 @@ export default function OrdersPage() {
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [cancelOrderId, setCancelOrderId] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState("");
+
+  const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set());
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   const [payDialogOpen, setPayDialogOpen] = useState(false);
   const [payOrderId, setPayOrderId] = useState<string | null>(null);
@@ -639,6 +653,52 @@ export default function OrdersPage() {
       toast({ title: "Payment Error", description: error.message, variant: "destructive" });
     },
   });
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (orderIds: string[]) => {
+      const res = await fetch(`/api/restaurants/${restaurantId}/orders/bulk`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        credentials: "include",
+        body: JSON.stringify({ orderIds }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || err.error || "Failed to delete orders");
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "stats"] });
+      toast({ title: `${data.deletedCount} order(s) deleted` });
+      setSelectedOrders(new Set());
+      setDeleteDialogOpen(false);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Delete Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const toggleOrderSelection = (orderId: string) => {
+    setSelectedOrders(prev => {
+      const next = new Set(prev);
+      if (next.has(orderId)) next.delete(orderId);
+      else next.add(orderId);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedOrders.size === completedOrders.length) {
+      setSelectedOrders(new Set());
+    } else {
+      setSelectedOrders(new Set(completedOrders.map(o => o.id)));
+    }
+  };
 
   const openPaymentDialog = (order: { id: string; orderNumber: string; total: string; paidAmount: string; tableId?: string | null }) => {
     setPayOrderId(order.id);
@@ -1103,19 +1163,32 @@ export default function OrdersPage() {
         </TabsContent>
 
         <TabsContent value="history" className="flex-1 overflow-auto mt-0">
-          <div className="flex items-center gap-2 mb-4 flex-wrap">
-            <Filter className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm text-muted-foreground">Filter:</span>
-            <Select value={historyFilter} onValueChange={(v) => setHistoryFilter(v as "all" | "completed" | "cancelled")}>
-              <SelectTrigger className="w-[160px]" data-testid="select-history-filter">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all" data-testid="filter-all">All Orders</SelectItem>
-                <SelectItem value="completed" data-testid="filter-completed">Completed</SelectItem>
-                <SelectItem value="cancelled" data-testid="filter-cancelled">Cancelled</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="flex items-center justify-between gap-2 mb-4 flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Filter className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">Filter:</span>
+              <Select value={historyFilter} onValueChange={(v) => { setHistoryFilter(v as "all" | "completed" | "cancelled"); setSelectedOrders(new Set()); }}>
+                <SelectTrigger className="w-[160px]" data-testid="select-history-filter">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all" data-testid="filter-all">All Orders</SelectItem>
+                  <SelectItem value="completed" data-testid="filter-completed">Completed</SelectItem>
+                  <SelectItem value="cancelled" data-testid="filter-cancelled">Cancelled</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {selectedOrders.size > 0 && (
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => setDeleteDialogOpen(true)}
+                data-testid="button-delete-selected"
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete {selectedOrders.size} selected
+              </Button>
+            )}
           </div>
           {loadingCompleted ? (
             <div className="space-y-2">
@@ -1127,6 +1200,13 @@ export default function OrdersPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-10">
+                        <Checkbox
+                          checked={completedOrders.length > 0 && selectedOrders.size === completedOrders.length}
+                          onCheckedChange={toggleSelectAll}
+                          data-testid="checkbox-select-all"
+                        />
+                      </TableHead>
                       <TableHead className="cursor-pointer select-none" onClick={() => handleSort("orderNumber")} data-testid="sort-order-number">
                         <span className="flex items-center">Order # <SortIcon column="orderNumber" /></span>
                       </TableHead>
@@ -1154,6 +1234,13 @@ export default function OrdersPage() {
                   <TableBody>
                     {completedOrders.map(order => (
                       <TableRow key={order.id} data-testid={`history-row-${order.id}`} data-order-id={order.id} className={highlightedOrder === order.id ? "bg-primary/10" : ""}>
+                        <TableCell>
+                          <Checkbox
+                            checked={selectedOrders.has(order.id)}
+                            onCheckedChange={() => toggleOrderSelection(order.id)}
+                            data-testid={`checkbox-order-${order.id}`}
+                          />
+                        </TableCell>
                         <TableCell className="font-medium">{order.orderNumber}</TableCell>
                         <TableCell>{order.tableNumber ? `Table ${order.tableNumber}` : order.customerName || "Counter"}</TableCell>
                         <TableCell>{getStatusBadge(order.status)}</TableCell>
@@ -1659,6 +1746,32 @@ export default function OrdersPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {selectedOrders.size} order(s)?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the selected orders and all their associated data (items, payments). This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-delete">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => bulkDeleteMutation.mutate(Array.from(selectedOrders))}
+              className="bg-destructive text-destructive-foreground"
+              data-testid="button-confirm-delete"
+            >
+              {bulkDeleteMutation.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="mr-2 h-4 w-4" />
+              )}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

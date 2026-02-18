@@ -5,7 +5,7 @@ import { db, pool, testConnection } from "./db";
 import { log } from "./index";
 import bcrypt from "bcryptjs";
 import rateLimit from "express-rate-limit";
-import { eq, and, isNull, gt, sql, or, notInArray } from "drizzle-orm";
+import { eq, and, isNull, gt, sql, or, notInArray, inArray } from "drizzle-orm";
 import {
   users,
   restaurants,
@@ -5229,6 +5229,50 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
       } catch (error) {
         console.error("Get order error:", error);
         res.status(500).json({ error: "Failed to fetch order" });
+      }
+    }
+  );
+
+  // Bulk delete orders (completed/cancelled only)
+  app.delete(
+    "/api/restaurants/:restaurantId/orders/bulk",
+    authenticate,
+    requireRestaurantAccess, requireActiveRestaurant,
+    requireFeature("pos"),
+    requirePermission("orders:update"),
+    async (req, res) => {
+      try {
+        const { restaurantId } = req.params;
+        const { orderIds } = req.body;
+
+        if (!Array.isArray(orderIds) || orderIds.length === 0) {
+          return res.status(400).json({ error: "orderIds array is required" });
+        }
+
+        const targetOrders = await db
+          .select({ id: orders.id, status: orders.status })
+          .from(orders)
+          .where(and(
+            eq(orders.restaurantId, restaurantId),
+            inArray(orders.id, orderIds)
+          ));
+
+        const nonDeletable = targetOrders.filter(o => !['completed', 'cancelled'].includes(o.status || ''));
+        if (nonDeletable.length > 0) {
+          return res.status(400).json({ error: "Can only delete completed or cancelled orders" });
+        }
+
+        const validIds = targetOrders.map(o => o.id);
+        if (validIds.length === 0) {
+          return res.status(404).json({ error: "No matching orders found" });
+        }
+
+        await db.delete(orders).where(inArray(orders.id, validIds));
+
+        res.json({ message: `${validIds.length} order(s) deleted`, deletedCount: validIds.length });
+      } catch (error) {
+        console.error("Bulk delete orders error:", error);
+        res.status(500).json({ error: "Failed to delete orders" });
       }
     }
   );
