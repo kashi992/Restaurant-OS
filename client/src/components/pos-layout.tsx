@@ -3,7 +3,6 @@ import { useAuth } from "@/lib/auth";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import {
-  LayoutGrid,
   ClipboardList,
   ChefHat,
   CreditCard,
@@ -12,7 +11,6 @@ import {
 } from "lucide-react";
 
 const navItems = [
-  { title: "Tables", url: "/pos", icon: LayoutGrid, feature: null },
   { title: "Orders", url: "/pos/orders", icon: ClipboardList, feature: null },
   { title: "Kitchen", url: "/pos/kitchen", icon: ChefHat, feature: "kitchen_display" },
   { title: "Payments", url: "/pos/payments", icon: CreditCard, feature: null },
@@ -49,7 +47,7 @@ export function POSLayout({ children }: { children: React.ReactNode }) {
           {navItems.filter((item) => isFeatureEnabled(item.feature)).map((item) => (
             <Link key={item.url} href={item.url}>
               <Button
-                variant={location === item.url ? "secondary" : "ghost"}
+                variant={(location === item.url || (item.url === "/pos/orders" && location === "/pos")) ? "secondary" : "ghost"}
                 size="sm"
                 data-testid={`nav-${item.title.toLowerCase()}`}
               >

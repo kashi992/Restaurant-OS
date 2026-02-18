@@ -203,6 +203,7 @@ export default function OrdersPage() {
   const highlightOrderId = urlParams.get("highlight");
 
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [counterNumber, setCounterNumber] = useState("");
   const [activeTab, setActiveTab] = useState(initialTab);
   const [detailOrderId, setDetailOrderId] = useState<string | null>(viewOrderId);
   const [detailDialogOpen, setDetailDialogOpen] = useState(!!viewOrderId);
@@ -464,6 +465,7 @@ export default function OrdersPage() {
           items,
           notes: "",
           source: "pos",
+          customerName: counterNumber ? `Stand #${counterNumber}` : undefined,
         }),
       });
       if (!res.ok) {
@@ -478,6 +480,7 @@ export default function OrdersPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "stats"] });
       queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "tables"] });
       setCart([]);
+      setCounterNumber("");
       setLocation("/pos/orders");
     },
     onError: (error: Error) => {
@@ -912,16 +915,29 @@ export default function OrdersPage() {
   if (isNewOrder) {
     return (
       <div className="h-full flex flex-col">
-        <div className="flex items-center gap-4 p-4 border-b">
+        <div className="flex items-center gap-4 p-4 border-b flex-wrap">
           <Button variant="ghost" size="icon" onClick={() => setLocation("/pos/orders")} data-testid="button-back">
             <ArrowLeft className="h-5 w-5" />
           </Button>
-          <div>
+          <div className="flex-1 min-w-0">
             <h1 className="text-xl font-semibold" data-testid="text-new-order-title">New Order</h1>
             <p className="text-sm text-muted-foreground">
-              {tableId ? `Table selected` : "No table assigned - can be assigned later"}
+              {tableId ? `Table selected` : "Counter order"}
             </p>
           </div>
+          {!tableId && (
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium whitespace-nowrap">Stand #</label>
+              <Input
+                type="text"
+                value={counterNumber}
+                onChange={(e) => setCounterNumber(e.target.value)}
+                placeholder="e.g. 12"
+                className="w-24"
+                data-testid="input-counter-number"
+              />
+            </div>
+          )}
         </div>
         {renderMenuPicker("new")}
       </div>
@@ -1007,7 +1023,7 @@ export default function OrdersPage() {
                       <div className="min-w-0">
                         <CardTitle className="text-lg">#{order.orderNumber}</CardTitle>
                         <p className="text-sm text-muted-foreground">
-                          {order.tableNumber ? `Table ${order.tableNumber}` : "No table"}
+                          {order.tableNumber ? `Table ${order.tableNumber}` : order.customerName || "Counter"}
                           {" - "}
                           {formatTime(order.createdAt)}
                         </p>
@@ -1075,17 +1091,12 @@ export default function OrdersPage() {
                 <ClipboardList className="h-12 w-12 text-muted-foreground" />
                 <h3 className="mt-4 text-lg font-medium">No active orders</h3>
                 <p className="text-muted-foreground">
-                  Start a new order using the button above, or from the Tables view.
+                  Start a new order using the button above.
                 </p>
-                <div className="flex gap-2 mt-4 flex-wrap">
-                  <Button onClick={() => setLocation("/pos/orders?new=true")} data-testid="button-start-new-order">
-                    <Plus className="mr-2 h-4 w-4" />
-                    New Order
-                  </Button>
-                  <Button variant="outline" onClick={() => setLocation("/pos")} data-testid="button-go-to-tables">
-                    Go to Tables
-                  </Button>
-                </div>
+                <Button className="mt-4" onClick={() => setLocation("/pos/orders?new=true")} data-testid="button-start-new-order">
+                  <Plus className="mr-2 h-4 w-4" />
+                  New Order
+                </Button>
               </CardContent>
             </Card>
           )}
@@ -1144,7 +1155,7 @@ export default function OrdersPage() {
                     {completedOrders.map(order => (
                       <TableRow key={order.id} data-testid={`history-row-${order.id}`} data-order-id={order.id} className={highlightedOrder === order.id ? "bg-primary/10" : ""}>
                         <TableCell className="font-medium">{order.orderNumber}</TableCell>
-                        <TableCell>{order.tableNumber ? `Table ${order.tableNumber}` : "-"}</TableCell>
+                        <TableCell>{order.tableNumber ? `Table ${order.tableNumber}` : order.customerName || "Counter"}</TableCell>
                         <TableCell>{getStatusBadge(order.status)}</TableCell>
                         <TableCell>
                           <Badge variant="outline" className="no-default-active-elevate">{order.source.toUpperCase()}</Badge>
@@ -1210,7 +1221,7 @@ export default function OrdersPage() {
                   <div>
                     <DialogTitle className="text-xl">Order #{orderDetailData.order.orderNumber}</DialogTitle>
                     <DialogDescription>
-                      {orderDetailData.order.tableNumber ? `Table ${orderDetailData.order.tableNumber}` : "No table"}
+                      {orderDetailData.order.tableNumber ? `Table ${orderDetailData.order.tableNumber}` : orderDetailData.order.customerName || "Counter order"}
                       {" - "}
                       {formatDateTime(orderDetailData.order.createdAt)}
                     </DialogDescription>
@@ -1256,7 +1267,9 @@ export default function OrdersPage() {
                       </div>
                     ) : (
                       <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-sm text-muted-foreground">No table assigned yet</p>
+                        <p className="text-sm text-muted-foreground">
+                          {orderDetailData.order.customerName || "No table assigned"}
+                        </p>
                         <div className="flex items-center gap-2 ml-auto">
                           <Select value={assignTableId} onValueChange={setAssignTableId}>
                             <SelectTrigger className="w-[160px]" data-testid="select-assign-table">

@@ -137,7 +137,7 @@ function AppRouter() {
       <Route path="/pos">
         <ProtectedRoute requireRestaurantAccess>
           <POSLayout>
-            <POSHome />
+            <OrdersPage />
           </POSLayout>
         </ProtectedRoute>
       </Route>
