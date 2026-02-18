@@ -243,6 +243,8 @@ export default function OrdersPage() {
   const [payOrderNumber, setPayOrderNumber] = useState<string>("");
   const [payOrderTotal, setPayOrderTotal] = useState<string>("0");
   const [payOrderPaid, setPayOrderPaid] = useState<string>("0");
+  const [payOrderTableId, setPayOrderTableId] = useState<string | null>(null);
+  const [payTableSelection, setPayTableSelection] = useState<string>("");
   const [selectedPayMethod, setSelectedPayMethod] = useState("");
   const [tipAmount, setTipAmount] = useState("0");
 
@@ -635,18 +637,27 @@ export default function OrdersPage() {
     },
   });
 
-  const openPaymentDialog = (order: { id: string; orderNumber: string; total: string; paidAmount: string }) => {
+  const openPaymentDialog = (order: { id: string; orderNumber: string; total: string; paidAmount: string; tableId?: string | null }) => {
     setPayOrderId(order.id);
     setPayOrderNumber(order.orderNumber);
     setPayOrderTotal(order.total);
     setPayOrderPaid(order.paidAmount || "0");
+    setPayOrderTableId(order.tableId ?? null);
+    setPayTableSelection("");
     setSelectedPayMethod(defaultPayMethod);
     setTipAmount("0");
     setPayDialogOpen(true);
   };
 
-  const payBalance = () => {
+  const payBalance = async () => {
     if (!payOrderId || !selectedPayMethod) return;
+    if (payTableSelection && !payOrderTableId) {
+      try {
+        await assignTableMutation.mutateAsync({ orderId: payOrderId, tableId: payTableSelection });
+      } catch {
+        return;
+      }
+    }
     const remaining = (parseFloat(payOrderTotal) - parseFloat(payOrderPaid)).toFixed(2);
     recordPaymentMutation.mutate({
       orderId: payOrderId,
@@ -1511,6 +1522,24 @@ export default function OrdersPage() {
               </div>
             </div>
 
+            {!payOrderTableId && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Assign Table (optional)</label>
+                <Select value={payTableSelection} onValueChange={setPayTableSelection}>
+                  <SelectTrigger data-testid="select-pay-table">
+                    <SelectValue placeholder="No table assigned" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {tablesData?.filter(t => t.status === "available").map((t) => (
+                      <SelectItem key={t.id} value={t.id} data-testid={`option-pay-table-${t.id}`}>
+                        Table {t.number} (seats {t.capacity})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
             <div className="space-y-2">
               <label className="text-sm font-medium">Payment Method</label>
               {availablePayMethods.length > 1 ? (
@@ -1571,8 +1600,13 @@ export default function OrdersPage() {
             {!hasPayMethod && payOrderId && (
               <Button
                 variant="secondary"
-                onClick={() => {
+                onClick={async () => {
                   if (payOrderId) {
+                    if (payTableSelection && !payOrderTableId) {
+                      try {
+                        await assignTableMutation.mutateAsync({ orderId: payOrderId, tableId: payTableSelection });
+                      } catch { return; }
+                    }
                     updateStatusMutation.mutate({ orderId: payOrderId, status: "completed" });
                     setPayDialogOpen(false);
                     setPayOrderId(null);
@@ -1580,7 +1614,7 @@ export default function OrdersPage() {
                     setDetailOrderId(null);
                   }
                 }}
-                disabled={updateStatusMutation.isPending}
+                disabled={updateStatusMutation.isPending || assignTableMutation.isPending}
                 data-testid="button-complete-no-pay"
               >
                 {updateStatusMutation.isPending ? (
@@ -1596,7 +1630,7 @@ export default function OrdersPage() {
             {hasPayMethod && (
               <Button
                 onClick={payBalance}
-                disabled={recordPaymentMutation.isPending || !selectedPayMethod}
+                disabled={recordPaymentMutation.isPending || assignTableMutation.isPending || !selectedPayMethod}
                 data-testid="button-confirm-pay"
               >
                 {recordPaymentMutation.isPending ? (
