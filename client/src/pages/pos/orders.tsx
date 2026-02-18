@@ -69,6 +69,7 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
+  MapPin,
 } from "lucide-react";
 import { useLocation } from "wouter";
 
@@ -245,6 +246,8 @@ export default function OrdersPage() {
   const [selectedPayMethod, setSelectedPayMethod] = useState("");
   const [tipAmount, setTipAmount] = useState("0");
 
+  const [assignTableId, setAssignTableId] = useState<string>("");
+
   const userPaymentMethods = user?.paymentMethods;
   const userFeatures = user?.features as Record<string, boolean> | undefined;
 
@@ -391,6 +394,55 @@ export default function OrdersPage() {
     enabled: !!accessToken && !!restaurantId && (isNewOrder || addingItemsToOrder),
   });
 
+  interface DiningTable {
+    id: string;
+    number: string;
+    capacity: number;
+    status: string;
+  }
+
+  const { data: tablesData } = useQuery<DiningTable[]>({
+    queryKey: ["/api/restaurants", restaurantId, "tables"],
+    queryFn: async () => {
+      const res = await fetch(`/api/restaurants/${restaurantId}/tables`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        credentials: "include",
+      });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!accessToken && !!restaurantId,
+  });
+
+  const assignTableMutation = useMutation({
+    mutationFn: async ({ orderId, tableId: tId }: { orderId: string; tableId: string }) => {
+      const res = await fetch(`/api/restaurants/${restaurantId}/orders/${orderId}/table`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        credentials: "include",
+        body: JSON.stringify({ tableId: tId }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || err.error || "Failed to assign table");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "tables"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "stats"] });
+      toast({ title: "Table assigned successfully" });
+      setAssignTableId("");
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
   const createOrderMutation = useMutation({
     mutationFn: async () => {
       const items = cart.map(item => ({
@@ -421,6 +473,8 @@ export default function OrdersPage() {
     onSuccess: () => {
       toast({ title: "Order created successfully!" });
       queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "tables"] });
       setCart([]);
       setLocation("/pos/orders");
     },
@@ -448,9 +502,9 @@ export default function OrdersPage() {
     },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "stats"] });
       if (variables.status === "completed" || variables.status === "cancelled") {
         queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "tables"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "stats"] });
       }
       if (variables.status === "cancelled") {
         toast({ title: "Order cancelled" });
@@ -506,6 +560,7 @@ export default function OrdersPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "stats"] });
       setAddItemsCart([]);
       setAddingItemsToOrder(false);
       toast({ title: "Items added to order" });
@@ -530,6 +585,7 @@ export default function OrdersPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "stats"] });
       toast({ title: "Item removed" });
     },
     onError: (error: Error) => {
@@ -566,6 +622,7 @@ export default function OrdersPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "tables"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "stats"] });
       toast({ title: "Payment recorded & order completed!" });
       setPayDialogOpen(false);
       setPayOrderId(null);
@@ -841,16 +898,18 @@ export default function OrdersPage() {
     );
   };
 
-  if (isNewOrder && tableId) {
+  if (isNewOrder) {
     return (
       <div className="h-full flex flex-col">
         <div className="flex items-center gap-4 p-4 border-b">
-          <Button variant="ghost" size="icon" onClick={() => setLocation("/pos")} data-testid="button-back">
+          <Button variant="ghost" size="icon" onClick={() => setLocation("/pos/orders")} data-testid="button-back">
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
             <h1 className="text-xl font-semibold" data-testid="text-new-order-title">New Order</h1>
-            <p className="text-sm text-muted-foreground">Table {tableId.slice(0, 8)}...</p>
+            <p className="text-sm text-muted-foreground">
+              {tableId ? `Table selected` : "No table assigned - can be assigned later"}
+            </p>
           </div>
         </div>
         {renderMenuPicker("new")}
@@ -901,6 +960,10 @@ export default function OrdersPage() {
           <h1 className="text-2xl font-semibold" data-testid="text-page-title">Orders</h1>
           <p className="text-muted-foreground">Manage and track all orders</p>
         </div>
+        <Button onClick={() => setLocation("/pos/orders?new=true")} data-testid="button-new-order">
+          <Plus className="mr-2 h-4 w-4" />
+          New Order
+        </Button>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
@@ -1001,11 +1064,17 @@ export default function OrdersPage() {
                 <ClipboardList className="h-12 w-12 text-muted-foreground" />
                 <h3 className="mt-4 text-lg font-medium">No active orders</h3>
                 <p className="text-muted-foreground">
-                  Start a new order from the Tables view.
+                  Start a new order using the button above, or from the Tables view.
                 </p>
-                <Button className="mt-4" variant="outline" onClick={() => setLocation("/pos")} data-testid="button-go-to-tables">
-                  Go to Tables
-                </Button>
+                <div className="flex gap-2 mt-4 flex-wrap">
+                  <Button onClick={() => setLocation("/pos/orders?new=true")} data-testid="button-start-new-order">
+                    <Plus className="mr-2 h-4 w-4" />
+                    New Order
+                  </Button>
+                  <Button variant="outline" onClick={() => setLocation("/pos")} data-testid="button-go-to-tables">
+                    Go to Tables
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           )}
@@ -1140,6 +1209,70 @@ export default function OrdersPage() {
               </DialogHeader>
 
               <div className="space-y-6 mt-4">
+                {!["completed", "cancelled"].includes(orderDetailData.order.status) && (
+                  <div className="rounded-md border p-4 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <MapPin className="h-4 w-4 text-muted-foreground" />
+                      <h3 className="font-medium">Table Assignment</h3>
+                    </div>
+                    {orderDetailData.order.tableNumber ? (
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <p className="text-sm" data-testid="text-assigned-table">
+                          Currently assigned to <span className="font-semibold">Table {orderDetailData.order.tableNumber}</span>
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <Select value={assignTableId} onValueChange={setAssignTableId}>
+                            <SelectTrigger className="w-[160px]" data-testid="select-reassign-table">
+                              <SelectValue placeholder="Move to table..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {(tablesData || []).filter(t => t.id !== orderDetailData.order.tableId).map(t => (
+                                <SelectItem key={t.id} value={t.id} data-testid={`option-table-${t.id}`}>
+                                  Table {t.number} ({t.capacity} seats)
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Button
+                            size="sm"
+                            disabled={!assignTableId || assignTableMutation.isPending}
+                            onClick={() => assignTableMutation.mutate({ orderId: orderDetailData.order.id, tableId: assignTableId })}
+                            data-testid="button-reassign-table"
+                          >
+                            {assignTableMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Move"}
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm text-muted-foreground">No table assigned yet</p>
+                        <div className="flex items-center gap-2 ml-auto">
+                          <Select value={assignTableId} onValueChange={setAssignTableId}>
+                            <SelectTrigger className="w-[160px]" data-testid="select-assign-table">
+                              <SelectValue placeholder="Select table..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {(tablesData || []).map(t => (
+                                <SelectItem key={t.id} value={t.id} data-testid={`option-table-${t.id}`}>
+                                  Table {t.number} ({t.capacity} seats)
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Button
+                            size="sm"
+                            disabled={!assignTableId || assignTableMutation.isPending}
+                            onClick={() => assignTableMutation.mutate({ orderId: orderDetailData.order.id, tableId: assignTableId })}
+                            data-testid="button-assign-table"
+                          >
+                            {assignTableMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Assign"}
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <div>
                   <h3 className="font-medium mb-3">Order Items</h3>
                   {orderDetailData.items.length > 0 ? (

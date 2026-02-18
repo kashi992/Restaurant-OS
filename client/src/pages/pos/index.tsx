@@ -100,23 +100,31 @@ export default function POSHome() {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold" data-testid="text-page-title">Tables</h1>
           <p className="text-muted-foreground">Select a table to view or create orders</p>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-green-500" />
-            <span className="text-sm">Available</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-orange-500" />
-            <span className="text-sm">Occupied</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-blue-500" />
-            <span className="text-sm">Reserved</span>
+        <div className="flex items-center gap-4 flex-wrap">
+          <Link href="/pos/orders?new=true">
+            <Button data-testid="button-quick-new-order">
+              <Plus className="mr-2 h-4 w-4" />
+              New Order (No Table)
+            </Button>
+          </Link>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <div className="w-3 h-3 rounded-full bg-green-500" />
+              <span className="text-sm">Available</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-3 h-3 rounded-full bg-orange-500" />
+              <span className="text-sm">Occupied</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-3 h-3 rounded-full bg-blue-500" />
+              <span className="text-sm">Reserved</span>
+            </div>
           </div>
         </div>
       </div>

@@ -140,6 +140,8 @@ export default function PaymentsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "tables"] });
       toast({ title: "Payment recorded successfully" });
       setPayDialogOpen(false);
       setSelectedOrder(null);

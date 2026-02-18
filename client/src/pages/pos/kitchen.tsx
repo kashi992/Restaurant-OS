@@ -69,6 +69,7 @@ export default function KitchenDisplay() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "stats"] });
       toast({ title: "Order updated" });
     },
     onError: (error) => {

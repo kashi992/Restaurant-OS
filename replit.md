@@ -24,7 +24,7 @@ A full-stack, multi-tenant restaurant Point of Sale (POS) system with integrated
 
 ### Feature Specifications
 - **Subscription Management**: Tracks `isSuspended`, `subscriptionStartAt`, and `subscriptionEndAt` for restaurants, with status computation and an extension mechanism.
-- **Order Management**: Comprehensive CRUD operations for orders, items, status changes, table moves, order merging, and payment recording.
+- **Order Management**: Comprehensive CRUD operations for orders, items, status changes, table moves, order merging, and payment recording. POS orders can be created without a table assignment; tables can be assigned/reassigned later via the order detail dialog. Stats refresh immediately after any order mutation.
 - **QR Ordering**: Public-facing QR ordering system with rate limiting, timezone-aware menus, and both AUTO/MANUAL ordering modes.
 - **Payment Processing**: Supports optional payment providers (Stripe, PayPal) and "Pay at Counter" options, with staff marking payments and order auto-completion.
 - **Split Billing**: Offers item-based, amount-based, and equal split modes for orders, with partial payments and balance tracking, feature-gated.
