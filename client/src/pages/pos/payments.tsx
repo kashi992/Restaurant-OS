@@ -31,7 +31,9 @@ import {
   Loader2,
   CheckCircle,
   AlertTriangle,
+  SplitSquareVertical,
 } from "lucide-react";
+import { SplitBillingDialog } from "@/components/split-billing-dialog";
 
 interface Order {
   id: string;
@@ -90,6 +92,10 @@ export default function PaymentsPage() {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [paymentMethod, setPaymentMethod] = useState("");
   const [tipAmount, setTipAmount] = useState("0");
+  const [splitDialogOpen, setSplitDialogOpen] = useState(false);
+  const [splitOrder, setSplitOrder] = useState<Order | null>(null);
+
+  const isSplitBillingEnabled = user?.features?.split_billing === true || features?.split_billing === true;
 
   const availableMethods = buildAvailableMethods(paymentMethods, features);
   const hasAnyMethod = availableMethods.length > 0;
@@ -227,15 +233,32 @@ export default function PaymentsPage() {
                         <span className="font-bold text-lg">${getRemainingBalance(order)}</span>
                       </div>
                     </div>
-                    <Button
-                      className="w-full"
-                      onClick={() => openPayDialog(order)}
-                      disabled={parseFloat(getRemainingBalance(order)) <= 0 || !hasAnyMethod}
-                      data-testid={`button-pay-${order.id}`}
-                    >
-                      <DollarSign className="mr-2 h-4 w-4" />
-                      Process Payment
-                    </Button>
+                    <div className="flex gap-2">
+                      {isSplitBillingEnabled && (
+                        <Button
+                          variant="outline"
+                          className="flex-1"
+                          onClick={() => {
+                            setSplitOrder(order);
+                            setSplitDialogOpen(true);
+                          }}
+                          disabled={parseFloat(getRemainingBalance(order)) <= 0 || !hasAnyMethod}
+                          data-testid={`button-split-${order.id}`}
+                        >
+                          <SplitSquareVertical className="mr-2 h-4 w-4" />
+                          Split Bill
+                        </Button>
+                      )}
+                      <Button
+                        className={isSplitBillingEnabled ? "flex-1" : "w-full"}
+                        onClick={() => openPayDialog(order)}
+                        disabled={parseFloat(getRemainingBalance(order)) <= 0 || !hasAnyMethod}
+                        data-testid={`button-pay-${order.id}`}
+                      >
+                        <DollarSign className="mr-2 h-4 w-4" />
+                        Pay Full
+                      </Button>
+                    </div>
                   </CardContent>
                 </Card>
               ))}
@@ -351,6 +374,20 @@ export default function PaymentsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <SplitBillingDialog
+        open={splitDialogOpen}
+        onOpenChange={(open) => {
+          setSplitDialogOpen(open);
+          if (!open) {
+            setSplitOrder(null);
+            queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "orders"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "stats"] });
+          }
+        }}
+        order={splitOrder}
+        availableMethods={availableMethods}
+      />
     </div>
   );
 }

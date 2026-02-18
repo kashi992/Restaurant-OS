@@ -122,9 +122,9 @@ export function requireSoftToggle(settingKey: string, checkPath: string = "enabl
 
     try {
       const cache = await loadRestaurantFeatures(restaurantId);
-      const settingValue = getSettingValue<Record<string, unknown>>(cache, settingKey);
+      const settingValue = getSettingValue<unknown>(cache, settingKey);
 
-      if (!settingValue) {
+      if (settingValue === undefined || settingValue === null) {
         return res.status(403).json({
           error: "Setting Not Configured",
           message: `The "${settingKey}" setting is not configured for this restaurant`,
@@ -132,18 +132,27 @@ export function requireSoftToggle(settingKey: string, checkPath: string = "enabl
         });
       }
 
-      const pathParts = checkPath.split(".");
-      let value: unknown = settingValue;
-      for (const part of pathParts) {
-        if (value && typeof value === "object" && part in value) {
-          value = (value as Record<string, unknown>)[part];
-        } else {
-          value = undefined;
-          break;
+      let isEnabled = false;
+
+      if (typeof settingValue === "string") {
+        isEnabled = settingValue === "true" || settingValue === "\"true\"";
+      } else if (typeof settingValue === "boolean") {
+        isEnabled = settingValue;
+      } else if (typeof settingValue === "object" && settingValue !== null) {
+        const pathParts = checkPath.split(".");
+        let value: unknown = settingValue;
+        for (const part of pathParts) {
+          if (value && typeof value === "object" && part in value) {
+            value = (value as Record<string, unknown>)[part];
+          } else {
+            value = undefined;
+            break;
+          }
         }
+        isEnabled = value === true || value === "true";
       }
 
-      if (value !== true) {
+      if (!isEnabled) {
         return res.status(403).json({
           error: "Setting Disabled",
           message: `The "${settingKey}" setting is not enabled for this restaurant`,

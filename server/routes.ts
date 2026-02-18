@@ -3793,6 +3793,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
         // Feature gating: validate that the setting change doesn't enable something not allowed
         const featureRequirements: Record<string, string> = {
           split_billing: "split_billing",
+          split_billing_enabled: "split_billing",
           qr_ordering: "qr_ordering",
           payment_methods: "pos",
         };
@@ -3891,6 +3892,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
         // Feature gating validation
         const featureRequirements: Record<string, string> = {
           split_billing: "split_billing",
+          split_billing_enabled: "split_billing",
           qr_ordering: "qr_ordering",
           payment_methods: "pos",
         };
@@ -6485,7 +6487,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
     authenticate,
     requireRestaurantAccess, requireActiveRestaurant,
     requireFeature("split_billing"),
-    requireSoftToggle("split_billing", "enabled"),
+    requireSoftToggle("split_billing_enabled"),
     async (req, res) => {
       try {
         const { restaurantId, orderId } = req.params;
@@ -6712,15 +6714,15 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
           .where(eq(splitShares.splitSessionId, session.id));
 
         // Get payments for each share
-        const sharePayments = await db
-          .select()
-          .from(splitSharePayments)
-          .where(
-            sql`${splitSharePayments.splitShareId} IN (${sql.join(
-              shares.map((s) => sql`${s.id}`),
-              sql`, `
-            )})`
-          );
+        let sharePayments: (typeof splitSharePayments.$inferSelect)[] = [];
+        if (shares.length > 0) {
+          sharePayments = await db
+            .select()
+            .from(splitSharePayments)
+            .where(
+              inArray(splitSharePayments.splitShareId, shares.map(s => s.id))
+            );
+        }
 
         const sharePaymentMap = new Map<string, typeof sharePayments>();
         for (const sp of sharePayments) {

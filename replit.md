@@ -27,7 +27,7 @@ A full-stack, multi-tenant restaurant Point of Sale (POS) system with integrated
 - **Order Management**: Comprehensive CRUD operations for orders, items, status changes, table moves, order merging, and payment recording. POS orders can be created without a table assignment; tables can be assigned/reassigned later via the order detail dialog. Stats refresh immediately after any order mutation.
 - **QR Ordering**: Public-facing QR ordering system with rate limiting, timezone-aware menus, and both AUTO/MANUAL ordering modes.
 - **Payment Processing**: Supports optional payment providers (Stripe, PayPal) and "Pay at Counter" options, with staff marking payments and order auto-completion.
-- **Split Billing**: Offers item-based, amount-based, and equal split modes for orders, with partial payments and balance tracking, feature-gated.
+- **Split Billing**: Full split billing system with three modes: Split Equally (auto-divides by guest count with rounding adjustment), Split by Amount (custom amounts per guest), and Split by Items (assign order items to guests). Each mode creates a split session with individual shares. Shares can be paid independently with different payment methods. Balance tracking per share and per order. Auto-completes order and releases table when all shares are paid. Feature-gated via `split_billing` hard feature + `split_billing_enabled` soft toggle. UI in POS Payments page (`client/src/components/split-billing-dialog.tsx`). Backend routes at `/api/restaurants/:id/orders/:orderId/split/*`.
 - **Security**: Authentication persistence uses HTTP-only cookies for refresh tokens. Middleware ensures active restaurant status for dashboard endpoints.
 
 ## External Dependencies
