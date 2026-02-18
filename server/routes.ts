@@ -3505,6 +3505,18 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
           return res.status(404).json({ error: "Table not found" });
         }
 
+        const activeOrders = await db
+          .select({ id: orders.id })
+          .from(orders)
+          .where(and(
+            eq(orders.tableId, tableId),
+            notInArray(orders.status, ['completed', 'cancelled'])
+          ));
+
+        if (activeOrders.length > 0) {
+          return res.status(400).json({ error: "Cannot delete table with active orders. Complete or cancel all orders first." });
+        }
+
         await db.delete(diningTables).where(eq(diningTables.id, tableId));
         res.json({ message: "Table deleted successfully" });
       } catch (error) {
@@ -5267,7 +5279,27 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
           return res.status(404).json({ error: "No matching orders found" });
         }
 
+        const deletedOrders = await db
+          .select({ tableId: orders.tableId })
+          .from(orders)
+          .where(inArray(orders.id, validIds));
+
+        const tableIds = Array.from(new Set(deletedOrders.map(o => o.tableId).filter(Boolean))) as string[];
+
         await db.delete(orders).where(inArray(orders.id, validIds));
+
+        for (const tableId of tableIds) {
+          const remainingActive = await db
+            .select({ id: orders.id })
+            .from(orders)
+            .where(and(
+              eq(orders.tableId, tableId),
+              notInArray(orders.status, ['completed', 'cancelled'])
+            ));
+          if (remainingActive.length === 0) {
+            await db.update(diningTables).set({ status: "available" }).where(eq(diningTables.id, tableId));
+          }
+        }
 
         res.json({ message: `${validIds.length} order(s) deleted`, deletedCount: validIds.length });
       } catch (error) {

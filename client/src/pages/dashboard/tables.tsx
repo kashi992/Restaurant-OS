@@ -33,6 +33,16 @@ import {
 } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Plus,
   QrCode,
   Download,
@@ -40,6 +50,7 @@ import {
   Users,
   Loader2,
   ExternalLink,
+  Trash2,
 } from "lucide-react";
 
 interface Table {
@@ -64,6 +75,8 @@ export default function TablesManager() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [qrDialogOpen, setQrDialogOpen] = useState(false);
   const [selectedTable, setSelectedTable] = useState<Table | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteTableTarget, setDeleteTableTarget] = useState<Table | null>(null);
 
   const { data: tables, isLoading } = useQuery<Table[]>({
     queryKey: ["/api/restaurants", restaurantId, "tables"],
@@ -128,6 +141,31 @@ export default function TablesManager() {
     },
     onError: (error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteTableMutation = useMutation({
+    mutationFn: async (tableId: string) => {
+      const res = await fetch(`/api/restaurants/${restaurantId}/tables/${tableId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${accessToken}` },
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || err.error || "Failed to delete table");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "tables"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "stats"] });
+      toast({ title: "Table deleted successfully" });
+      setDeleteDialogOpen(false);
+      setDeleteTableTarget(null);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Delete Error", description: error.message, variant: "destructive" });
     },
   });
 
@@ -203,6 +241,14 @@ export default function TablesManager() {
                     </CardDescription>
                   </div>
                 </div>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => { setDeleteTableTarget(table); setDeleteDialogOpen(true); }}
+                  data-testid={`button-delete-table-${table.id}`}
+                >
+                  <Trash2 className="h-4 w-4 text-muted-foreground" />
+                </Button>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="flex items-center justify-between">
@@ -285,6 +331,33 @@ export default function TablesManager() {
           </Form>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Table Confirmation */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Table {deleteTableTarget?.number}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete this table and any associated QR codes. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-delete-table">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteTableTarget && deleteTableMutation.mutate(deleteTableTarget.id)}
+              className="bg-destructive text-destructive-foreground"
+              data-testid="button-confirm-delete-table"
+            >
+              {deleteTableMutation.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="mr-2 h-4 w-4" />
+              )}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* QR Code Dialog */}
       <Dialog open={qrDialogOpen} onOpenChange={setQrDialogOpen}>
