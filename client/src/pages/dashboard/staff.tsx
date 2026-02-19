@@ -20,6 +20,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Form,
   FormControl,
   FormField,
@@ -40,6 +50,8 @@ import {
   Users,
   Mail,
   Loader2,
+  Trash2,
+  Shield,
 } from "lucide-react";
 
 interface StaffMember {
@@ -51,6 +63,7 @@ interface StaffMember {
   roleId: string;
   roleName: string;
   isActive: boolean;
+  isDefault: boolean;
   hiredAt: string;
 }
 
@@ -84,6 +97,7 @@ export default function StaffManager() {
   const restaurantId = user?.restaurantId;
 
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<StaffMember | null>(null);
 
   const { data: staff, isLoading } = useQuery<StaffMember[]>({
     queryKey: ["/api/restaurants", restaurantId, "staff"],
@@ -152,6 +166,30 @@ export default function StaffManager() {
     },
   });
 
+  const deleteStaffMutation = useMutation({
+    mutationFn: async (staffId: string) => {
+      const res = await fetch(`/api/restaurants/${restaurantId}/staff/${staffId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${accessToken}` },
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: "Failed to delete staff member" }));
+        throw new Error(err.message || "Failed to delete staff member");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "staff"] });
+      setDeleteTarget(null);
+      toast({ title: "Staff member removed successfully" });
+    },
+    onError: (error) => {
+      setDeleteTarget(null);
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
   const getRoleBadge = (roleName: string) => {
     const colorClass = ROLE_COLORS[roleName.toLowerCase()] || "";
     if (colorClass) {
@@ -198,21 +236,41 @@ export default function StaffManager() {
                     {member.lastName?.charAt(0)}
                   </AvatarFallback>
                 </Avatar>
-                <div className="flex-1">
-                  <CardTitle className="text-lg">
-                    {member.firstName} {member.lastName}
-                  </CardTitle>
-                  <CardDescription className="flex items-center gap-1">
-                    <Mail className="h-3 w-3" />
-                    {member.email}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <CardTitle className="text-lg">
+                      {member.firstName} {member.lastName}
+                    </CardTitle>
+                    {member.isDefault && (
+                      <Badge variant="secondary" className="text-xs" data-testid={`badge-default-${member.id}`}>
+                        <Shield className="h-3 w-3 mr-1" />
+                        Default
+                      </Badge>
+                    )}
+                  </div>
+                  <CardDescription className="flex items-center gap-1 mt-1">
+                    <Mail className="h-3 w-3 shrink-0" />
+                    <span className="truncate">{member.email}</span>
                   </CardDescription>
                 </div>
               </CardHeader>
               <CardContent>
                 <div className="flex items-center justify-between gap-2 flex-wrap">
-                  {getRoleBadge(member.roleName)}
-                  {!member.isActive && (
-                    <Badge variant="secondary">Inactive</Badge>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {getRoleBadge(member.roleName)}
+                    {!member.isActive && (
+                      <Badge variant="secondary">Inactive</Badge>
+                    )}
+                  </div>
+                  {!member.isDefault && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setDeleteTarget(member)}
+                      data-testid={`button-delete-staff-${member.id}`}
+                    >
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
                   )}
                 </div>
               </CardContent>
@@ -335,6 +393,32 @@ export default function StaffManager() {
           </Form>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove Staff Member</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to remove {deleteTarget?.firstName} {deleteTarget?.lastName} from your restaurant? This will revoke their access. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-delete">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteTarget && deleteStaffMutation.mutate(deleteTarget.id)}
+              className="bg-destructive text-destructive-foreground"
+              data-testid="button-confirm-delete"
+            >
+              {deleteStaffMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <Trash2 className="h-4 w-4 mr-2" />
+              )}
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

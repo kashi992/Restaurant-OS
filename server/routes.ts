@@ -2023,7 +2023,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
       try {
         const { restaurantId } = req.params;
 
-        const staff = await db
+        const staffList = await db
           .select({
             id: restaurantUsers.id,
             userId: users.id,
@@ -2043,7 +2043,18 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
           .innerJoin(users, eq(restaurantUsers.userId, users.id))
           .innerJoin(roles, eq(restaurantUsers.roleId, roles.id))
           .where(eq(restaurantUsers.restaurantId, restaurantId))
-          .orderBy(users.firstName);
+          .orderBy(restaurantUsers.createdAt);
+
+        const [restaurant] = await db
+          .select({ createdById: restaurants.createdById })
+          .from(restaurants)
+          .where(eq(restaurants.id, restaurantId))
+          .limit(1);
+
+        const staff = staffList.map(s => ({
+          ...s,
+          isDefault: !!restaurant?.createdById && s.userId === restaurant.createdById,
+        }));
 
         res.json({ staff });
       } catch (error) {
@@ -2162,6 +2173,68 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
         res.status(500).json({
           error: "Internal Server Error",
           message: "Failed to add staff member"
+        });
+      }
+    }
+  );
+
+  // Delete staff member
+  app.delete(
+    "/api/restaurants/:restaurantId/staff/:staffId",
+    authenticate,
+    resolveTenantFromToken,
+    requireRestaurantAccess, requireActiveRestaurant,
+    requirePermission("staff:delete"),
+    async (req, res) => {
+      try {
+        const { restaurantId, staffId } = req.params;
+
+        // Get the staff member
+        const [member] = await db
+          .select({
+            id: restaurantUsers.id,
+            userId: restaurantUsers.userId,
+            roleId: restaurantUsers.roleId,
+            createdAt: restaurantUsers.createdAt,
+          })
+          .from(restaurantUsers)
+          .where(and(
+            eq(restaurantUsers.id, staffId),
+            eq(restaurantUsers.restaurantId, restaurantId)
+          ))
+          .limit(1);
+
+        if (!member) {
+          return res.status(404).json({ error: "Staff member not found" });
+        }
+
+        const [restaurant] = await db
+          .select({ createdById: restaurants.createdById })
+          .from(restaurants)
+          .where(eq(restaurants.id, restaurantId))
+          .limit(1);
+
+        if (restaurant?.createdById && member.userId === restaurant.createdById) {
+          return res.status(403).json({
+            error: "Forbidden",
+            message: "Cannot delete the default restaurant admin"
+          });
+        }
+
+        // Delete the restaurant_users record (not the user account itself)
+        await db
+          .delete(restaurantUsers)
+          .where(and(
+            eq(restaurantUsers.id, staffId),
+            eq(restaurantUsers.restaurantId, restaurantId)
+          ));
+
+        res.json({ message: "Staff member removed successfully" });
+      } catch (error) {
+        console.error("Delete staff error:", error);
+        res.status(500).json({
+          error: "Internal Server Error",
+          message: "Failed to delete staff member"
         });
       }
     }
