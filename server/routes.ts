@@ -2045,15 +2045,11 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
           .where(eq(restaurantUsers.restaurantId, restaurantId))
           .orderBy(restaurantUsers.createdAt);
 
-        const [restaurant] = await db
-          .select({ createdById: restaurants.createdById })
-          .from(restaurants)
-          .where(eq(restaurants.id, restaurantId))
-          .limit(1);
+        const defaultMemberId = staffList.length > 0 ? staffList[0].id : null;
 
         const staff = staffList.map(s => ({
           ...s,
-          isDefault: !!restaurant?.createdById && s.userId === restaurant.createdById,
+          isDefault: s.id === defaultMemberId,
         }));
 
         res.json({ staff });
@@ -2208,13 +2204,14 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
           return res.status(404).json({ error: "Staff member not found" });
         }
 
-        const [restaurant] = await db
-          .select({ createdById: restaurants.createdById })
-          .from(restaurants)
-          .where(eq(restaurants.id, restaurantId))
+        const [earliestMember] = await db
+          .select({ id: restaurantUsers.id })
+          .from(restaurantUsers)
+          .where(eq(restaurantUsers.restaurantId, restaurantId))
+          .orderBy(restaurantUsers.createdAt)
           .limit(1);
 
-        if (restaurant?.createdById && member.userId === restaurant.createdById) {
+        if (earliestMember && earliestMember.id === staffId) {
           return res.status(403).json({
             error: "Forbidden",
             message: "Cannot delete the default restaurant admin"
