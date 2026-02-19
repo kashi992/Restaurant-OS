@@ -5475,6 +5475,44 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
     }
   );
 
+  // Get order items
+  app.get(
+    "/api/restaurants/:restaurantId/orders/:orderId/items",
+    authenticate,
+    requireRestaurantAccess, requireActiveRestaurant,
+    requireFeature("pos"),
+    requirePermission("orders:read"),
+    async (req, res) => {
+      try {
+        const { restaurantId, orderId } = req.params;
+        const [order] = await db
+          .select({ id: orders.id })
+          .from(orders)
+          .where(and(eq(orders.id, orderId), eq(orders.restaurantId, restaurantId)));
+        if (!order) {
+          return res.status(404).json({ error: "Order not found" });
+        }
+        const items = await db
+          .select({
+            id: orderItems.id,
+            name: orderItems.name,
+            quantity: orderItems.quantity,
+            unitPrice: orderItems.unitPrice,
+            totalPrice: orderItems.totalPrice,
+            status: orderItems.status,
+            modifiers: orderItems.modifiers,
+            modifiersPrice: orderItems.modifiersPrice,
+          })
+          .from(orderItems)
+          .where(eq(orderItems.orderId, orderId));
+        res.json(items);
+      } catch (error) {
+        console.error("Get order items error:", error);
+        res.status(500).json({ error: "Failed to get order items" });
+      }
+    }
+  );
+
   // Add items to order
   app.post(
     "/api/restaurants/:restaurantId/orders/:orderId/items",
