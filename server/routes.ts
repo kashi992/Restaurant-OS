@@ -1026,6 +1026,23 @@ export async function registerRoutes(
         console.log("Admin role created:", adminRole.id);
       }
 
+      // Seed default staff roles
+      const defaultStaffRoles = [
+        { name: "manager", description: "Manage staff and settings", permissions: ["staff:read","staff:create","staff:update","orders:read","orders:create","orders:update","orders:delete","menu:read","menu:create","menu:update","menu:delete","tables:read","tables:create","tables:update","tables:delete","settings:read","settings:update","payments:read","payments:create"] },
+        { name: "server", description: "Take orders and manage tables", permissions: ["orders:read","orders:create","orders:update","tables:read","tables:update","menu:read","payments:read"] },
+        { name: "kitchen", description: "View and manage kitchen orders", permissions: ["orders:read","orders:update","menu:read"] },
+        { name: "cashier", description: "Process payments", permissions: ["orders:read","orders:update","payments:read","payments:create","tables:read"] },
+      ];
+      for (const r of defaultStaffRoles) {
+        await db.insert(roles).values({
+          restaurantId: restaurant.id,
+          name: r.name,
+          description: r.description,
+          permissions: r.permissions,
+          isSystemRole: true,
+        }).onConflictDoNothing();
+      }
+
       // ✅ Step 4: Link admin user to restaurant
       const [restaurantUser] = await db
         .insert(restaurantUsers)

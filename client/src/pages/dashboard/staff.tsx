@@ -44,11 +44,22 @@ import {
 
 interface StaffMember {
   id: string;
+  userId: string;
   email: string;
   firstName: string;
   lastName: string;
-  role: string;
+  roleId: string;
+  roleName: string;
   isActive: boolean;
+  hiredAt: string;
+}
+
+interface Role {
+  id: string;
+  name: string;
+  description: string;
+  permissions: string[];
+  isSystemRole: boolean;
 }
 
 const staffSchema = z.object({
@@ -56,16 +67,16 @@ const staffSchema = z.object({
   firstName: z.string().min(1, "First name required"),
   lastName: z.string().min(1, "Last name required"),
   password: z.string().min(8, "Password must be at least 8 characters"),
-  role: z.string().min(1, "Role is required"),
+  roleId: z.string().min(1, "Role is required"),
 });
 
-const ROLES = [
-  { value: "admin", label: "Admin", description: "Full access to all features" },
-  { value: "manager", label: "Manager", description: "Manage staff and settings" },
-  { value: "server", label: "Server", description: "Take orders and manage tables" },
-  { value: "kitchen", label: "Kitchen", description: "View and manage kitchen orders" },
-  { value: "cashier", label: "Cashier", description: "Process payments" },
-];
+const ROLE_COLORS: Record<string, string> = {
+  admin: "bg-purple-500/10 text-purple-600 dark:text-purple-400",
+  manager: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+  server: "bg-green-500/10 text-green-600 dark:text-green-400",
+  kitchen: "bg-orange-500/10 text-orange-600 dark:text-orange-400",
+  cashier: "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400",
+};
 
 export default function StaffManager() {
   const { accessToken, user } = useAuth();
@@ -88,6 +99,20 @@ export default function StaffManager() {
     enabled: !!accessToken && !!restaurantId,
   });
 
+  const { data: rolesData } = useQuery<Role[]>({
+    queryKey: ["/api/restaurants", restaurantId, "roles"],
+    queryFn: async () => {
+      const res = await fetch(`/api/restaurants/${restaurantId}/roles`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        credentials: "include",
+      });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data.roles;
+    },
+    enabled: !!accessToken && !!restaurantId,
+  });
+
   const form = useForm({
     resolver: zodResolver(staffSchema),
     defaultValues: {
@@ -95,7 +120,7 @@ export default function StaffManager() {
       firstName: "",
       lastName: "",
       password: "",
-      role: "server",
+      roleId: "",
     },
   });
 
@@ -110,7 +135,10 @@ export default function StaffManager() {
         credentials: "include",
         body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error("Failed to create staff member");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: "Failed to create staff member" }));
+        throw new Error(err.message || "Failed to create staff member");
+      }
       return res.json();
     },
     onSuccess: () => {
@@ -124,21 +152,12 @@ export default function StaffManager() {
     },
   });
 
-  const getRoleBadge = (role: string) => {
-    switch (role) {
-      case "admin":
-        return <Badge className="bg-purple-500/10 text-purple-600 dark:text-purple-400">Admin</Badge>;
-      case "manager":
-        return <Badge className="bg-blue-500/10 text-blue-600 dark:text-blue-400">Manager</Badge>;
-      case "server":
-        return <Badge className="bg-green-500/10 text-green-600 dark:text-green-400">Server</Badge>;
-      case "kitchen":
-        return <Badge className="bg-orange-500/10 text-orange-600 dark:text-orange-400">Kitchen</Badge>;
-      case "cashier":
-        return <Badge className="bg-yellow-500/10 text-yellow-600 dark:text-yellow-400">Cashier</Badge>;
-      default:
-        return <Badge variant="outline">{role}</Badge>;
+  const getRoleBadge = (roleName: string) => {
+    const colorClass = ROLE_COLORS[roleName.toLowerCase()] || "";
+    if (colorClass) {
+      return <Badge className={colorClass}>{roleName.charAt(0).toUpperCase() + roleName.slice(1)}</Badge>;
     }
+    return <Badge variant="outline">{roleName}</Badge>;
   };
 
   return (
@@ -190,8 +209,8 @@ export default function StaffManager() {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="flex items-center justify-between">
-                  {getRoleBadge(member.role)}
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  {getRoleBadge(member.roleName)}
                   {!member.isActive && (
                     <Badge variant="secondary">Inactive</Badge>
                   )}
@@ -214,7 +233,6 @@ export default function StaffManager() {
         </Card>
       )}
 
-      {/* Add Staff Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -279,23 +297,23 @@ export default function StaffManager() {
               />
               <FormField
                 control={form.control}
-                name="role"
+                name="roleId"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Role</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <Select onValueChange={field.onChange} value={field.value}>
                       <FormControl>
                         <SelectTrigger data-testid="select-staff-role">
                           <SelectValue placeholder="Select role" />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {ROLES.map((role) => (
-                          <SelectItem key={role.value} value={role.value}>
-                            <div>
-                              <p className="font-medium">{role.label}</p>
-                              <p className="text-xs text-muted-foreground">{role.description}</p>
-                            </div>
+                        {(rolesData || []).map((role) => (
+                          <SelectItem key={role.id} value={role.id}>
+                            <span className="font-medium capitalize">{role.name}</span>
+                            {role.description && (
+                              <span className="text-xs text-muted-foreground ml-2">- {role.description}</span>
+                            )}
                           </SelectItem>
                         ))}
                       </SelectContent>
