@@ -2277,7 +2277,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
         const hasUserLevelChanges = firstName !== undefined || lastName !== undefined || email !== undefined || password !== undefined;
 
         if (hasUserLevelChanges) {
-          const currentUserId = (req as any).user?.id;
+          const currentUserId = req.user?.userId;
           const [earliestMember] = await db
             .select({ id: restaurantUsers.id, userId: restaurantUsers.userId })
             .from(restaurantUsers)
