@@ -1,5 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
+import { hasPermission, hasAnyPermission } from "@/components/protected-route";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,9 +12,9 @@ import {
 } from "lucide-react";
 
 const navItems = [
-  { title: "Orders", url: "/pos/orders", icon: ClipboardList, feature: null },
-  { title: "Kitchen", url: "/pos/kitchen", icon: ChefHat, feature: "kitchen_display" },
-  { title: "Payments", url: "/pos/payments", icon: CreditCard, feature: null },
+  { title: "Orders", url: "/pos/orders", icon: ClipboardList, feature: null, permission: "orders:read" },
+  { title: "Kitchen", url: "/pos/kitchen", icon: ChefHat, feature: "kitchen_display", permission: "orders:read" },
+  { title: "Payments", url: "/pos/payments", icon: CreditCard, feature: null, permission: "payments:read" },
 ];
 
 export function POSLayout({ children }: { children: React.ReactNode }) {
@@ -26,11 +27,15 @@ export function POSLayout({ children }: { children: React.ReactNode }) {
     return user.features[featureKey] === true;
   };
 
+  const perms = user?.permissions || [];
+  const canAccessDashboard = hasAnyPermission(perms, ["staff:read", "settings:read", "menu:read", "tables:read"]);
+  const backUrl = canAccessDashboard ? "/dashboard" : "/pos/orders";
+
   return (
     <div className="flex h-screen flex-col bg-background">
       <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b px-4">
         <div className="flex items-center gap-4">
-          <Link href="/dashboard">
+          <Link href={backUrl}>
             <Button variant="ghost" size="icon" data-testid="button-back-dashboard">
               <ArrowLeft className="h-5 w-5" />
             </Button>
@@ -44,7 +49,7 @@ export function POSLayout({ children }: { children: React.ReactNode }) {
         </div>
 
         <nav className="flex items-center gap-1">
-          {navItems.filter((item) => isFeatureEnabled(item.feature)).map((item) => (
+          {navItems.filter((item) => isFeatureEnabled(item.feature) && hasPermission(user?.permissions || [], item.permission)).map((item) => (
             <Link key={item.url} href={item.url}>
               <Button
                 variant={(location === item.url || (item.url === "/pos/orders" && location === "/pos")) ? "secondary" : "ghost"}

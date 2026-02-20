@@ -1,5 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
+import { hasPermission, hasAnyPermission } from "@/components/protected-route";
 import { useQuery } from "@tanstack/react-query";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
@@ -43,11 +44,11 @@ import {
 } from "lucide-react";
 
 const navItems = [
-  { title: "Overview", url: "/dashboard", icon: LayoutDashboard, feature: null },
-  { title: "Menu", url: "/dashboard/menu", icon: UtensilsCrossed, feature: null },
-  { title: "Tables", url: "/dashboard/tables", icon: Grid3X3, feature: null },
-  { title: "Staff", url: "/dashboard/staff", icon: Users, feature: null },
-  { title: "Settings", url: "/dashboard/settings", icon: Settings, feature: null },
+  { title: "Overview", url: "/dashboard", icon: LayoutDashboard, feature: null, permission: null },
+  { title: "Menu", url: "/dashboard/menu", icon: UtensilsCrossed, feature: null, permission: "menu:read" },
+  { title: "Tables", url: "/dashboard/tables", icon: Grid3X3, feature: null, permission: "tables:read" },
+  { title: "Staff", url: "/dashboard/staff", icon: Users, feature: null, permission: "staff:read" },
+  { title: "Settings", url: "/dashboard/settings", icon: Settings, feature: null, permission: "settings:read" },
 ];
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -59,6 +60,10 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
     if (!user?.features) return false;
     return user.features[featureKey] === true;
   };
+
+  const perms = user?.permissions || [];
+  const hasPerm = (p: string) => hasPermission(perms, p);
+  const hasAnyPerm = (ps: string[]) => hasAnyPermission(perms, ps);
 
   const { data: tables } = useQuery<any[]>({
     queryKey: ["/api/restaurants", user?.restaurantId, "tables"],
@@ -95,7 +100,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
               <SidebarGroupLabel>Management</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  {navItems.filter((item) => isFeatureEnabled(item.feature)).map((item) => {
+                  {navItems.filter((item) => isFeatureEnabled(item.feature) && (!item.permission || hasPermission(user?.permissions || [], item.permission))).map((item) => {
                     const isTablesWithQr = item.url === "/dashboard/tables" && isFeatureEnabled("qr_ordering");
                     const label = isTablesWithQr ? "Tables & QR" : item.title;
                     const Icon = isTablesWithQr ? QrCode : item.icon;
@@ -122,12 +127,12 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
-            {(isFeatureEnabled("pos") || isFeatureEnabled("kitchen_display")) && (
+            {(isFeatureEnabled("pos") || isFeatureEnabled("kitchen_display")) && hasAnyPerm(["orders:read", "payments:read"]) && (
               <SidebarGroup>
                 <SidebarGroupLabel>Operations</SidebarGroupLabel>
                 <SidebarGroupContent>
                   <SidebarMenu>
-                    {isFeatureEnabled("pos") && (
+                    {isFeatureEnabled("pos") && hasPerm("orders:read") && (
                       <SidebarMenuItem>
                         <SidebarMenuButton asChild isActive={location === "/pos"}>
                           <Link href="/pos">
@@ -137,7 +142,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                         </SidebarMenuButton>
                       </SidebarMenuItem>
                     )}
-                    {isFeatureEnabled("kitchen_display") && (
+                    {isFeatureEnabled("kitchen_display") && hasPerm("orders:read") && (
                       <SidebarMenuItem>
                         <SidebarMenuButton asChild isActive={location === "/pos/kitchen"}>
                           <Link href="/pos/kitchen">

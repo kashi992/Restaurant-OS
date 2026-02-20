@@ -1,4 +1,4 @@
-import { Switch, Route } from "wouter";
+import { Switch, Route, Redirect } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -7,7 +7,7 @@ import { AuthProvider, useAuth } from "@/lib/auth";
 import { ThemeProvider } from "@/lib/theme";
 import { SocketProvider } from "@/lib/socket";
 import { OrderNotificationBanner } from "@/components/order-notification";
-import { ProtectedRoute } from "@/components/protected-route";
+import { ProtectedRoute, hasAnyPermission } from "@/components/protected-route";
 import { AdminLayout } from "@/components/admin-layout";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { POSLayout } from "@/components/pos-layout";
@@ -29,6 +29,23 @@ import OrdersPage from "@/pages/pos/orders";
 import PaymentsPage from "@/pages/pos/payments";
 import QROrderingPage from "@/pages/qr/[token]";
 import OrderStatusPage from "@/pages/qr/status/[orderId]";
+
+export function getDefaultRoute(user: { isSuperAdmin: boolean; permissions: string[]; role: string }): string {
+  if (user.isSuperAdmin) return "/admin";
+
+  const perms = user.permissions;
+  const role = user.role?.toLowerCase();
+
+  if (role === "kitchen") return "/pos/kitchen";
+  if (role === "cashier") return "/pos/payments";
+  if (role === "server") return "/pos/orders";
+
+  if (hasAnyPermission(perms, ["staff:read", "settings:read"])) return "/dashboard";
+  if (hasAnyPermission(perms, ["orders:read"])) return "/pos/orders";
+  if (hasAnyPermission(perms, ["payments:read"])) return "/pos/payments";
+
+  return "/dashboard";
+}
 
 function AppRouter() {
   const { user, isAuthenticated, isLoading } = useAuth();
@@ -77,30 +94,30 @@ function AppRouter() {
         </ProtectedRoute>
       </Route>
 
-      {/* Restaurant Dashboard Routes */}
+      {/* Restaurant Dashboard Routes - permission-gated */}
       <Route path="/dashboard/menu">
-        <ProtectedRoute requireRestaurantAccess>
+        <ProtectedRoute requireRestaurantAccess requiredPermissions={["menu:read"]}>
           <DashboardLayout>
             <MenuManager />
           </DashboardLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/dashboard/tables">
-        <ProtectedRoute requireRestaurantAccess>
+        <ProtectedRoute requireRestaurantAccess requiredPermissions={["tables:read"]}>
           <DashboardLayout>
             <TablesManager />
           </DashboardLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/dashboard/staff">
-        <ProtectedRoute requireRestaurantAccess>
+        <ProtectedRoute requireRestaurantAccess requiredPermissions={["staff:read"]}>
           <DashboardLayout>
             <StaffManager />
           </DashboardLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/dashboard/settings">
-        <ProtectedRoute requireRestaurantAccess>
+        <ProtectedRoute requireRestaurantAccess requiredPermissions={["settings:read"]}>
           <DashboardLayout>
             <SettingsPage />
           </DashboardLayout>
@@ -114,30 +131,30 @@ function AppRouter() {
         </ProtectedRoute>
       </Route>
 
-      {/* POS Routes */}
+      {/* POS Routes - permission-gated */}
       <Route path="/pos/kitchen">
-        <ProtectedRoute requireRestaurantAccess>
+        <ProtectedRoute requireRestaurantAccess requiredPermissions={["orders:read"]}>
           <POSLayout>
             <KitchenDisplay />
           </POSLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/pos/orders">
-        <ProtectedRoute requireRestaurantAccess>
+        <ProtectedRoute requireRestaurantAccess requiredPermissions={["orders:read"]}>
           <POSLayout>
             <OrdersPage />
           </POSLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/pos/payments">
-        <ProtectedRoute requireRestaurantAccess>
+        <ProtectedRoute requireRestaurantAccess requiredPermissions={["payments:read"]}>
           <POSLayout>
             <PaymentsPage />
           </POSLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/pos">
-        <ProtectedRoute requireRestaurantAccess>
+        <ProtectedRoute requireRestaurantAccess requiredPermissions={["orders:read"]}>
           <POSLayout>
             <OrdersPage />
           </POSLayout>
@@ -147,19 +164,7 @@ function AppRouter() {
       {/* Default route based on user role */}
       <Route path="/">
         {isAuthenticated && user ? (
-          user.isSuperAdmin ? (
-            <ProtectedRoute requireSuperAdmin>
-              <AdminLayout>
-                <AdminDashboard />
-              </AdminLayout>
-            </ProtectedRoute>
-          ) : (
-            <ProtectedRoute requireRestaurantAccess>
-              <DashboardLayout>
-                <DashboardHome />
-              </DashboardLayout>
-            </ProtectedRoute>
-          )
+          <Redirect to={getDefaultRoute(user)} />
         ) : (
           <LoginPage />
         )}

@@ -9,6 +9,16 @@ interface ProtectedRouteProps {
   requiredPermissions?: string[];
 }
 
+export function hasPermission(userPermissions: string[], required: string): boolean {
+  if (userPermissions.includes("*")) return true;
+  return userPermissions.includes(required);
+}
+
+export function hasAnyPermission(userPermissions: string[], required: string[]): boolean {
+  if (userPermissions.includes("*")) return true;
+  return required.some((perm) => userPermissions.includes(perm));
+}
+
 export function ProtectedRoute({
   children,
   requireSuperAdmin = false,
@@ -38,10 +48,10 @@ export function ProtectedRoute({
   }
 
   if (requiredPermissions.length > 0) {
-    const hasAllPermissions = requiredPermissions.every(
-      (perm) => user.permissions.includes(perm) || user.isSuperAdmin
+    const hasAll = requiredPermissions.every(
+      (perm) => hasPermission(user.permissions, perm) || user.isSuperAdmin
     );
-    if (!hasAllPermissions) {
+    if (!hasAll) {
       return <Redirect to="/unauthorized" />;
     }
   }
