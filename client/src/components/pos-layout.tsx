@@ -9,6 +9,7 @@ import {
   CreditCard,
   ArrowLeft,
   Utensils,
+  LogOut,
 } from "lucide-react";
 
 const navItems = [
@@ -19,7 +20,7 @@ const navItems = [
 
 export function POSLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
 
   const isFeatureEnabled = (featureKey: string | null) => {
     if (!featureKey) return true;
@@ -69,6 +70,15 @@ export function POSLayout({ children }: { children: React.ReactNode }) {
             {user?.firstName} {user?.lastName}
           </span>
           <ThemeToggle />
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={logout}
+            title="Logout"
+            data-testid="button-logout"
+          >
+            <LogOut className="h-4 w-4" />
+          </Button>
         </div>
       </header>
 
