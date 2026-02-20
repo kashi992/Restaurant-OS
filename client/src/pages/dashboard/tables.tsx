@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -169,6 +169,25 @@ export default function TablesManager() {
     },
   });
 
+  const tableCounts = useMemo(() => {
+    if (!tables) return { total: 0, available: 0, occupied: 0, reserved: 0 };
+    return {
+      total: tables.length,
+      available: tables.filter(t => t.status === "available").length,
+      occupied: tables.filter(t => t.status === "occupied").length,
+      reserved: tables.filter(t => t.status === "reserved").length,
+    };
+  }, [tables]);
+
+  const getStatusDot = (status: string) => {
+    switch (status) {
+      case "available": return "bg-green-500";
+      case "occupied": return "bg-orange-500";
+      case "reserved": return "bg-blue-500";
+      default: return "bg-gray-400";
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "available":
@@ -211,6 +230,28 @@ export default function TablesManager() {
         </Button>
       </div>
 
+      {tables && tables.length > 0 && (
+        <div className="flex flex-wrap items-center gap-4 rounded-lg border bg-card p-3" data-testid="status-legend">
+          <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+            <Grid3X3 className="h-4 w-4" />
+            <span>{tableCounts.total} Tables</span>
+          </div>
+          <div className="h-4 w-px bg-border" />
+          <div className="flex items-center gap-1.5" data-testid="status-available-count">
+            <span className="h-2.5 w-2.5 rounded-full bg-green-500" />
+            <span className="text-sm">Available ({tableCounts.available})</span>
+          </div>
+          <div className="flex items-center gap-1.5" data-testid="status-occupied-count">
+            <span className="h-2.5 w-2.5 rounded-full bg-orange-500" />
+            <span className="text-sm">Occupied ({tableCounts.occupied})</span>
+          </div>
+          <div className="flex items-center gap-1.5" data-testid="status-reserved-count">
+            <span className="h-2.5 w-2.5 rounded-full bg-blue-500" />
+            <span className="text-sm">Reserved ({tableCounts.reserved})</span>
+          </div>
+        </div>
+      )}
+
       {isLoading ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {[1, 2, 3, 4].map((i) => (
@@ -227,11 +268,12 @@ export default function TablesManager() {
       ) : tables && tables.length > 0 ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {tables.map((table) => (
-            <Card key={table.id} data-testid={`card-table-${table.id}`}>
+            <Card key={table.id} className={`relative ${table.status === "occupied" ? "ring-2 ring-orange-500/30" : ""}`} data-testid={`card-table-${table.id}`}>
+              <span className={`absolute top-3 right-12 h-3 w-3 rounded-full ${getStatusDot(table.status)}`} data-testid={`dot-status-${table.id}`} />
               <CardHeader className="flex flex-row items-center justify-between gap-2">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                    <Grid3X3 className="h-5 w-5 text-primary" />
+                  <div className={`flex h-10 w-10 items-center justify-center rounded-full ${table.status === "occupied" ? "bg-orange-500/10" : table.status === "reserved" ? "bg-blue-500/10" : "bg-primary/10"}`}>
+                    <Grid3X3 className={`h-5 w-5 ${table.status === "occupied" ? "text-orange-600" : table.status === "reserved" ? "text-blue-600" : "text-primary"}`} />
                   </div>
                   <div>
                     <CardTitle className="text-lg">Table {table.number}</CardTitle>

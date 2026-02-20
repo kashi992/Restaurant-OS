@@ -181,11 +181,37 @@ interface MenuItem {
   isAvailable: boolean;
 }
 
+interface SelectedModifier {
+  id: string;
+  name: string;
+  price: string;
+  groupId: string;
+  groupName: string;
+}
+
 interface CartItem {
   menuItemId: string;
   name: string;
   price: number;
   quantity: number;
+  modifiers: SelectedModifier[];
+  cartKey: string;
+}
+
+interface ModifierGroupData {
+  id: string;
+  name: string;
+  description: string | null;
+  isRequired: boolean;
+  minSelections: number;
+  maxSelections: number;
+  modifiers: {
+    id: string;
+    name: string;
+    price: string;
+    isDefault: boolean;
+    isAvailable: boolean;
+  }[];
 }
 
 const ORDER_STATUSES = [
@@ -252,6 +278,13 @@ export default function OrdersPage() {
 
   const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set());
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+
+  const [modifierDialogOpen, setModifierDialogOpen] = useState(false);
+  const [modifierItem, setModifierItem] = useState<MenuItem | null>(null);
+  const [modifierGroups, setModifierGroups] = useState<ModifierGroupData[]>([]);
+  const [selectedModifiers, setSelectedModifiers] = useState<Record<string, Set<string>>>({});
+  const [modifierTargetCart, setModifierTargetCart] = useState<"new" | "add">("new");
+  const [loadingModifiers, setLoadingModifiers] = useState(false);
 
   const [payDialogOpen, setPayDialogOpen] = useState(false);
   const [payOrderId, setPayOrderId] = useState<string | null>(null);
@@ -466,6 +499,7 @@ export default function OrdersPage() {
         menuItemId: item.menuItemId,
         quantity: item.quantity,
         notes: "",
+        modifiers: item.modifiers.map(m => ({ id: m.id, name: m.name, price: m.price })),
       }));
       const res = await fetch(`/api/restaurants/${restaurantId}/orders`, {
         method: "POST",
@@ -561,6 +595,7 @@ export default function OrdersPage() {
         menuItemId: item.menuItemId,
         quantity: item.quantity,
         notes: "",
+        modifiers: item.modifiers.map(m => ({ id: m.id, name: m.name, price: m.price })),
       }));
       const res = await fetch(`/api/restaurants/${restaurantId}/orders/${orderId}/items`, {
         method: "POST",
@@ -732,24 +767,100 @@ export default function OrdersPage() {
 
   const payRemainingBalance = (parseFloat(payOrderTotal) - parseFloat(payOrderPaid)).toFixed(2);
 
-  const addToCart = (item: MenuItem, targetCart: "new" | "add") => {
-    const setter = targetCart === "new" ? setCart : setAddItemsCart;
-    setter(prev => {
-      const existing = prev.find(c => c.menuItemId === item.id);
-      if (existing) {
-        return prev.map(c =>
-          c.menuItemId === item.id ? { ...c, quantity: c.quantity + 1 } : c
-        );
+  const openModifierDialog = async (item: MenuItem, targetCart: "new" | "add") => {
+    setModifierItem(item);
+    setModifierTargetCart(targetCart);
+    setLoadingModifiers(true);
+    setModifierDialogOpen(true);
+
+    try {
+      const res = await fetch(`/api/restaurants/${restaurantId}/menu-items/${item.id}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        credentials: "include",
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const groups: ModifierGroupData[] = data.modifierGroups || [];
+        setModifierGroups(groups);
+        const defaults: Record<string, Set<string>> = {};
+        groups.forEach(g => {
+          const defaultMods = g.modifiers.filter(m => m.isDefault && m.isAvailable).map(m => m.id);
+          defaults[g.id] = new Set(defaultMods);
+        });
+        setSelectedModifiers(defaults);
+      } else {
+        setModifierGroups([]);
+        setSelectedModifiers({});
       }
-      return [...prev, { menuItemId: item.id, name: item.name, price: parseFloat(item.price), quantity: 1 }];
+    } catch {
+      setModifierGroups([]);
+      setSelectedModifiers({});
+    } finally {
+      setLoadingModifiers(false);
+    }
+  };
+
+  const toggleModifier = (groupId: string, modifierId: string, maxSelections: number) => {
+    setSelectedModifiers(prev => {
+      const groupSet = new Set(prev[groupId] || []);
+      if (groupSet.has(modifierId)) {
+        groupSet.delete(modifierId);
+      } else {
+        if (maxSelections === 1) {
+          groupSet.clear();
+        } else if (maxSelections > 0 && groupSet.size >= maxSelections) {
+          return prev;
+        }
+        groupSet.add(modifierId);
+      }
+      return { ...prev, [groupId]: groupSet };
     });
   };
 
-  const updateCartQuantity = (menuItemId: string, delta: number, targetCart: "new" | "add") => {
+  const confirmModifiers = () => {
+    if (!modifierItem) return;
+    const mods: SelectedModifier[] = [];
+    modifierGroups.forEach(group => {
+      const selected = selectedModifiers[group.id] || new Set();
+      group.modifiers.forEach(mod => {
+        if (selected.has(mod.id)) {
+          mods.push({ id: mod.id, name: mod.name, price: mod.price, groupId: group.id, groupName: group.name });
+        }
+      });
+    });
+    const modKey = mods.map(m => m.id).sort().join(",");
+    const cartKey = `${modifierItem.id}:${modKey}`;
+    const modPrice = mods.reduce((sum, m) => sum + parseFloat(m.price || "0"), 0);
+    const setter = modifierTargetCart === "new" ? setCart : setAddItemsCart;
+    setter(prev => {
+      const existing = prev.find(c => c.cartKey === cartKey);
+      if (existing) {
+        return prev.map(c => c.cartKey === cartKey ? { ...c, quantity: c.quantity + 1 } : c);
+      }
+      return [...prev, {
+        menuItemId: modifierItem.id,
+        name: modifierItem.name,
+        price: parseFloat(modifierItem.price) + modPrice,
+        quantity: 1,
+        modifiers: mods,
+        cartKey,
+      }];
+    });
+    setModifierDialogOpen(false);
+    setModifierItem(null);
+    setModifierGroups([]);
+    setSelectedModifiers({});
+  };
+
+  const addToCart = (item: MenuItem, targetCart: "new" | "add") => {
+    openModifierDialog(item, targetCart);
+  };
+
+  const updateCartQuantity = (cartKey: string, delta: number, targetCart: "new" | "add") => {
     const setter = targetCart === "new" ? setCart : setAddItemsCart;
     setter(prev =>
       prev.map(item => {
-        if (item.menuItemId === menuItemId) {
+        if (item.cartKey === cartKey) {
           const newQty = item.quantity + delta;
           if (newQty <= 0) return null as any;
           return { ...item, quantity: newQty };
@@ -759,9 +870,9 @@ export default function OrdersPage() {
     );
   };
 
-  const removeFromCart = (menuItemId: string, targetCart: "new" | "add") => {
+  const removeFromCart = (cartKey: string, targetCart: "new" | "add") => {
     const setter = targetCart === "new" ? setCart : setAddItemsCart;
-    setter(prev => prev.filter(item => item.menuItemId !== menuItemId));
+    setter(prev => prev.filter(item => item.cartKey !== cartKey));
   };
 
   const cartTotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
@@ -835,7 +946,7 @@ export default function OrdersPage() {
                       <AccordionContent className="px-4 pb-4">
                         <div className="grid gap-2">
                           {categoryItems.map(item => {
-                            const inCart = currentCart.find(c => c.menuItemId === item.id);
+                            const inCartCount = currentCart.filter(c => c.menuItemId === item.id).reduce((sum, c) => sum + c.quantity, 0);
                             return (
                               <div
                                 key={item.id}
@@ -851,8 +962,8 @@ export default function OrdersPage() {
                                 </div>
                                 <div className="flex items-center gap-3 ml-2">
                                   <span className="font-semibold">${parseFloat(item.price).toFixed(2)}</span>
-                                  {inCart ? (
-                                    <Badge variant="secondary" className="no-default-active-elevate">{inCart.quantity}</Badge>
+                                  {inCartCount > 0 ? (
+                                    <Badge variant="secondary" className="no-default-active-elevate">{inCartCount}</Badge>
                                   ) : (
                                     <Button size="icon" variant="ghost">
                                       <Plus className="h-4 w-4" />
@@ -900,23 +1011,32 @@ export default function OrdersPage() {
             ) : (
               <div className="space-y-3">
                 {currentCart.map(item => (
-                  <Card key={item.menuItemId} className="p-3">
+                  <Card key={item.cartKey} className="p-3">
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
                         <p className="font-medium truncate">{item.name}</p>
+                        {item.modifiers && item.modifiers.length > 0 && (
+                          <div className="mt-0.5">
+                            {item.modifiers.map(mod => (
+                              <p key={mod.id} className="text-xs text-muted-foreground">
+                                + {mod.name} {parseFloat(mod.price) > 0 && `($${parseFloat(mod.price).toFixed(2)})`}
+                              </p>
+                            ))}
+                          </div>
+                        )}
                         <p className="text-sm text-muted-foreground">${item.price.toFixed(2)} each</p>
                       </div>
-                      <Button size="icon" variant="ghost" onClick={() => removeFromCart(item.menuItemId, targetCart)}>
+                      <Button size="icon" variant="ghost" onClick={() => removeFromCart(item.cartKey, targetCart)}>
                         <Trash2 className="h-3.5 w-3.5 text-destructive" />
                       </Button>
                     </div>
                     <div className="flex items-center justify-between mt-2">
                       <div className="flex items-center gap-2">
-                        <Button size="icon" variant="outline" onClick={() => updateCartQuantity(item.menuItemId, -1, targetCart)} data-testid={`button-decrease-${item.menuItemId}`}>
+                        <Button size="icon" variant="outline" onClick={() => updateCartQuantity(item.cartKey, -1, targetCart)} data-testid={`button-decrease-${item.cartKey}`}>
                           <Minus className="h-3 w-3" />
                         </Button>
                         <span className="w-8 text-center font-medium">{item.quantity}</span>
-                        <Button size="icon" variant="outline" onClick={() => updateCartQuantity(item.menuItemId, 1, targetCart)} data-testid={`button-increase-${item.menuItemId}`}>
+                        <Button size="icon" variant="outline" onClick={() => updateCartQuantity(item.cartKey, 1, targetCart)} data-testid={`button-increase-${item.cartKey}`}>
                           <Plus className="h-3 w-3" />
                         </Button>
                       </div>
@@ -972,6 +1092,111 @@ export default function OrdersPage() {
     );
   };
 
+  const renderModifierDialog = () => (
+    <Dialog open={modifierDialogOpen} onOpenChange={(open) => {
+      if (!open) {
+        setModifierDialogOpen(false);
+        setModifierItem(null);
+        setModifierGroups([]);
+        setSelectedModifiers({});
+      }
+    }}>
+      <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle data-testid="text-modifier-dialog-title">
+            {modifierItem?.name}
+          </DialogTitle>
+          <DialogDescription>
+            ${modifierItem ? parseFloat(modifierItem.price).toFixed(2) : "0.00"} · Select options below
+          </DialogDescription>
+        </DialogHeader>
+        {loadingModifiers ? (
+          <div className="space-y-3 py-4">
+            {[1, 2].map(i => <Skeleton key={i} className="h-20 w-full" />)}
+          </div>
+        ) : modifierGroups.length === 0 ? (
+          <div className="py-4 text-center text-muted-foreground">
+            <p>No modifiers available for this item.</p>
+            <Button className="mt-4" onClick={confirmModifiers} data-testid="button-add-no-modifiers">
+              <Plus className="mr-2 h-4 w-4" />
+              Add to Order
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {modifierGroups.map(group => {
+              const groupSelections = selectedModifiers[group.id] || new Set();
+              const minNotMet = group.isRequired || group.minSelections > 0;
+              const minRequired = Math.max(group.minSelections, group.isRequired ? 1 : 0);
+              const isMissing = minNotMet && groupSelections.size < minRequired;
+              return (
+                <div key={group.id} className="space-y-2" data-testid={`modifier-group-${group.id}`}>
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-medium text-sm">{group.name}</h4>
+                    <div className="flex items-center gap-2">
+                      {minNotMet && (
+                        <Badge variant={isMissing ? "destructive" : "secondary"} className="text-xs no-default-active-elevate">
+                          {isMissing ? `Select ${minRequired}` : "Required"}
+                        </Badge>
+                      )}
+                      <span className="text-xs text-muted-foreground">
+                        {group.maxSelections === 1 ? "Choose 1" : group.maxSelections === -1 ? "Choose any" : `Up to ${group.maxSelections}`}
+                      </span>
+                    </div>
+                  </div>
+                  {group.description && (
+                    <p className="text-xs text-muted-foreground">{group.description}</p>
+                  )}
+                  <div className="space-y-1">
+                    {group.modifiers.filter(m => m.isAvailable).map(mod => {
+                      const isSelected = groupSelections.has(mod.id);
+                      const atMax = group.maxSelections > 0 && groupSelections.size >= group.maxSelections && !isSelected;
+                      return (
+                        <div
+                          key={mod.id}
+                          className={`flex items-center justify-between p-2.5 rounded-md border cursor-pointer transition-colors ${isSelected ? "border-primary bg-primary/5" : atMax ? "opacity-50 cursor-not-allowed" : "hover:bg-muted/50"}`}
+                          onClick={() => !atMax && toggleModifier(group.id, mod.id, group.maxSelections)}
+                          data-testid={`modifier-option-${mod.id}`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className={`h-4 w-4 rounded-${group.maxSelections === 1 ? "full" : "sm"} border-2 flex items-center justify-center ${isSelected ? "border-primary bg-primary" : "border-muted-foreground/30"}`}>
+                              {isSelected && <div className="h-1.5 w-1.5 rounded-full bg-primary-foreground" />}
+                            </div>
+                            <span className="text-sm">{mod.name}</span>
+                          </div>
+                          {parseFloat(mod.price) > 0 && (
+                            <span className="text-sm text-muted-foreground">+${parseFloat(mod.price).toFixed(2)}</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+            {(() => {
+              const hasUnmetRequirements = modifierGroups.some(group => {
+                const min = Math.max(group.minSelections, group.isRequired ? 1 : 0);
+                return min > 0 && (selectedModifiers[group.id]?.size || 0) < min;
+              });
+              return (
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setModifierDialogOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button onClick={confirmModifiers} disabled={hasUnmetRequirements} data-testid="button-confirm-modifiers">
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add to Order
+                  </Button>
+                </DialogFooter>
+              );
+            })()}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+
   if (isNewOrder) {
     return (
       <div className="h-full flex flex-col">
@@ -1000,6 +1225,7 @@ export default function OrdersPage() {
           )}
         </div>
         {renderMenuPicker("new")}
+        {renderModifierDialog()}
       </div>
     );
   }
@@ -1017,6 +1243,7 @@ export default function OrdersPage() {
           </div>
         </div>
         {renderMenuPicker("add")}
+        {renderModifierDialog()}
       </div>
     );
   }

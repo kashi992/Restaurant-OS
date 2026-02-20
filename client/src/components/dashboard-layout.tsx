@@ -67,8 +67,6 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
     "--sidebar-width": "16rem",
     "--sidebar-width-icon": "3rem",
   };
-  console.log("USER OBJECTT:", user);
-
 
   return (
     <SidebarProvider style={style as React.CSSProperties}>

@@ -18,7 +18,7 @@ A full-stack, multi-tenant restaurant Point of Sale (POS) system with integrated
 - **Authentication & Authorization**: Implements JWT-based authentication with access and refresh tokens, refresh token revocation, and role-based access control (RBAC) supporting super admin and various restaurant staff roles.
 - **Feature Gating**: A robust feature gating engine uses middleware with caching to enforce hard permissions and soft toggles.
 - **Order Management**: Tracks customer orders with detailed line items, status tracking, and an audit trail.
-- **Real-time Updates**: Socket.IO enables real-time updates for order notifications, allowing clients to join tenant and kitchen-specific rooms.
+- **Real-time Updates**: Socket.IO enables real-time updates for order notifications, allowing clients to join tenant and kitchen-specific rooms. Frontend Socket.IO client (`client/src/lib/socket.tsx`) connects authenticated users to their restaurant's rooms and auto-invalidates order/table/stats queries on events. A 3-second notification banner (`client/src/components/order-notification.tsx`) shows for new orders.
 - **UI/UX Decisions**: Material Design 3 with a warm orange color scheme is used across four frontend applications: Super Admin, Restaurant Dashboard, POS, and QR Customer UI.
 - **Frontend Applications**: Four distinct applications cater to different user roles, sharing core infrastructure like AuthProvider and API helpers.
 
