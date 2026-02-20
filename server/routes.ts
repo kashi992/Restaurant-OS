@@ -2204,6 +2204,15 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
           return res.status(404).json({ error: "Staff member not found" });
         }
 
+        // Prevent self-deletion
+        const currentUserId = (req as any).user?.id;
+        if (member.userId === currentUserId) {
+          return res.status(403).json({
+            error: "Forbidden",
+            message: "You cannot delete your own account"
+          });
+        }
+
         const [earliestMember] = await db
           .select({ id: restaurantUsers.id })
           .from(restaurantUsers)

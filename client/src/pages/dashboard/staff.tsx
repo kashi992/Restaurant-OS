@@ -247,6 +247,11 @@ export default function StaffManager() {
                         Default
                       </Badge>
                     )}
+                    {member.userId === user?.id && (
+                      <Badge variant="outline" className="text-xs" data-testid={`badge-you-${member.id}`}>
+                        You
+                      </Badge>
+                    )}
                   </div>
                   <CardDescription className="flex items-center gap-1 mt-1">
                     <Mail className="h-3 w-3 shrink-0" />
@@ -262,7 +267,7 @@ export default function StaffManager() {
                       <Badge variant="secondary">Inactive</Badge>
                     )}
                   </div>
-                  {!member.isDefault && (
+                  {!member.isDefault && member.userId !== user?.id && (
                     <Button
                       variant="ghost"
                       size="icon"
