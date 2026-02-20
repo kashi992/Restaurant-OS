@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -36,6 +36,7 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
+  FormDescription,
 } from "@/components/ui/form";
 import {
   Select,
@@ -52,6 +53,7 @@ import {
   Loader2,
   Trash2,
   Shield,
+  Pencil,
 } from "lucide-react";
 
 interface StaffMember {
@@ -83,6 +85,16 @@ const staffSchema = z.object({
   roleId: z.string().min(1, "Role is required"),
 });
 
+const editStaffSchema = z.object({
+  email: z.string().email("Valid email required"),
+  firstName: z.string().min(1, "First name required"),
+  lastName: z.string().min(1, "Last name required"),
+  password: z.string().optional().refine((val) => !val || val.length >= 8, {
+    message: "Password must be at least 8 characters",
+  }),
+  roleId: z.string().min(1, "Role is required"),
+});
+
 const ROLE_COLORS: Record<string, string> = {
   admin: "bg-purple-500/10 text-purple-600 dark:text-purple-400",
   manager: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
@@ -97,6 +109,7 @@ export default function StaffManager() {
   const restaurantId = user?.restaurantId;
 
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<StaffMember | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<StaffMember | null>(null);
 
   const { data: staff, isLoading } = useQuery<StaffMember[]>({
@@ -127,6 +140,8 @@ export default function StaffManager() {
     enabled: !!accessToken && !!restaurantId,
   });
 
+  const isCurrentUserDefault = staff?.find(s => s.userId === user?.id)?.isDefault ?? false;
+
   const form = useForm({
     resolver: zodResolver(staffSchema),
     defaultValues: {
@@ -137,6 +152,29 @@ export default function StaffManager() {
       roleId: "",
     },
   });
+
+  const editForm = useForm({
+    resolver: zodResolver(editStaffSchema),
+    defaultValues: {
+      email: "",
+      firstName: "",
+      lastName: "",
+      password: "",
+      roleId: "",
+    },
+  });
+
+  useEffect(() => {
+    if (editTarget) {
+      editForm.reset({
+        email: editTarget.email,
+        firstName: editTarget.firstName,
+        lastName: editTarget.lastName,
+        password: "",
+        roleId: editTarget.roleId,
+      });
+    }
+  }, [editTarget]);
 
   const createStaffMutation = useMutation({
     mutationFn: async (data: z.infer<typeof staffSchema>) => {
@@ -160,6 +198,43 @@ export default function StaffManager() {
       setDialogOpen(false);
       form.reset();
       toast({ title: "Staff member added successfully" });
+    },
+    onError: (error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const updateStaffMutation = useMutation({
+    mutationFn: async ({ staffId, data }: { staffId: string; data: z.infer<typeof editStaffSchema> }) => {
+      const payload: Record<string, any> = {
+        firstName: data.firstName,
+        lastName: data.lastName,
+        email: data.email,
+        roleId: data.roleId,
+      };
+      if (data.password && data.password.length > 0) {
+        payload.password = data.password;
+      }
+      const res = await fetch(`/api/restaurants/${restaurantId}/staff/${staffId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: "Failed to update staff member" }));
+        throw new Error(err.message || "Failed to update staff member");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "staff"] });
+      setEditTarget(null);
+      editForm.reset();
+      toast({ title: "Staff member updated successfully" });
     },
     onError: (error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -267,16 +342,28 @@ export default function StaffManager() {
                       <Badge variant="secondary">Inactive</Badge>
                     )}
                   </div>
-                  {!member.isDefault && member.userId !== user?.id && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setDeleteTarget(member)}
-                      data-testid={`button-delete-staff-${member.id}`}
-                    >
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
-                  )}
+                  <div className="flex items-center gap-1">
+                    {isCurrentUserDefault && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setEditTarget(member)}
+                        data-testid={`button-edit-staff-${member.id}`}
+                      >
+                        <Pencil className="h-4 w-4 text-muted-foreground" />
+                      </Button>
+                    )}
+                    {!member.isDefault && member.userId !== user?.id && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setDeleteTarget(member)}
+                        data-testid={`button-delete-staff-${member.id}`}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -392,6 +479,112 @@ export default function StaffManager() {
                 <Button type="submit" disabled={createStaffMutation.isPending} data-testid="button-save-staff">
                   {createStaffMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   Add Staff
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!editTarget} onOpenChange={(open) => { if (!open) { setEditTarget(null); editForm.reset(); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Staff Member</DialogTitle>
+            <DialogDescription>
+              Update {editTarget?.firstName} {editTarget?.lastName}'s account details.
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...editForm}>
+            <form onSubmit={editForm.handleSubmit((data) => editTarget && updateStaffMutation.mutate({ staffId: editTarget.id, data }))} className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <FormField
+                  control={editForm.control}
+                  name="firstName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>First Name</FormLabel>
+                      <FormControl>
+                        <Input placeholder="John" data-testid="input-edit-firstname" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={editForm.control}
+                  name="lastName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Last Name</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Doe" data-testid="input-edit-lastname" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              <FormField
+                control={editForm.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Email</FormLabel>
+                    <FormControl>
+                      <Input type="email" placeholder="john@restaurant.com" data-testid="input-edit-email" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={editForm.control}
+                name="password"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>New Password</FormLabel>
+                    <FormControl>
+                      <Input type="password" placeholder="Leave blank to keep current" data-testid="input-edit-password" {...field} />
+                    </FormControl>
+                    <FormDescription>Leave empty to keep the current password.</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={editForm.control}
+                name="roleId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Role</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger data-testid="select-edit-role">
+                          <SelectValue placeholder="Select role" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {(rolesData || []).map((role) => (
+                          <SelectItem key={role.id} value={role.id}>
+                            <span className="font-medium capitalize">{role.name}</span>
+                            {role.description && (
+                              <span className="text-xs text-muted-foreground ml-2">- {role.description}</span>
+                            )}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => { setEditTarget(null); editForm.reset(); }}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={updateStaffMutation.isPending} data-testid="button-update-staff">
+                  {updateStaffMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Save Changes
                 </Button>
               </DialogFooter>
             </form>

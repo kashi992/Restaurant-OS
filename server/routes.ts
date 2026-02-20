@@ -2256,9 +2256,8 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
     async (req, res) => {
       try {
         const { restaurantId, staffId } = req.params;
-        const { roleId, pin, isActive } = req.body;
+        const { roleId, pin, isActive, firstName, lastName, email, password } = req.body;
 
-        // Verify staff member belongs to this restaurant
         const [existingStaff] = await db
           .select()
           .from(restaurantUsers)
@@ -2275,7 +2274,25 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
           });
         }
 
-        // If changing role, verify it belongs to this restaurant
+        const hasUserLevelChanges = firstName !== undefined || lastName !== undefined || email !== undefined || password !== undefined;
+
+        if (hasUserLevelChanges) {
+          const currentUserId = (req as any).user?.id;
+          const [earliestMember] = await db
+            .select({ id: restaurantUsers.id, userId: restaurantUsers.userId })
+            .from(restaurantUsers)
+            .where(eq(restaurantUsers.restaurantId, restaurantId))
+            .orderBy(restaurantUsers.createdAt)
+            .limit(1);
+
+          if (!earliestMember || earliestMember.userId !== currentUserId) {
+            return res.status(403).json({
+              error: "Forbidden",
+              message: "Only the default admin can edit staff account details"
+            });
+          }
+        }
+
         if (roleId) {
           const [role] = await db
             .select()
@@ -2294,18 +2311,54 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
           }
         }
 
-        const updates: Partial<typeof existingStaff> = {};
-        if (roleId !== undefined) updates.roleId = roleId;
-        if (pin !== undefined) updates.pin = pin;
-        if (isActive !== undefined) updates.isActive = isActive;
+        if (email) {
+          const [existingUser] = await db
+            .select({ id: users.id })
+            .from(users)
+            .where(and(
+              eq(users.email, email.toLowerCase()),
+              sql`${users.id} != ${existingStaff.userId}`
+            ))
+            .limit(1);
 
-        const [updated] = await db
-          .update(restaurantUsers)
-          .set({ ...updates, updatedAt: new Date() })
-          .where(eq(restaurantUsers.id, staffId))
-          .returning();
+          if (existingUser) {
+            return res.status(409).json({
+              error: "Conflict",
+              message: "Email is already in use by another account"
+            });
+          }
+        }
 
-        res.json({ staff: updated });
+        const restaurantUserUpdates: Partial<typeof existingStaff> = {};
+        if (roleId !== undefined) restaurantUserUpdates.roleId = roleId;
+        if (pin !== undefined) restaurantUserUpdates.pin = pin;
+        if (isActive !== undefined) restaurantUserUpdates.isActive = isActive;
+
+        if (Object.keys(restaurantUserUpdates).length > 0) {
+          await db
+            .update(restaurantUsers)
+            .set({ ...restaurantUserUpdates, updatedAt: new Date() })
+            .where(eq(restaurantUsers.id, staffId));
+        }
+
+        if (hasUserLevelChanges) {
+          const userUpdates: Record<string, any> = {};
+          if (firstName !== undefined) userUpdates.firstName = firstName;
+          if (lastName !== undefined) userUpdates.lastName = lastName;
+          if (email !== undefined) userUpdates.email = email.toLowerCase();
+          if (password) {
+            userUpdates.password = await bcrypt.hash(password, 10);
+          }
+
+          if (Object.keys(userUpdates).length > 0) {
+            await db
+              .update(users)
+              .set(userUpdates)
+              .where(eq(users.id, existingStaff.userId));
+          }
+        }
+
+        res.json({ message: "Staff member updated successfully" });
       } catch (error) {
         console.error("Update staff error:", error);
         res.status(500).json({
