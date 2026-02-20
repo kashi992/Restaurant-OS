@@ -83,6 +83,7 @@ import {
   MapPin,
 } from "lucide-react";
 import { useLocation } from "wouter";
+import { hasPermission } from "@/components/protected-route";
 
 function parseUTCDate(dateString: string): Date {
   if (!dateString) return new Date();
@@ -232,9 +233,13 @@ export default function OrdersPage() {
   const [, setLocation] = useLocation();
   const restaurantId = user?.restaurantId;
 
+  const canCreateOrders = hasPermission(user?.permissions || [], "orders:create");
+  const canDeleteOrders = hasPermission(user?.permissions || [], "orders:delete");
+  const canProcessPayments = hasPermission(user?.permissions || [], "payments:create");
+
   const urlParams = new URLSearchParams(window.location.search);
   const tableId = urlParams.get("table");
-  const isNewOrder = urlParams.get("new") === "true";
+  const isNewOrder = canCreateOrders && urlParams.get("new") === "true";
   const viewOrderId = urlParams.get("order");
   const initialTab = urlParams.get("tab") || "active";
   const highlightOrderId = urlParams.get("highlight");
@@ -1274,10 +1279,12 @@ export default function OrdersPage() {
           <h1 className="text-2xl font-semibold" data-testid="text-page-title">Orders</h1>
           <p className="text-muted-foreground">Manage and track all orders</p>
         </div>
-        <Button onClick={() => setLocation("/pos/orders?new=true")} data-testid="button-new-order">
-          <Plus className="mr-2 h-4 w-4" />
-          New Order
-        </Button>
+        {canCreateOrders && (
+          <Button onClick={() => setLocation("/pos/orders?new=true")} data-testid="button-new-order">
+            <Plus className="mr-2 h-4 w-4" />
+            New Order
+          </Button>
+        )}
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
@@ -1346,7 +1353,7 @@ export default function OrdersPage() {
                             )}
                           </Button>
                         )}
-                        {order.status === "served" && (
+                        {order.status === "served" && canProcessPayments && (
                           <Button
                             size="sm"
                             onClick={() => openPaymentDialog(order)}
@@ -1356,16 +1363,18 @@ export default function OrdersPage() {
                             Pay & Complete
                           </Button>
                         )}
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="text-destructive"
-                          onClick={() => openCancelDialog(order.id)}
-                          data-testid={`button-cancel-order-${order.id}`}
-                        >
-                          <XCircle className="mr-1 h-3.5 w-3.5" />
-                          Cancel
-                        </Button>
+                        {canDeleteOrders && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-destructive"
+                            onClick={() => openCancelDialog(order.id)}
+                            data-testid={`button-cancel-order-${order.id}`}
+                          >
+                            <XCircle className="mr-1 h-3.5 w-3.5" />
+                            Cancel
+                          </Button>
+                        )}
                       </div>
                     </CardContent>
                   </Card>
@@ -1378,12 +1387,14 @@ export default function OrdersPage() {
                 <ClipboardList className="h-12 w-12 text-muted-foreground" />
                 <h3 className="mt-4 text-lg font-medium">No active orders</h3>
                 <p className="text-muted-foreground">
-                  Start a new order using the button above.
+                  {canCreateOrders ? "Start a new order using the button above." : "No active orders at the moment."}
                 </p>
-                <Button className="mt-4" onClick={() => setLocation("/pos/orders?new=true")} data-testid="button-start-new-order">
-                  <Plus className="mr-2 h-4 w-4" />
-                  New Order
-                </Button>
+                {canCreateOrders && (
+                  <Button className="mt-4" onClick={() => setLocation("/pos/orders?new=true")} data-testid="button-start-new-order">
+                    <Plus className="mr-2 h-4 w-4" />
+                    New Order
+                  </Button>
+                )}
               </CardContent>
             </Card>
           )}
@@ -1405,7 +1416,7 @@ export default function OrdersPage() {
                 </SelectContent>
               </Select>
             </div>
-            {selectedOrders.size > 0 && (
+            {canDeleteOrders && selectedOrders.size > 0 && (
               <Button
                 variant="destructive"
                 size="sm"
@@ -1427,13 +1438,15 @@ export default function OrdersPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-10">
-                        <Checkbox
-                          checked={completedOrders.length > 0 && selectedOrders.size === completedOrders.length}
-                          onCheckedChange={toggleSelectAll}
-                          data-testid="checkbox-select-all"
-                        />
-                      </TableHead>
+                      {canDeleteOrders && (
+                        <TableHead className="w-10">
+                          <Checkbox
+                            checked={completedOrders.length > 0 && selectedOrders.size === completedOrders.length}
+                            onCheckedChange={toggleSelectAll}
+                            data-testid="checkbox-select-all"
+                          />
+                        </TableHead>
+                      )}
                       <TableHead className="cursor-pointer select-none" onClick={() => handleSort("orderNumber")} data-testid="sort-order-number">
                         <span className="flex items-center">Order # <SortIcon column="orderNumber" /></span>
                       </TableHead>
@@ -1461,13 +1474,15 @@ export default function OrdersPage() {
                   <TableBody>
                     {completedOrders.map(order => (
                       <TableRow key={order.id} data-testid={`history-row-${order.id}`} data-order-id={order.id} className={highlightedOrder === order.id ? "bg-primary/10" : ""}>
-                        <TableCell>
-                          <Checkbox
-                            checked={selectedOrders.has(order.id)}
-                            onCheckedChange={() => toggleOrderSelection(order.id)}
-                            data-testid={`checkbox-order-${order.id}`}
-                          />
-                        </TableCell>
+                        {canDeleteOrders && (
+                          <TableCell>
+                            <Checkbox
+                              checked={selectedOrders.has(order.id)}
+                              onCheckedChange={() => toggleOrderSelection(order.id)}
+                              data-testid={`checkbox-order-${order.id}`}
+                            />
+                          </TableCell>
+                        )}
                         <TableCell className="font-medium">{order.orderNumber}</TableCell>
                         <TableCell>{order.tableNumber ? `Table ${order.tableNumber}` : order.customerName || "Counter"}</TableCell>
                         <TableCell>{getStatusBadge(order.status)}</TableCell>
@@ -1697,17 +1712,19 @@ export default function OrdersPage() {
 
                 {!["completed", "cancelled"].includes(orderDetailData.order.status) && (
                   <div className="flex gap-2 flex-wrap">
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setDetailDialogOpen(false);
-                        setAddingItemsToOrder(true);
-                      }}
-                      data-testid="button-add-more-items"
-                    >
-                      <Plus className="mr-2 h-4 w-4" />
-                      Add More Items
-                    </Button>
+                    {canCreateOrders && (
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setDetailDialogOpen(false);
+                          setAddingItemsToOrder(true);
+                        }}
+                        data-testid="button-add-more-items"
+                      >
+                        <Plus className="mr-2 h-4 w-4" />
+                        Add More Items
+                      </Button>
+                    )}
                     {getNextStatus(orderDetailData.order.status) && getNextStatus(orderDetailData.order.status) !== "completed" && (
                       <Button
                         onClick={() => updateStatusMutation.mutate({
@@ -1723,7 +1740,7 @@ export default function OrdersPage() {
                         Mark {ORDER_STATUSES.find(s => s.value === getNextStatus(orderDetailData.order.status))?.label}
                       </Button>
                     )}
-                    {orderDetailData.order.status === "served" && (
+                    {orderDetailData.order.status === "served" && canProcessPayments && (
                       <Button
                         variant="default"
                         onClick={() => openPaymentDialog(orderDetailData.order)}
@@ -1733,15 +1750,17 @@ export default function OrdersPage() {
                         Pay & Complete
                       </Button>
                     )}
-                    <Button
-                      variant="outline"
-                      className="text-destructive"
-                      onClick={() => openCancelDialog(orderDetailData.order.id)}
-                      data-testid="button-cancel-order-detail"
-                    >
-                      <XCircle className="mr-2 h-4 w-4" />
-                      Cancel Order
-                    </Button>
+                    {canDeleteOrders && (
+                      <Button
+                        variant="outline"
+                        className="text-destructive"
+                        onClick={() => openCancelDialog(orderDetailData.order.id)}
+                        data-testid="button-cancel-order-detail"
+                      >
+                        <XCircle className="mr-2 h-4 w-4" />
+                        Cancel Order
+                      </Button>
+                    )}
                   </div>
                 )}
 
