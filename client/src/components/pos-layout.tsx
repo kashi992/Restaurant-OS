@@ -12,9 +12,9 @@ import {
 } from "lucide-react";
 
 const navItems = [
-  { title: "Orders", url: "/pos/orders", icon: ClipboardList, feature: null, permission: "orders:read" },
-  { title: "Kitchen", url: "/pos/kitchen", icon: ChefHat, feature: "kitchen_display", permission: "orders:read" },
-  { title: "Payments", url: "/pos/payments", icon: CreditCard, feature: null, permission: "payments:read" },
+  { title: "Orders", url: "/pos/orders", icon: ClipboardList, feature: null, permission: "orders:read", roles: null },
+  { title: "Kitchen", url: "/pos/kitchen", icon: ChefHat, feature: "kitchen_display", permission: "orders:read", roles: ["admin", "manager", "kitchen"] },
+  { title: "Payments", url: "/pos/payments", icon: CreditCard, feature: null, permission: "payments:read", roles: null },
 ];
 
 export function POSLayout({ children }: { children: React.ReactNode }) {
@@ -28,8 +28,9 @@ export function POSLayout({ children }: { children: React.ReactNode }) {
   };
 
   const perms = user?.permissions || [];
-  const canAccessDashboard = hasAnyPermission(perms, ["staff:read", "settings:read", "menu:read", "tables:read"]);
-  const backUrl = canAccessDashboard ? "/dashboard" : "/pos/orders";
+  const userRole = user?.role?.toLowerCase() || "";
+  const isAdminOrManager = ["admin", "manager"].includes(userRole) || perms.includes("*");
+  const backUrl = isAdminOrManager ? "/dashboard" : "/pos/orders";
 
   return (
     <div className="flex h-screen flex-col bg-background">
@@ -49,7 +50,7 @@ export function POSLayout({ children }: { children: React.ReactNode }) {
         </div>
 
         <nav className="flex items-center gap-1">
-          {navItems.filter((item) => isFeatureEnabled(item.feature) && hasPermission(user?.permissions || [], item.permission)).map((item) => (
+          {navItems.filter((item) => isFeatureEnabled(item.feature) && hasPermission(user?.permissions || [], item.permission) && (!item.roles || item.roles.includes(userRole) || perms.includes("*"))).map((item) => (
             <Link key={item.url} href={item.url}>
               <Button
                 variant={(location === item.url || (item.url === "/pos/orders" && location === "/pos")) ? "secondary" : "ghost"}

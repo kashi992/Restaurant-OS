@@ -124,7 +124,7 @@ function AppRouter() {
         </ProtectedRoute>
       </Route>
       <Route path="/dashboard">
-        <ProtectedRoute requireRestaurantAccess>
+        <ProtectedRoute requireRestaurantAccess requiredPermissions={["staff:read"]}>
           <DashboardLayout>
             <DashboardHome />
           </DashboardLayout>
@@ -133,7 +133,7 @@ function AppRouter() {
 
       {/* POS Routes - permission-gated */}
       <Route path="/pos/kitchen">
-        <ProtectedRoute requireRestaurantAccess requiredPermissions={["orders:read"]}>
+        <ProtectedRoute requireRestaurantAccess requiredPermissions={["orders:read"]} allowedRoles={["admin", "manager", "kitchen"]}>
           <POSLayout>
             <KitchenDisplay />
           </POSLayout>

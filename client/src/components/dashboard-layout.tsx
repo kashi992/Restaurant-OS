@@ -44,7 +44,7 @@ import {
 } from "lucide-react";
 
 const navItems = [
-  { title: "Overview", url: "/dashboard", icon: LayoutDashboard, feature: null, permission: null },
+  { title: "Overview", url: "/dashboard", icon: LayoutDashboard, feature: null, permission: "staff:read" },
   { title: "Menu", url: "/dashboard/menu", icon: UtensilsCrossed, feature: null, permission: "menu:read" },
   { title: "Tables", url: "/dashboard/tables", icon: Grid3X3, feature: null, permission: "tables:read" },
   { title: "Staff", url: "/dashboard/staff", icon: Users, feature: null, permission: "staff:read" },

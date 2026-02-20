@@ -7,6 +7,7 @@ interface ProtectedRouteProps {
   requireSuperAdmin?: boolean;
   requireRestaurantAccess?: boolean;
   requiredPermissions?: string[];
+  allowedRoles?: string[];
 }
 
 export function hasPermission(userPermissions: string[], required: string): boolean {
@@ -24,6 +25,7 @@ export function ProtectedRoute({
   requireSuperAdmin = false,
   requireRestaurantAccess = false,
   requiredPermissions = [],
+  allowedRoles,
 }: ProtectedRouteProps) {
   const { user, isLoading, isAuthenticated } = useAuth();
 
@@ -52,6 +54,14 @@ export function ProtectedRoute({
       (perm) => hasPermission(user.permissions, perm) || user.isSuperAdmin
     );
     if (!hasAll) {
+      return <Redirect to="/unauthorized" />;
+    }
+  }
+
+  if (allowedRoles && allowedRoles.length > 0) {
+    const userRole = user.role?.toLowerCase() || "";
+    const hasWildcard = user.permissions.includes("*");
+    if (!hasWildcard && !user.isSuperAdmin && !allowedRoles.includes(userRole)) {
       return <Redirect to="/unauthorized" />;
     }
   }
