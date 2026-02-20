@@ -1,7 +1,9 @@
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
+import { useQuery } from "@tanstack/react-query";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -52,12 +54,18 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const { user, logout } = useAuth();
   
-  // Check if a feature is enabled (defaults to true if no feature requirement or no features loaded)
   const isFeatureEnabled = (featureKey: string | null) => {
     if (!featureKey) return true;
     if (!user?.features) return false;
     return user.features[featureKey] === true;
   };
+
+  const { data: tables } = useQuery<any[]>({
+    queryKey: ["/api/restaurants", user?.restaurantId, "tables"],
+    enabled: !!user?.restaurantId,
+  });
+
+  const tableOccupiedCount = tables?.filter((t: any) => t.status === "occupied" || t.status === "reserved").length || 0;
 
   const handleLogout = async () => {
     await logout();
@@ -91,6 +99,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                     const isTablesWithQr = item.url === "/dashboard/tables" && isFeatureEnabled("qr_ordering");
                     const label = isTablesWithQr ? "Tables & QR" : item.title;
                     const Icon = isTablesWithQr ? QrCode : item.icon;
+                    const isTablesItem = item.url === "/dashboard/tables";
                     return (
                       <SidebarMenuItem key={item.title}>
                         <SidebarMenuButton
@@ -100,6 +109,11 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                           <Link href={item.url}>
                             <Icon className="h-4 w-4" />
                             <span>{label}</span>
+                            {isTablesItem && tableOccupiedCount > 0 && (
+                              <Badge variant="secondary" className="ml-auto text-xs h-5 min-w-[1.25rem] flex items-center justify-center px-1.5 no-default-active-elevate" data-testid="badge-tables-occupied-count">
+                                {tableOccupiedCount}
+                              </Badge>
+                            )}
                           </Link>
                         </SidebarMenuButton>
                       </SidebarMenuItem>

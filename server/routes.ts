@@ -4858,6 +4858,14 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
             notes: "Order placed via QR code",
           });
 
+        // Update table status to occupied if a table was assigned
+        if (finalTableId) {
+          await db
+            .update(diningTables)
+            .set({ status: "occupied", updatedAt: new Date() })
+            .where(eq(diningTables.id, finalTableId));
+        }
+
         // Emit socket event for real-time updates
         const io = req.app.get("io") as SocketIOServer;
         io.to(getTenantRoom(restaurantId)).emit("order:created", {
