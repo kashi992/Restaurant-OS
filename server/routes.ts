@@ -1031,7 +1031,7 @@ export async function registerRoutes(
         { name: "manager", description: "Manage staff and settings", permissions: ["staff:read","staff:create","staff:update","orders:read","orders:create","orders:update","orders:delete","menu:read","menu:create","menu:update","menu:delete","tables:read","tables:create","tables:update","tables:delete","settings:read","settings:update","payments:read","payments:create"] },
         { name: "server", description: "Take orders and manage tables", permissions: ["orders:read","orders:create","orders:update","tables:read","tables:update","menu:read","payments:read"] },
         { name: "kitchen", description: "View and manage kitchen orders", permissions: ["orders:read","orders:update","menu:read"] },
-        { name: "cashier", description: "Process payments", permissions: ["orders:read","orders:update","payments:read","payments:create","tables:read"] },
+        { name: "cashier", description: "Process payments", permissions: ["orders:read","payments:read","payments:create","tables:read"] },
       ];
       for (const r of defaultStaffRoles) {
         await db.insert(roles).values({

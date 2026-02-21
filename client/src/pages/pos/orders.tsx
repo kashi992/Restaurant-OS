@@ -234,6 +234,7 @@ export default function OrdersPage() {
   const restaurantId = user?.restaurantId;
 
   const canCreateOrders = hasPermission(user?.permissions || [], "orders:create");
+  const canUpdateOrders = hasPermission(user?.permissions || [], "orders:update");
   const canDeleteOrders = hasPermission(user?.permissions || [], "orders:delete");
   const canProcessPayments = hasPermission(user?.permissions || [], "payments:create");
 
@@ -1339,7 +1340,7 @@ export default function OrdersPage() {
                           <Eye className="mr-1 h-3.5 w-3.5" />
                           View
                         </Button>
-                        {nextStatus && nextStatus !== "completed" && (
+                        {nextStatus && nextStatus !== "completed" && canUpdateOrders && (
                           <Button
                             size="sm"
                             onClick={() => updateStatusMutation.mutate({ orderId: order.id, status: nextStatus })}
@@ -1560,7 +1561,7 @@ export default function OrdersPage() {
               </DialogHeader>
 
               <div className="space-y-6 mt-4">
-                {!["completed", "cancelled"].includes(orderDetailData.order.status) && (
+                {!["completed", "cancelled"].includes(orderDetailData.order.status) && canUpdateOrders && (
                   <div className="rounded-md border p-4 space-y-3">
                     <div className="flex items-center gap-2">
                       <MapPin className="h-4 w-4 text-muted-foreground" />
@@ -1647,7 +1648,7 @@ export default function OrdersPage() {
                             </div>
                             <div className="flex items-center gap-2 ml-2">
                               <span className="font-semibold">${parseFloat(item.totalPrice).toFixed(2)}</span>
-                              {!["completed", "cancelled"].includes(orderDetailData.order.status) && (
+                              {!["completed", "cancelled"].includes(orderDetailData.order.status) && canUpdateOrders && (
                                 <Button
                                   size="icon"
                                   variant="ghost"
@@ -1725,7 +1726,7 @@ export default function OrdersPage() {
                         Add More Items
                       </Button>
                     )}
-                    {getNextStatus(orderDetailData.order.status) && getNextStatus(orderDetailData.order.status) !== "completed" && (
+                    {getNextStatus(orderDetailData.order.status) && getNextStatus(orderDetailData.order.status) !== "completed" && canUpdateOrders && (
                       <Button
                         onClick={() => updateStatusMutation.mutate({
                           orderId: orderDetailData.order.id,
