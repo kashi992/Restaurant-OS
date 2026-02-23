@@ -1373,10 +1373,20 @@ export default function OrdersPage() {
                             )}
                           </Button>
                         )}
+                        {order.status === "pending" && canProcessPayments && (
+                          <Button
+                            size="sm"
+                            onClick={() => openPaymentDialog({ ...order, status: order.status })}
+                            data-testid={`button-pay-pending-${order.id}`}
+                          >
+                            <DollarSign className="mr-1 h-3.5 w-3.5" />
+                            Pay
+                          </Button>
+                        )}
                         {order.status === "served" && canProcessPayments && (
                           <Button
                             size="sm"
-                            onClick={() => openPaymentDialog(order)}
+                            onClick={() => openPaymentDialog({ ...order, status: order.status })}
                             data-testid={`button-complete-pay-${order.id}`}
                           >
                             <DollarSign className="mr-1 h-3.5 w-3.5" />

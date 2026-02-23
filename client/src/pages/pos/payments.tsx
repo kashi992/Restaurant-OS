@@ -32,8 +32,17 @@ import {
   CheckCircle,
   AlertTriangle,
   SplitSquareVertical,
+  Clock,
 } from "lucide-react";
 import { SplitBillingDialog } from "@/components/split-billing-dialog";
+
+const STATUS_COLORS: Record<string, string> = {
+  pending: "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400",
+  confirmed: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+  preparing: "bg-orange-500/10 text-orange-600 dark:text-orange-400",
+  ready: "bg-green-500/10 text-green-600 dark:text-green-400",
+  served: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+};
 
 interface Order {
   id: string;
@@ -41,6 +50,11 @@ interface Order {
   status: string;
   total: string;
   paidAmount: string;
+  tableId?: string | null;
+  tableNumber?: string | null;
+  customerName?: string | null;
+  source?: string;
+  createdAt?: string;
 }
 
 interface PaymentMethodConfig {
@@ -111,7 +125,7 @@ export default function PaymentsPage() {
       if (!res.ok) return [];
       const data = await res.json();
       return data.orders.filter((o: Order) => 
-        ["ready", "served"].includes(o.status)
+        ["pending", "ready", "served"].includes(o.status)
       );
     },
     enabled: !!accessToken && !!restaurantId,
@@ -119,11 +133,12 @@ export default function PaymentsPage() {
   });
 
   const recordPaymentMutation = useMutation({
-    mutationFn: async ({ orderId, amount, method, tip }: { 
+    mutationFn: async ({ orderId, amount, method, tip, autoConfirm }: { 
       orderId: string; 
       amount: string; 
       method: string;
       tip: string;
+      autoConfirm?: boolean;
     }) => {
       const res = await fetch(`/api/restaurants/${restaurantId}/orders/${orderId}/payments`, {
         method: "POST",
@@ -136,6 +151,7 @@ export default function PaymentsPage() {
           amount: parseFloat(amount),
           method,
           tipAmount: parseFloat(tip) || 0,
+          autoConfirm: autoConfirm || false,
         }),
       });
       if (!res.ok) {
@@ -148,7 +164,7 @@ export default function PaymentsPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "stats"] });
       queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "tables"] });
-      toast({ title: "Payment recorded successfully" });
+      toast({ title: selectedOrder?.status === "pending" ? "Payment recorded & order confirmed!" : "Payment recorded successfully" });
       setPayDialogOpen(false);
       setSelectedOrder(null);
       setTipAmount("0");
@@ -174,7 +190,7 @@ export default function PaymentsPage() {
       <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold" data-testid="text-page-title">Payments</h1>
-          <p className="text-muted-foreground">Process payments for completed orders</p>
+          <p className="text-muted-foreground">Process payments for orders</p>
         </div>
         {hasAnyMethod && (
           <div className="flex items-center gap-2">
@@ -210,58 +226,83 @@ export default function PaymentsPage() {
         ) : orders && orders.length > 0 ? (
           <ScrollArea className="h-full">
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 pr-4">
-              {orders.map((order) => (
-                <Card key={order.id} data-testid={`payment-card-${order.id}`}>
-                  <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
-                    <CardTitle className="text-lg">#{order.orderNumber}</CardTitle>
-                    <Badge className="bg-green-500/10 text-green-600 dark:text-green-400 no-default-active-elevate">
-                      {order.status}
-                    </Badge>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="space-y-2">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Total</span>
-                        <span className="font-semibold">${order.total}</span>
+              {orders.map((order) => {
+                const isPending = order.status === "pending";
+                const statusColor = STATUS_COLORS[order.status] || "bg-muted text-muted-foreground";
+                return (
+                  <Card key={order.id} data-testid={`payment-card-${order.id}`}>
+                    <CardHeader className="flex flex-row items-start justify-between gap-2 pb-2">
+                      <div className="min-w-0">
+                        <CardTitle className="text-lg">#{order.orderNumber}</CardTitle>
+                        <p className="text-sm text-muted-foreground">
+                          {order.tableNumber ? `Table ${order.tableNumber}` : order.customerName || "Counter"}
+                          {order.createdAt && (
+                            <> - {new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</>
+                          )}
+                        </p>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Paid</span>
-                        <span>${order.paidAmount || "0.00"}</span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Badge className={`${statusColor} no-default-active-elevate capitalize`}>
+                          {order.status}
+                        </Badge>
+                        {order.source && (
+                          <Badge variant="outline" className="no-default-active-elevate">{order.source.toUpperCase()}</Badge>
+                        )}
                       </div>
-                      <div className="flex justify-between border-t pt-2">
-                        <span className="font-medium">Balance Due</span>
-                        <span className="font-bold text-lg">${getRemainingBalance(order)}</span>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="space-y-2">
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Total</span>
+                          <span className="font-semibold">${parseFloat(order.total).toFixed(2)}</span>
+                        </div>
+                        {parseFloat(order.paidAmount || "0") > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Paid</span>
+                            <span className="text-green-600 dark:text-green-400">${parseFloat(order.paidAmount || "0").toFixed(2)}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between border-t pt-2">
+                          <span className="font-medium">Balance Due</span>
+                          <span className="font-bold text-lg">${getRemainingBalance(order)}</span>
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex gap-2">
-                      {isSplitBillingEnabled && (
-                        <Button
-                          variant="outline"
-                          className="flex-1"
-                          onClick={() => {
-                            setSplitOrder(order);
-                            setSplitDialogOpen(true);
-                          }}
-                          disabled={parseFloat(getRemainingBalance(order)) <= 0 || !hasAnyMethod}
-                          data-testid={`button-split-${order.id}`}
-                        >
-                          <SplitSquareVertical className="mr-2 h-4 w-4" />
-                          Split Bill
-                        </Button>
+                      {isPending && (
+                        <div className="flex items-center gap-2 p-2 rounded-md bg-yellow-500/10 text-yellow-700 dark:text-yellow-400 text-sm">
+                          <Clock className="h-4 w-4 shrink-0" />
+                          Payment required to confirm order
+                        </div>
                       )}
-                      <Button
-                        className={isSplitBillingEnabled ? "flex-1" : "w-full"}
-                        onClick={() => openPayDialog(order)}
-                        disabled={parseFloat(getRemainingBalance(order)) <= 0 || !hasAnyMethod}
-                        data-testid={`button-pay-${order.id}`}
-                      >
-                        <DollarSign className="mr-2 h-4 w-4" />
-                        Pay Full
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+                      <div className="flex gap-2">
+                        {isSplitBillingEnabled && !isPending && (
+                          <Button
+                            variant="outline"
+                            className="flex-1"
+                            onClick={() => {
+                              setSplitOrder(order);
+                              setSplitDialogOpen(true);
+                            }}
+                            disabled={parseFloat(getRemainingBalance(order)) <= 0 || !hasAnyMethod}
+                            data-testid={`button-split-${order.id}`}
+                          >
+                            <SplitSquareVertical className="mr-2 h-4 w-4" />
+                            Split Bill
+                          </Button>
+                        )}
+                        <Button
+                          className={isSplitBillingEnabled && !isPending ? "flex-1" : "w-full"}
+                          onClick={() => openPayDialog(order)}
+                          disabled={parseFloat(getRemainingBalance(order)) <= 0 || !hasAnyMethod}
+                          data-testid={`button-pay-${order.id}`}
+                        >
+                          <DollarSign className="mr-2 h-4 w-4" />
+                          {isPending ? "Pay & Confirm" : "Pay Full"}
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
           </ScrollArea>
         ) : (
@@ -278,8 +319,14 @@ export default function PaymentsPage() {
       <Dialog open={payDialogOpen} onOpenChange={setPayDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Process Payment - #{selectedOrder?.orderNumber}</DialogTitle>
-            <DialogDescription>Select payment method and complete the transaction</DialogDescription>
+            <DialogTitle>
+              {selectedOrder?.status === "pending" ? "Collect Payment" : "Process Payment"} - #{selectedOrder?.orderNumber}
+            </DialogTitle>
+            <DialogDescription>
+              {selectedOrder?.status === "pending"
+                ? "Payment is required to confirm this order"
+                : "Select payment method and complete the transaction"}
+            </DialogDescription>
           </DialogHeader>
           {selectedOrder && (
             <div className="space-y-4">
@@ -358,6 +405,7 @@ export default function PaymentsPage() {
                 amount: getRemainingBalance(selectedOrder),
                 method: paymentMethod,
                 tip: tipAmount,
+                autoConfirm: selectedOrder.status === "pending",
               })}
               disabled={recordPaymentMutation.isPending || !paymentMethod || !hasAnyMethod}
               data-testid="button-confirm-payment"
@@ -367,7 +415,7 @@ export default function PaymentsPage() {
               ) : (
                 <>
                   <CheckCircle className="mr-2 h-4 w-4" />
-                  Complete Payment
+                  {selectedOrder?.status === "pending" ? "Pay & Confirm Order" : "Complete Payment"}
                 </>
               )}
             </Button>
