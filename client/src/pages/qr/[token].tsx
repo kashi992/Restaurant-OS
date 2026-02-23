@@ -60,6 +60,11 @@ interface TokenData {
     label: string;
   };
   requiresTableSelection: boolean;
+  paymentMethods?: {
+    card: boolean;
+    stripe: boolean;
+    paypal: boolean;
+  };
 }
 
 interface Modifier {
@@ -465,14 +470,32 @@ export default function QROrderingPage({ token }: { token: string }) {
     }
   }, [tokenData]);
 
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>("");
+  const [checkoutStep, setCheckoutStep] = useState<"cart" | "payment">("cart");
+
+  const availableQrPayMethods = useMemo(() => {
+    const methods: { id: string; label: string; value: string }[] = [];
+    if (tokenData?.paymentMethods?.card || tokenData?.paymentMethods?.stripe) {
+      methods.push({ id: "card", label: "Credit / Debit Card", value: "card" });
+    }
+    if (tokenData?.paymentMethods?.paypal) {
+      methods.push({ id: "paypal", label: "PayPal", value: "paypal" });
+    }
+    return methods;
+  }, [tokenData?.paymentMethods]);
+
   const createOrderMutation = useMutation({
     mutationFn: async () => {
+      if (!selectedPaymentMethod && availableQrPayMethods.length > 0) {
+        throw new Error("Please select a payment method");
+      }
       const res = await fetch("/api/order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           qrTokenId: tokenData?.qrToken?.id,
           tableId: selectedTable || tokenData?.table?.id,
+          paymentMethod: selectedPaymentMethod || undefined,
           items: cart.map((ci) => ({
             menuItemId: ci.menuItem.id,
             name: ci.menuItem.name,
@@ -493,9 +516,11 @@ export default function QROrderingPage({ token }: { token: string }) {
       return res.json();
     },
     onSuccess: (data) => {
-      toast({ title: "Order placed successfully!" });
+      toast({ title: "Order placed & paid successfully!" });
       setCart([]);
       setCartOpen(false);
+      setCheckoutStep("cart");
+      setSelectedPaymentMethod("");
       const orderId = data.orderId || data.order?.id;
       if (orderId) {
         setLocation(`/order/status/${orderId}?token=${data.trackingToken}`);
@@ -693,19 +718,85 @@ export default function QROrderingPage({ token }: { token: string }) {
                     <span>Total</span>
                     <span data-testid="text-cart-total">{currency}{cartTotal.toFixed(2)}</span>
                   </div>
-                  <Button
-                    className="w-full"
-                    size="lg"
-                    onClick={() => createOrderMutation.mutate()}
-                    disabled={createOrderMutation.isPending || (tokenData.requiresTableSelection && !selectedTable)}
-                    data-testid="button-place-order"
-                  >
-                    {createOrderMutation.isPending ? (
-                      <Loader2 className="h-5 w-5 animate-spin" />
-                    ) : (
-                      "Place Order"
-                    )}
-                  </Button>
+
+                  {checkoutStep === "cart" ? (
+                    <Button
+                      className="w-full"
+                      size="lg"
+                      onClick={() => {
+                        if (availableQrPayMethods.length > 0) {
+                          setCheckoutStep("payment");
+                          if (availableQrPayMethods.length === 1) {
+                            setSelectedPaymentMethod(availableQrPayMethods[0].value);
+                          }
+                        } else {
+                          createOrderMutation.mutate();
+                        }
+                      }}
+                      disabled={tokenData.requiresTableSelection && !selectedTable}
+                      data-testid="button-proceed-payment"
+                    >
+                      Proceed to Payment
+                    </Button>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="text-sm font-medium">Select Payment Method</div>
+                      <div className="space-y-2">
+                        {availableQrPayMethods.map((method) => (
+                          <button
+                            key={method.id}
+                            onClick={() => setSelectedPaymentMethod(method.value)}
+                            className={`w-full flex items-center gap-3 p-3 rounded-lg border-2 transition-colors ${
+                              selectedPaymentMethod === method.value
+                                ? "border-primary bg-primary/5"
+                                : "border-muted hover:border-muted-foreground/30"
+                            }`}
+                            data-testid={`button-pay-method-${method.id}`}
+                          >
+                            <div className={`h-5 w-5 rounded-full border-2 flex items-center justify-center ${
+                              selectedPaymentMethod === method.value ? "border-primary" : "border-muted-foreground/40"
+                            }`}>
+                              {selectedPaymentMethod === method.value && (
+                                <div className="h-3 w-3 rounded-full bg-primary" />
+                              )}
+                            </div>
+                            <span className="font-medium">{method.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                      {availableQrPayMethods.length === 0 && (
+                        <p className="text-sm text-muted-foreground text-center py-2">
+                          No online payment methods available. Please contact staff.
+                        </p>
+                      )}
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          className="flex-1"
+                          onClick={() => {
+                            setCheckoutStep("cart");
+                            setSelectedPaymentMethod("");
+                          }}
+                          data-testid="button-back-to-cart"
+                        >
+                          Back
+                        </Button>
+                        <Button
+                          className="flex-1"
+                          size="lg"
+                          onClick={() => createOrderMutation.mutate()}
+                          disabled={createOrderMutation.isPending || !selectedPaymentMethod}
+                          data-testid="button-place-order"
+                        >
+                          {createOrderMutation.isPending ? (
+                            <Loader2 className="h-5 w-5 animate-spin" />
+                          ) : (
+                            `Pay ${currency}${cartTotal.toFixed(2)}`
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </SheetContent>

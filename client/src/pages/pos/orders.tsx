@@ -301,6 +301,7 @@ export default function OrdersPage() {
   const [payTableSelection, setPayTableSelection] = useState<string>("");
   const [selectedPayMethod, setSelectedPayMethod] = useState("");
   const [tipAmount, setTipAmount] = useState("0");
+  const [payOrderStatus, setPayOrderStatus] = useState<string>("");
 
   const [assignTableId, setAssignTableId] = useState<string>("");
 
@@ -528,13 +529,26 @@ export default function OrdersPage() {
       }
       return res.json();
     },
-    onSuccess: () => {
-      toast({ title: "Order created successfully!" });
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "stats"] });
       queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "tables"] });
       setCart([]);
       setCounterNumber("");
+      const newOrder = data.order || data;
+      const orderId = newOrder.id;
+      const orderNumber = newOrder.orderNumber || "";
+      const total = newOrder.total || "0";
+      setPayOrderId(orderId);
+      setPayOrderNumber(orderNumber);
+      setPayOrderTotal(total);
+      setPayOrderPaid("0");
+      setPayOrderTableId(newOrder.tableId || null);
+      setPayTableSelection("");
+      setSelectedPayMethod(defaultPayMethod);
+      setTipAmount("0");
+      setPayOrderStatus("pending");
+      setPayDialogOpen(true);
       setLocation("/pos/orders");
     },
     onError: (error: Error) => {
@@ -654,11 +668,12 @@ export default function OrdersPage() {
   });
 
   const recordPaymentMutation = useMutation({
-    mutationFn: async ({ orderId, amount, method, tip }: {
+    mutationFn: async ({ orderId, amount, method, tip, autoConfirm }: {
       orderId: string;
       amount: string;
       method: string;
       tip: string;
+      autoConfirm?: boolean;
     }) => {
       const res = await fetch(`/api/restaurants/${restaurantId}/orders/${orderId}/payments`, {
         method: "POST",
@@ -671,6 +686,7 @@ export default function OrdersPage() {
           amount: parseFloat(amount),
           method,
           tipAmount: parseFloat(tip) || 0,
+          autoConfirm: autoConfirm || false,
         }),
       });
       if (!res.ok) {
@@ -683,7 +699,7 @@ export default function OrdersPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "tables"] });
       queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "stats"] });
-      toast({ title: "Payment recorded & order completed!" });
+      toast({ title: "Payment recorded & order confirmed!" });
       setPayDialogOpen(false);
       setPayOrderId(null);
       setTipAmount("0");
@@ -741,7 +757,7 @@ export default function OrdersPage() {
     }
   };
 
-  const openPaymentDialog = (order: { id: string; orderNumber: string; total: string; paidAmount: string; tableId?: string | null }) => {
+  const openPaymentDialog = (order: { id: string; orderNumber: string; total: string; paidAmount: string; tableId?: string | null; status?: string }) => {
     setPayOrderId(order.id);
     setPayOrderNumber(order.orderNumber);
     setPayOrderTotal(order.total);
@@ -750,6 +766,7 @@ export default function OrdersPage() {
     setPayTableSelection("");
     setSelectedPayMethod(defaultPayMethod);
     setTipAmount("0");
+    setPayOrderStatus(order.status || "");
     setPayDialogOpen(true);
   };
 
@@ -763,11 +780,13 @@ export default function OrdersPage() {
       }
     }
     const remaining = (parseFloat(payOrderTotal) - parseFloat(payOrderPaid)).toFixed(2);
+    const shouldAutoConfirm = payOrderStatus === "pending";
     recordPaymentMutation.mutate({
       orderId: payOrderId,
       amount: remaining,
       method: selectedPayMethod,
       tip: tipAmount,
+      autoConfirm: shouldAutoConfirm,
     });
   };
 
@@ -1848,8 +1867,14 @@ export default function OrdersPage() {
       <Dialog open={payDialogOpen} onOpenChange={setPayDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Payment - Order #{payOrderNumber}</DialogTitle>
-            <DialogDescription>Select payment method to complete this order</DialogDescription>
+            <DialogTitle>
+              {payOrderStatus === "pending" ? "Collect Payment" : "Payment"} - Order #{payOrderNumber}
+            </DialogTitle>
+            <DialogDescription>
+              {payOrderStatus === "pending"
+                ? "Payment is required to confirm this order"
+                : "Select payment method to complete this order"}
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="p-4 rounded-lg bg-muted">
@@ -1944,7 +1969,7 @@ export default function OrdersPage() {
             <Button variant="outline" onClick={() => setPayDialogOpen(false)} data-testid="button-cancel-pay">
               Cancel
             </Button>
-            {!hasPayMethod && payOrderId && (
+            {!hasPayMethod && payOrderId && payOrderStatus !== "pending" && (
               <Button
                 variant="secondary"
                 onClick={async () => {
@@ -1985,7 +2010,7 @@ export default function OrdersPage() {
                 ) : (
                   <>
                     <CheckCircle className="mr-2 h-4 w-4" />
-                    Complete Payment
+                    {payOrderStatus === "pending" ? "Pay & Confirm Order" : "Complete Payment"}
                   </>
                 )}
               </Button>

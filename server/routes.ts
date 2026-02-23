@@ -119,6 +119,18 @@ async function buildPaymentMethods(
   };
 }
 
+async function resolvePaymentMethods(restaurantId: string): Promise<Record<string, boolean>> {
+  const featureRows = await db
+    .select()
+    .from(restaurantFeatureAllowlist)
+    .where(eq(restaurantFeatureAllowlist.restaurantId, restaurantId));
+  const features: Record<string, boolean> = {};
+  for (const f of featureRows) {
+    features[f.featureKey] = f.isEnabled;
+  }
+  return buildPaymentMethods(restaurantId, features);
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -4437,7 +4449,8 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
           }
         }
 
-        // Build response based on mode
+        const payMethods = await resolvePaymentMethods(qrToken.restaurantId);
+
         const response: any = {
           restaurant: {
             id: restaurant.id,
@@ -4452,6 +4465,11 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
             type: qrToken.tokenType,
           },
           orderingMode: qrSettings.mode,
+          paymentMethods: {
+            card: payMethods.card,
+            stripe: payMethods.stripe,
+            paypal: payMethods.paypal,
+          },
         };
 
         if (qrSettings.mode === "auto" && tableInfo) {
@@ -4710,18 +4728,19 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
   // ============================================================================
   const createOrderSchema = z.object({
     qrTokenId: z.string().min(1),
-    tableId: z.string().optional(), // For AUTO mode or dropdown MANUAL mode
-    tableLabel: z.string().optional(), // For TEXT input MANUAL mode
+    tableId: z.string().optional(),
+    tableLabel: z.string().optional(),
     customerName: z.string().optional(),
     customerPhone: z.string().optional(),
     customerEmail: z.string().email().optional().or(z.literal("")),
     guestCount: z.number().int().min(1).default(1),
     notes: z.string().optional(),
+    paymentMethod: z.string().optional(),
     items: z.array(z.object({
       menuItemId: z.string(),
       name: z.string(),
       quantity: z.number().int().min(1),
-      unitPrice: z.string(), // Decimal as string
+      unitPrice: z.string(),
       modifiers: z.array(z.object({
         id: z.string(),
         name: z.string(),
@@ -4877,7 +4896,29 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
         const orderNumber = generateOrderNumber();
         const displayNumber = await generateDisplayNumber(restaurantId);
 
-        // Create order
+        // Validate QR payment requirement: if online payment methods are enabled, payment is required
+        const qrPayMethods = await resolvePaymentMethods(restaurantId);
+        const hasOnlinePayment = qrPayMethods.card || qrPayMethods.stripe || qrPayMethods.paypal;
+        
+        if (hasOnlinePayment && !orderData.paymentMethod) {
+          return res.status(400).json({ error: "Online payment is required to place this order" });
+        }
+
+        // Validate the payment method is actually enabled for this restaurant
+        if (orderData.paymentMethod) {
+          const methodMap: Record<string, boolean> = {
+            card: qrPayMethods.card || qrPayMethods.stripe,
+            stripe: qrPayMethods.stripe,
+            paypal: qrPayMethods.paypal,
+          };
+          if (!methodMap[orderData.paymentMethod]) {
+            return res.status(400).json({ error: `Payment method '${orderData.paymentMethod}' is not available for this restaurant` });
+          }
+        }
+
+        const hasPayment = !!orderData.paymentMethod;
+        const initialStatus = hasPayment ? "confirmed" : "pending";
+
         const [order] = await db
           .insert(orders)
           .values({
@@ -4886,12 +4927,13 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
             qrTokenId: qrToken.id,
             orderNumber,
             displayNumber,
-            status: "pending", // Maps to OPEN as per requirements
+            status: initialStatus,
             orderType: "dine_in",
             source: "qr",
             subtotal: subtotal.toFixed(2),
             taxAmount: taxAmount.toFixed(2),
             total: total.toFixed(2),
+            paidAmount: hasPayment ? total.toFixed(2) : "0",
             customerName: orderData.customerName,
             customerPhone: orderData.customerPhone,
             customerEmail: orderData.customerEmail || null,
@@ -4910,7 +4952,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
             });
         }
 
-        // Create initial status history
+        // Create status history
         await db
           .insert(orderStatusHistory)
           .values({
@@ -4919,6 +4961,28 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
             toStatus: "pending",
             notes: "Order placed via QR code",
           });
+
+        if (hasPayment) {
+          await db
+            .insert(orderStatusHistory)
+            .values({
+              orderId: order.id,
+              fromStatus: "pending",
+              toStatus: "confirmed",
+              notes: `Auto-confirmed after ${orderData.paymentMethod} payment`,
+            });
+
+          await db
+            .insert(payments)
+            .values({
+              orderId: order.id,
+              restaurantId,
+              amount: total.toFixed(2),
+              method: orderData.paymentMethod!,
+              status: "completed",
+              processedAt: new Date(),
+            });
+        }
 
         // Update table status to occupied if a table was assigned
         if (finalTableId) {
@@ -5969,6 +6033,18 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
           return res.status(400).json({ error: "Cannot change status of completed or cancelled order" });
         }
 
+        // Prevent confirming an order without payment
+        if (status === 'confirmed' && fromStatus === 'pending') {
+          const [orderRow] = await db
+            .select({ paidAmount: orders.paidAmount, total: orders.total })
+            .from(orders)
+            .where(eq(orders.id, orderId));
+          const paid = parseFloat(orderRow?.paidAmount || "0");
+          if (paid <= 0) {
+            return res.status(400).json({ error: "Payment is required before confirming an order" });
+          }
+        }
+
         const updates: any = { status, updatedAt: new Date() };
 
         if (status === 'completed') {
@@ -6191,11 +6267,11 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
     authenticate,
     requireRestaurantAccess, requireActiveRestaurant,
     requireFeature("pos"),
-    requirePermission("orders:update"),
+    requirePermission("payments:create"),
     async (req, res) => {
       try {
         const { restaurantId, orderId } = req.params;
-        const { amount, tipAmount = 0, method, transactionId, cardLastFour, cardBrand } = req.body;
+        const { amount, tipAmount = 0, method, transactionId, cardLastFour, cardBrand, autoConfirm } = req.body;
 
         if (!amount || amount <= 0) {
           return res.status(400).json({ error: "Valid amount is required" });
@@ -6262,8 +6338,12 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
           updatedAt: new Date(),
         };
 
-        // Auto-complete order if fully paid
-        if (newPaidAmount >= orderTotal) {
+        // Auto-confirm if pending and autoConfirm requested, otherwise auto-complete if fully paid
+        if (autoConfirm && order.status === 'pending' && newPaidAmount >= orderTotal) {
+          orderUpdates.status = 'confirmed';
+          // Record status history for auto-confirm
+          await recordOrderStatusChange(orderId, req.user!.userId, 'pending', 'confirmed', 'Auto-confirmed after payment');
+        } else if (newPaidAmount >= orderTotal) {
           orderUpdates.status = 'completed';
           orderUpdates.completedAt = new Date();
         }
@@ -6271,7 +6351,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
         await db.update(orders).set(orderUpdates).where(eq(orders.id, orderId));
 
         // Free table if order completed
-        if (newPaidAmount >= orderTotal && order.status !== 'completed' && order.tableId) {
+        if (newPaidAmount >= orderTotal && !autoConfirm && order.status !== 'completed' && order.tableId) {
           const otherActiveOrders = await db
             .select({ id: orders.id })
             .from(orders)
