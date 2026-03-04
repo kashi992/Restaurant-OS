@@ -183,6 +183,7 @@ async function seed() {
   const staffPassword = await bcrypt.hash("staff123", 10);
   
   const staffUsers = [
+    { email: "restadmin@flyingfork.com", firstName: "Restaurant", lastName: "Admin", role: "admin", pin: "0001" },
     { email: "john@flyingfork.com", firstName: "John", lastName: "Manager", role: "manager", pin: "1234" },
     { email: "jane@flyingfork.com", firstName: "Jane", lastName: "Server", role: "server", pin: "2345" },
     { email: "bob@flyingfork.com", firstName: "Bob", lastName: "Kitchen", role: "kitchen", pin: "3456" },
@@ -470,23 +471,90 @@ async function seed() {
   console.log(`  Created ${createdTables.length} QR tokens`);
 
   // --------------------------------------------------------------------------
+  // 13. Create Second Sample Restaurant (Pizza Palace)
+  // --------------------------------------------------------------------------
+  console.log("\nCreating second sample restaurant (Pizza Palace)...");
+
+  const [restaurant2] = await db.insert(restaurants).values({
+    name: "Pizza Palace",
+    slug: "pizza-palace",
+    address: "456 Oak Avenue",
+    city: "New York",
+    state: "NY",
+    country: "US",
+    postalCode: "10001",
+    phone: "+1 212-555-0456",
+    email: "hello@pizzapalace.com",
+    timezone: "America/New_York",
+    currency: "USD",
+    taxRate: "0.0888",
+    isActive: true,
+  }).returning();
+
+  console.log(`  Created restaurant: ${restaurant2.name} (ID: ${restaurant2.id})`);
+
+  // Features for Pizza Palace
+  for (const feature of features) {
+    await db.insert(restaurantFeatureAllowlist).values({
+      restaurantId: restaurant2.id,
+      featureKey: feature.featureKey,
+      isEnabled: feature.isEnabled,
+    });
+  }
+
+  // Roles for Pizza Palace
+  const createdRoles2: Record<string, typeof roles.$inferSelect> = {};
+  for (const roleDef of roleDefinitions) {
+    const [role] = await db.insert(roles).values({
+      restaurantId: restaurant2.id,
+      name: roleDef.name,
+      description: roleDef.description,
+      permissions: roleDef.permissions,
+      isSystemRole: roleDef.isSystemRole,
+    }).returning();
+    createdRoles2[roleDef.name] = role;
+  }
+  console.log(`  Created ${roleDefinitions.length} roles for Pizza Palace`);
+
+  // Manager user for Pizza Palace
+  const [pizzaManager] = await db.insert(users).values({
+    email: "manager@pizzapalace.com",
+    password: staffPassword,
+    firstName: "Pizza",
+    lastName: "Manager",
+    isActive: true,
+  }).returning();
+
+  await db.insert(restaurantUsers).values({
+    restaurantId: restaurant2.id,
+    userId: pizzaManager.id,
+    roleId: createdRoles2["manager"]!.id,
+    pin: "5678",
+    isActive: true,
+    hiredAt: new Date(),
+  });
+
+  console.log(`  Created manager: ${pizzaManager.email}`);
+
+  // --------------------------------------------------------------------------
   // Summary
   // --------------------------------------------------------------------------
   console.log("\n" + "=".repeat(60));
   console.log("SEED COMPLETED SUCCESSFULLY!");
   console.log("=".repeat(60));
   console.log("\nCredentials:");
-  console.log("  Super Admin: admin@posqr.com / admin123");
-  console.log("  Staff (all): [email]@flyingfork.com / staff123");
-  console.log("\nRestaurant:");
-  console.log(`  Name: ${restaurant.name}`);
-  console.log(`  Slug: ${restaurant.slug}`);
-  console.log(`  URL: /${restaurant.slug}`);
+  console.log("  Super Admin:        admin@posqr.com / admin123");
+  console.log("  Restaurant Admin:   restadmin@flyingfork.com / staff123");
+  console.log("  Manager (FF):       john@flyingfork.com / staff123");
+  console.log("  Manager (PP):       manager@pizzapalace.com / staff123");
+  console.log("\nRestaurants:");
+  console.log(`  1. ${restaurant.name} (/${restaurant.slug})`);
+  console.log(`  2. ${restaurant2.name} (/${restaurant2.slug})`);
   console.log("\nData Created:");
   console.log(`  - 1 Super Admin`);
-  console.log(`  - 1 Restaurant with ${features.length} features, ${settings.length} settings`);
-  console.log(`  - ${Object.keys(createdRoles).length} Roles`);
-  console.log(`  - ${staffUsers.length} Staff Users`);
+  console.log(`  - 2 Restaurants`);
+  console.log(`  - ${staffUsers.length} Staff Users for Flying Fork`);
+  console.log(`  - 1 Manager for Pizza Palace`);
   console.log(`  - 1 Menu with ${Object.keys(createdCategories).length} categories`);
   console.log(`  - ${menuItemDefs.length} Menu Items`);
   console.log(`  - 3 Modifier Groups`);
