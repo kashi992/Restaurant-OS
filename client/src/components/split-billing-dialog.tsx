@@ -373,7 +373,7 @@ export function SplitBillingDialog({ open, onOpenChange, order, availableMethods
         </DialogHeader>
 
         <ScrollArea className="flex-1 min-h-0">
-          <div className="pr-4 space-y-4">
+          <div className="pr-4 space-y-4 h-[60vh]">
             {step === "choose_mode" && (
               <div className="space-y-3">
                 <p className="text-sm text-muted-foreground">Choose how to split the bill:</p>
@@ -675,7 +675,7 @@ export function SplitBillingDialog({ open, onOpenChange, order, availableMethods
                   )}
                 </div>
 
-                <div className="p-3 rounded-lg bg-muted">
+                <div className="p-3 rounded-lg bg-muted so">
                   <div className="flex justify-between text-sm">
                     <span>Order Total</span>
                     <span className="font-medium">${orderTotal.toFixed(2)}</span>

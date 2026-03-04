@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { SplitBillingDialog } from "@/components/split-billing-dialog";
 import {
   Table,
   TableBody,
@@ -72,6 +73,7 @@ import {
   History,
   ClipboardList,
   DollarSign,
+  SplitSquareVertical,
   Banknote,
   CreditCard,
   AlertTriangle,
@@ -303,10 +305,15 @@ export default function OrdersPage() {
   const [tipAmount, setTipAmount] = useState("0");
   const [payOrderStatus, setPayOrderStatus] = useState<string>("");
 
+  const [splitDialogOpen, setSplitDialogOpen] = useState(false);
+  const [splitOrder, setSplitOrder] = useState<OrderSummary | null>(null);
+
   const [assignTableId, setAssignTableId] = useState<string>("");
 
   const userPaymentMethods = user?.paymentMethods;
   const userFeatures = user?.features as Record<string, boolean> | undefined;
+
+  const isSplitBillingEnabled = user?.features?.split_billing === true || userFeatures?.split_billing === true;
 
   const availablePayMethods: { id: string; label: string; icon: "cash" | "card"; method: string }[] = (() => {
     const methods: { id: string; label: string; icon: "cash" | "card"; method: string }[] = [];
@@ -1383,6 +1390,21 @@ export default function OrdersPage() {
                             Pay
                           </Button>
                         )}
+                        {isSplitBillingEnabled && order.status === "pending" && canProcessPayments && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setSplitOrder(order);
+                              setSplitDialogOpen(true);
+                            }}
+                            disabled={parseFloat(order.total) - parseFloat(order.paidAmount || "0") <= 0 || !hasPayMethod}
+                            data-testid={`button-split-bill-${order.id}`}
+                          >
+                            <SplitSquareVertical className="mr-1 h-3.5 w-3.5" />
+                            Split Bill
+                          </Button>
+                        )}
                         {order.status === "served" && canProcessPayments && (
                           <Button
                             size="sm"
@@ -2054,6 +2076,21 @@ export default function OrdersPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <SplitBillingDialog
+        open={splitDialogOpen}
+        onOpenChange={(open) => {
+          setSplitDialogOpen(open);
+          if (!open) {
+            setSplitOrder(null);
+            queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "orders", "live"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "orders", "completed"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "stats"] });
+          }
+        }}
+        order={splitOrder as any}
+        availableMethods={availablePayMethods}
+      />
     </div>
   );
 }

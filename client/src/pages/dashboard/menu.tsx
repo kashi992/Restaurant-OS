@@ -865,7 +865,7 @@ export default function MenuManager() {
             <DialogDescription>{editingItem ? "Update item details." : "Add a new item to this category."}</DialogDescription>
           </DialogHeader>
           <Form {...itemForm}>
-            <form onSubmit={itemForm.handleSubmit((data) => createItemMutation.mutate(data))} className="space-y-4">
+            <form onSubmit={itemForm.handleSubmit((data) => createItemMutation.mutate(data))} className="space-y-4 max-[1370px]:h-[60vh] max-[1370px]:pr-3 max-[1370px]:overflow-y-auto max-[1370px]:overflow-x-hidden">
               <div>
                 <Label className="text-sm font-medium">Image (optional)</Label>
                 <div className="mt-1.5">
