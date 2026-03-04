@@ -208,6 +208,8 @@ export class MemStorage implements IStorage {
       currency: insertRestaurant.currency ?? "USD",
       taxRate: insertRestaurant.taxRate ?? "0.0000",
       isActive: insertRestaurant.isActive ?? true,
+      suspendedAt: null,
+      suspendedReason: null,
       createdAt: now,
       updatedAt: now,
     };

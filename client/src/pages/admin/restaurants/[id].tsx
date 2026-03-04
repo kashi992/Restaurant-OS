@@ -176,7 +176,7 @@ export default function RestaurantDetailPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {loadingFeatures ? (
+              {loadingRestaurant ? (
                 <div className="space-y-4">
                   {[1, 2, 3].map((i) => (
                     <Skeleton key={i} className="h-16 w-full" />
