@@ -24,6 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import {
   ShoppingCart,
@@ -423,6 +424,7 @@ export default function QROrderingPage({ token }: { token: string }) {
   const [selectedTable, setSelectedTable] = useState<string>("");
   const [selectedCategory, setSelectedCategory] = useState<string>("");
   const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null);
+  const [customerName, setCustomerName] = useState("");
 
   const { data: tokenData, isLoading: loadingToken, error: tokenError } = useQuery<TokenData>({
     queryKey: ["/api/order", token],
@@ -496,6 +498,7 @@ export default function QROrderingPage({ token }: { token: string }) {
           qrTokenId: tokenData?.qrToken?.id,
           tableId: selectedTable || tokenData?.table?.id,
           paymentMethod: selectedPaymentMethod || undefined,
+          customerName,
           items: cart.map((ci) => ({
             menuItemId: ci.menuItem.id,
             name: ci.menuItem.name,
@@ -628,7 +631,14 @@ export default function QROrderingPage({ token }: { token: string }) {
                 )}
               </Button>
             </SheetTrigger>
-            <SheetContent className="flex flex-col w-full sm:max-w-md">
+            <SheetContent className="flex flex-col w-full sm:max-w-md" onInteractOutside={(e) => {
+              // Prevent closing when clicking outside the drawer
+              e.preventDefault();
+            }}
+              onEscapeKeyDown={(e) => {
+                // Optional: also prevent closing with ESC
+                e.preventDefault();
+              }}>
               <SheetHeader>
                 <SheetTitle>Your Order</SheetTitle>
               </SheetHeader>
@@ -714,6 +724,16 @@ export default function QROrderingPage({ token }: { token: string }) {
                       </Select>
                     </div>
                   )}
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Your Name</label>
+                    <Input
+                      value={customerName}
+                      onChange={(e) => setCustomerName(e.target.value)}
+                      placeholder="e.g., Alice"
+                      data-testid="input-customer-name"
+                    />
+                  </div>
                   <div className="flex justify-between text-lg font-semibold">
                     <span>Total</span>
                     <span data-testid="text-cart-total">{currency}{cartTotal.toFixed(2)}</span>
@@ -733,7 +753,11 @@ export default function QROrderingPage({ token }: { token: string }) {
                           createOrderMutation.mutate();
                         }
                       }}
-                      disabled={tokenData.requiresTableSelection && !selectedTable}
+                      disabled={
+                        createOrderMutation.isPending ||
+                        (tokenData.requiresTableSelection && !selectedTable) ||
+                        !customerName.trim()
+                      }
                       data-testid="button-proceed-payment"
                     >
                       Proceed to Payment
@@ -746,16 +770,14 @@ export default function QROrderingPage({ token }: { token: string }) {
                           <button
                             key={method.id}
                             onClick={() => setSelectedPaymentMethod(method.value)}
-                            className={`w-full flex items-center gap-3 p-3 rounded-lg border-2 transition-colors ${
-                              selectedPaymentMethod === method.value
-                                ? "border-primary bg-primary/5"
-                                : "border-muted hover:border-muted-foreground/30"
-                            }`}
+                            className={`w-full flex items-center gap-3 p-3 rounded-lg border-2 transition-colors ${selectedPaymentMethod === method.value
+                              ? "border-primary bg-primary/5"
+                              : "border-muted hover:border-muted-foreground/30"
+                              }`}
                             data-testid={`button-pay-method-${method.id}`}
                           >
-                            <div className={`h-5 w-5 rounded-full border-2 flex items-center justify-center ${
-                              selectedPaymentMethod === method.value ? "border-primary" : "border-muted-foreground/40"
-                            }`}>
+                            <div className={`h-5 w-5 rounded-full border-2 flex items-center justify-center ${selectedPaymentMethod === method.value ? "border-primary" : "border-muted-foreground/40"
+                              }`}>
                               {selectedPaymentMethod === method.value && (
                                 <div className="h-3 w-3 rounded-full bg-primary" />
                               )}

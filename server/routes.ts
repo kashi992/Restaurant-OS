@@ -4730,7 +4730,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
     qrTokenId: z.string().min(1),
     tableId: z.string().optional(),
     tableLabel: z.string().optional(),
-    customerName: z.string().optional(),
+ customerName: z.string().min(1, "Customer name is required"),
     customerPhone: z.string().optional(),
     customerEmail: z.string().email().optional().or(z.literal("")),
     guestCount: z.number().int().min(1).default(1),
@@ -5656,6 +5656,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
             orderItemsData.map(item => ({
               ...item,
               orderId: newOrder.id,
+              customerName,
             }))
           );
         }
@@ -6658,19 +6659,19 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
           };
 
           // Auto-complete order if fully paid
-          if (newPaidAmount >= orderTotal) {
-            orderUpdates.status = "completed";
-            orderUpdates.completedAt = new Date();
+          // if (newPaidAmount >= orderTotal) {
+          //   orderUpdates.status = "completed";
+          //   orderUpdates.completedAt = new Date();
 
-            // Record status change
-            await db.insert(orderStatusHistory).values({
-              orderId: order.id,
-              userId: req.user?.userId,
-              fromStatus: "served",
-              toStatus: "completed",
-              notes: "Auto-completed: payment received at counter",
-            });
-          }
+          //   // Record status change
+          //   await db.insert(orderStatusHistory).values({
+          //     orderId: order.id,
+          //     userId: req.user?.userId,
+          //     fromStatus: "served",
+          //     toStatus: "completed",
+          //     notes: "Auto-completed: payment received at counter",
+          //   });
+          // }
 
           await db.update(orders).set(orderUpdates).where(eq(orders.id, order.id));
 
@@ -7287,44 +7288,44 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
             .where(eq(splitSessions.id, session.id));
 
           // Check if order should be completed
-          if (orderPaidAmount >= orderTotal - 0.01) {
-            await db
-              .update(orders)
-              .set({
-                status: "completed",
-                completedAt: new Date(),
-                updatedAt: new Date(),
-              })
-              .where(eq(orders.id, orderId));
+          // if (orderPaidAmount >= orderTotal - 0.01) {
+          //   await db
+          //     .update(orders)
+          //     .set({
+          //       status: "completed",
+          //       completedAt: new Date(),
+          //       updatedAt: new Date(),
+          //     })
+          //     .where(eq(orders.id, orderId));
 
-            // Add status history
-            await db.insert(orderStatusHistory).values({
-              orderId,
-              userId,
-              fromStatus: order.status,
-              toStatus: "completed",
-              notes: "Auto-completed: all split payments received",
-            });
+          //   // Add status history
+          //   await db.insert(orderStatusHistory).values({
+          //     orderId,
+          //     userId,
+          //     fromStatus: order.status,
+          //     toStatus: "completed",
+          //     notes: "Auto-completed: all split payments received",
+          //   });
 
-            // Release table if applicable
-            if (order.tableId) {
-              await db
-                .update(diningTables)
-                .set({ status: "available", updatedAt: new Date() })
-                .where(eq(diningTables.id, order.tableId));
-            }
+          //   // Release table if applicable
+          //   if (order.tableId) {
+          //     await db
+          //       .update(diningTables)
+          //       .set({ status: "available", updatedAt: new Date() })
+          //       .where(eq(diningTables.id, order.tableId));
+          //   }
 
-            // Emit socket event to staff and customer rooms
-            const statusPayload = {
-              orderId,
-              fromStatus: order.status,
-              toStatus: "completed",
-              orderNumber: order.orderNumber,
-            };
-            io.to(getTenantRoom(restaurantId)).emit("order:status-changed", statusPayload);
-            io.to(getKitchenRoom(restaurantId)).emit("order:status-changed", statusPayload);
-            io.to(getOrderRoom(orderId)).emit("order:status-changed", statusPayload);
-          }
+          //   // Emit socket event to staff and customer rooms
+          //   const statusPayload = {
+          //     orderId,
+          //     fromStatus: order.status,
+          //     toStatus: "completed",
+          //     orderNumber: order.orderNumber,
+          //   };
+          //   io.to(getTenantRoom(restaurantId)).emit("order:status-changed", statusPayload);
+          //   io.to(getKitchenRoom(restaurantId)).emit("order:status-changed", statusPayload);
+          //   io.to(getOrderRoom(orderId)).emit("order:status-changed", statusPayload);
+          // }
         }
 
         // Emit payment completed event to staff and customer rooms

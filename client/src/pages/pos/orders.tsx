@@ -555,7 +555,7 @@ export default function OrdersPage() {
       setSelectedPayMethod(defaultPayMethod);
       setTipAmount("0");
       setPayOrderStatus("pending");
-      setPayDialogOpen(true);
+      setPayDialogOpen(false);
       setLocation("/pos/orders");
     },
     onError: (error: Error) => {
@@ -1314,7 +1314,7 @@ export default function OrdersPage() {
         )}
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden relative">
         <TabsList className="w-fit mb-4">
           <TabsTrigger value="active" data-testid="tab-active-orders">
             <ClipboardList className="mr-2 h-4 w-4" />
@@ -1344,7 +1344,8 @@ export default function OrdersPage() {
                       <div className="min-w-0">
                         <CardTitle className="text-lg">#{order.orderNumber}</CardTitle>
                         <p className="text-sm text-muted-foreground">
-                          {order.tableNumber ? `Table ${order.tableNumber}` : order.customerName || "Counter"}
+                          {order.tableNumber ? `Table ${order.tableNumber}` : "Counter"}
+                          {order.customerName ? ` - ${order.customerName}` : ""}
                           {" - "}
                           {formatTime(order.createdAt)}
                         </p>
@@ -1405,14 +1406,22 @@ export default function OrdersPage() {
                             Split Bill
                           </Button>
                         )}
-                        {order.status === "served" && canProcessPayments && (
+                        {order.status === "served" && (
                           <Button
                             size="sm"
-                            onClick={() => openPaymentDialog({ ...order, status: order.status })}
+                            // onClick={() => openPaymentDialog({ ...order, status: order.status })}
+                            onClick={() =>
+                              updateStatusMutation.mutate({
+                                orderId: order.id,
+                                status: "completed",
+                              })
+                            }
+                            disabled={updateStatusMutation.isPending}
                             data-testid={`button-complete-pay-${order.id}`}
                           >
-                            <DollarSign className="mr-1 h-3.5 w-3.5" />
-                            Pay & Complete
+                            {/* <DollarSign className="mr-1 h-3.5 w-3.5" /> */}
+                            <CheckCircle className="h-3.5 w-3.5" />
+                            Complete Order
                           </Button>
                         )}
                         {canDeleteOrders && (
@@ -1453,12 +1462,12 @@ export default function OrdersPage() {
         </TabsContent>
 
         <TabsContent value="history" className="flex-1 overflow-auto mt-0">
-          <div className="flex items-center justify-between gap-2 mb-4 flex-wrap">
+          <div className="flex items-center justify-between gap-2 mb-4 flex-wrap absolute top-0 right-0">
             <div className="flex items-center gap-2 flex-wrap">
               <Filter className="h-4 w-4 text-muted-foreground" />
               <span className="text-sm text-muted-foreground">Filter:</span>
               <Select value={historyFilter} onValueChange={(v) => { setHistoryFilter(v as "all" | "completed" | "cancelled"); setSelectedOrders(new Set()); }}>
-                <SelectTrigger className="w-[160px]" data-testid="select-history-filter">
+                <SelectTrigger className="w-[160px] m-2" data-testid="select-history-filter">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
