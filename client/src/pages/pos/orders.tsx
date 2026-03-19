@@ -1345,7 +1345,7 @@ export default function OrdersPage() {
                         <CardTitle className="text-lg">#{order.orderNumber}</CardTitle>
                         <p className="text-sm text-muted-foreground">
                           {order.tableNumber ? `Table ${order.tableNumber}` : "Counter"}
-                          {order.customerName ? ` - ${order.customerName}` : ""}
+                          {/* {order.customerName ? ` - ${order.customerName}` : ""} */}
                           {" - "}
                           {formatTime(order.createdAt)}
                         </p>
@@ -1353,6 +1353,9 @@ export default function OrdersPage() {
                       {getStatusBadge(order.status)}
                     </CardHeader>
                     <CardContent className="space-y-3">
+                      {
+                        order.customerName && <p>Customer Name: <b>{order.customerName}</b></p>
+                      }
                       <div className="flex items-center justify-between">
                         <span className="text-lg font-semibold">${parseFloat(order.total).toFixed(2)}</span>
                         <Badge variant="outline" className="no-default-active-elevate">{order.source.toUpperCase()}</Badge>
@@ -1610,11 +1613,15 @@ export default function OrdersPage() {
                 <div className="flex items-center justify-between gap-4 flex-wrap">
                   <div>
                     <DialogTitle className="text-xl">Order #{orderDetailData.order.orderNumber}</DialogTitle>
-                    <DialogDescription>
+                    <DialogDescription className="flex flex-col gap-1 mt-1">
                       {orderDetailData.order.tableNumber ? `Table ${orderDetailData.order.tableNumber}` : orderDetailData.order.customerName || "Counter order"}
                       {" - "}
                       {formatDateTime(orderDetailData.order.createdAt)}
+                      {
+                        orderDetailData.order.customerName && <p>Customer Name: <b>{orderDetailData.order.customerName}</b></p>
+                      }
                     </DialogDescription>
+
                   </div>
                   {getStatusBadge(orderDetailData.order.status)}
                 </div>

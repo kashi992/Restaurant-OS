@@ -101,7 +101,7 @@ if (process.platform !== "win32") {
 }
 
 httpServer.listen(listenOptions, () => {
-  log(`serving on port ${port}`);
+  log(`serving on port http://localhost:${port}`);
 });
   // httpServer.listen(
   //   {
