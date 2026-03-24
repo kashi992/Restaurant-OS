@@ -3752,8 +3752,8 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
           return res.status(404).json({ error: "Table not found" });
         }
 
-        // Generate unique token
-        const token = `${restaurantId.slice(0, 8)}-${tableId.slice(0, 8)}-${Date.now().toString(36)}`;
+        // Generate unique 4-character token
+        const token = await generateUniqueQrToken();
 
         // Deactivate any existing tokens for this table
         await db
@@ -3811,7 +3811,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
             .set({ isActive: false, updatedAt: new Date() })
             .where(and(eq(qrTokens.tableId, table.id), eq(qrTokens.isActive, true)));
 
-          const token = `${restaurantId.slice(0, 8)}-${table.id.slice(0, 8)}-${Date.now().toString(36)}`;
+          const token = await generateUniqueQrToken();
 
           const [qrToken] = await db
             .insert(qrTokens)
@@ -4301,6 +4301,23 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
     };
   }
 
+  // Helper to generate a unique 4-character QR token
+  async function generateUniqueQrToken(): Promise<string> {
+    const chars = "abcdefghjkmnpqrstuvwxyz23456789";
+    for (let attempt = 0; attempt < 30; attempt++) {
+      let token = "";
+      for (let i = 0; i < 4; i++) {
+        token += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      const [existing] = await db
+        .select({ token: qrTokens.token })
+        .from(qrTokens)
+        .where(and(eq(qrTokens.token, token), eq(qrTokens.isActive, true)));
+      if (!existing) return token;
+    }
+    throw new Error("Could not generate a unique QR token");
+  }
+
   // Helper to generate unique order number
   function generateOrderNumber(): string {
     const timestamp = Date.now().toString(36).toUpperCase();
@@ -4451,6 +4468,16 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
 
         const payMethods = await resolvePaymentMethods(qrToken.restaurantId);
 
+        // Fetch QR template setting
+        const [templateSetting] = await db
+          .select()
+          .from(restaurantSettings)
+          .where(and(
+            eq(restaurantSettings.restaurantId, qrToken.restaurantId),
+            eq(restaurantSettings.settingKey, "qr_template")
+          ));
+        const qrTemplate = (templateSetting?.settingValue as string) || "classic";
+
         const response: any = {
           restaurant: {
             id: restaurant.id,
@@ -4465,6 +4492,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
             type: qrToken.tokenType,
           },
           orderingMode: qrSettings.mode,
+          qrTemplate,
           paymentMethods: {
             card: payMethods.card,
             stripe: payMethods.stripe,

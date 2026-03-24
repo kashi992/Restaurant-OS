@@ -41,6 +41,8 @@ import {
   Circle,
 } from "lucide-react";
 
+type QrTemplate = "classic" | "bento" | "minimal";
+
 interface TokenData {
   restaurant: {
     id: string;
@@ -54,6 +56,7 @@ interface TokenData {
     type: string;
   };
   orderingMode: "auto" | "manual";
+  qrTemplate?: QrTemplate;
   table?: {
     id: string;
     number: string;
@@ -849,93 +852,195 @@ export default function QROrderingPage({ token }: { token: string }) {
 
       <main className="flex-1 px-4 py-6">
         <div className="max-w-2xl mx-auto">
-          {loadingMenu ? (
-            <div className="space-y-4">
-              {[1, 2, 3].map((i) => (
-                <Skeleton key={i} className="h-32 w-full" />
-              ))}
-            </div>
-          ) : currentCategory?.items && currentCategory.items.length > 0 ? (
-            <div className="space-y-3">
-              {currentCategory.items.map((item) => {
-                const isAvailable = item.isAvailable !== false;
-                const hasModifiers = item.modifierGroups && item.modifierGroups.length > 0;
+          {(() => {
+            const template: QrTemplate = tokenData.qrTemplate ?? "classic";
+            if (loadingMenu) {
+              return (
+                <div className={template === "bento" ? "grid grid-cols-2 gap-3" : "space-y-4"}>
+                  {[1, 2, 3, 4].map((i) => (
+                    <Skeleton key={i} className={template === "bento" ? "h-44 w-full" : "h-28 w-full"} />
+                  ))}
+                </div>
+              );
+            }
+            if (!currentCategory?.items || currentCategory.items.length === 0) {
+              return (
+                <Card>
+                  <CardContent className="flex flex-col items-center justify-center py-12">
+                    <Utensils className="h-12 w-12 text-muted-foreground" />
+                    <p className="mt-4 text-muted-foreground">No items in this category</p>
+                  </CardContent>
+                </Card>
+              );
+            }
 
-                return (
-                  <Card
-                    key={item.id}
-                    className={`${!isAvailable ? "opacity-60" : "hover-elevate cursor-pointer"}`}
-                    onClick={() => isAvailable && setSelectedItem(item)}
-                    data-testid={`menu-item-${item.id}`}
-                  >
-                    <CardContent className="flex gap-4 p-4">
-                      {item.imageUrl && (
-                        <img
-                          src={item.imageUrl}
-                          alt={item.name}
-                          className="w-24 h-24 rounded-md object-cover shrink-0"
-                        />
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex justify-between items-start gap-2">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <h3 className="font-semibold">{item.name}</h3>
-                              {item.isPopular && (
-                                <Badge variant="secondary" className="no-default-active-elevate text-xs">Popular</Badge>
-                              )}
-                              {item.isNew && (
-                                <Badge variant="secondary" className="no-default-active-elevate text-xs">New</Badge>
-                              )}
-                            </div>
-                            {item.description && (
-                              <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
-                                {item.description}
-                              </p>
-                            )}
+            if (template === "bento") {
+              return (
+                <div className="grid grid-cols-2 gap-3">
+                  {currentCategory.items.map((item) => {
+                    const isAvailable = item.isAvailable !== false;
+                    const hasModifiers = item.modifierGroups && item.modifierGroups.length > 0;
+                    return (
+                      <div
+                        key={item.id}
+                        className={`rounded-xl border bg-card overflow-hidden flex flex-col ${!isAvailable ? "opacity-60" : "cursor-pointer hover:shadow-md transition-shadow"}`}
+                        onClick={() => isAvailable && setSelectedItem(item)}
+                        data-testid={`menu-item-${item.id}`}
+                      >
+                        {item.imageUrl ? (
+                          <img src={item.imageUrl} alt={item.name} className="w-full h-32 object-cover" />
+                        ) : (
+                          <div className="w-full h-32 bg-primary/10 flex items-center justify-center">
+                            <Utensils className="h-8 w-8 text-primary/40" />
                           </div>
-                          <p className="font-semibold text-primary shrink-0">{currency}{parseFloat(item.price).toFixed(2)}</p>
-                        </div>
-                        <div className="mt-3 flex items-center justify-between gap-2 flex-wrap">
-                          {hasModifiers && (
-                            <p className="text-xs text-muted-foreground">Customizable</p>
+                        )}
+                        <div className="p-3 flex flex-col flex-1">
+                          <div className="flex items-start justify-between gap-1 mb-1">
+                            <h3 className="font-semibold text-sm leading-tight line-clamp-2 flex-1">{item.name}</h3>
+                          </div>
+                          {item.description && (
+                            <p className="text-xs text-muted-foreground line-clamp-2 mb-2">{item.description}</p>
                           )}
-                          <div className="ml-auto">
+                          <div className="mt-auto flex items-center justify-between gap-1">
+                            <span className="font-bold text-primary text-sm">{currency}{parseFloat(item.price).toFixed(2)}</span>
                             {isAvailable ? (
                               <Button
-                                size="sm"
+                                size="icon"
+                                className="h-7 w-7 shrink-0"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  if (hasModifiers) {
-                                    setSelectedItem(item);
-                                  } else {
-                                    addToCart(item, 1, []);
-                                  }
+                                  if (hasModifiers) setSelectedItem(item);
+                                  else addToCart(item, 1, []);
                                 }}
                                 data-testid={`button-add-${item.id}`}
                               >
-                                <Plus className="mr-1 h-4 w-4" />
-                                Add
+                                <Plus className="h-4 w-4" />
                               </Button>
                             ) : (
-                              <Badge variant="secondary" className="no-default-active-elevate">Unavailable</Badge>
+                              <Badge variant="secondary" className="no-default-active-elevate text-xs">Unavail.</Badge>
                             )}
                           </div>
                         </div>
                       </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          ) : (
-            <Card>
-              <CardContent className="flex flex-col items-center justify-center py-12">
-                <Utensils className="h-12 w-12 text-muted-foreground" />
-                <p className="mt-4 text-muted-foreground">No items in this category</p>
-              </CardContent>
-            </Card>
-          )}
+                    );
+                  })}
+                </div>
+              );
+            }
+
+            if (template === "minimal") {
+              return (
+                <div className="divide-y">
+                  {currentCategory.items.map((item) => {
+                    const isAvailable = item.isAvailable !== false;
+                    const hasModifiers = item.modifierGroups && item.modifierGroups.length > 0;
+                    return (
+                      <div
+                        key={item.id}
+                        className={`flex items-center gap-3 py-4 ${!isAvailable ? "opacity-60" : "cursor-pointer"}`}
+                        onClick={() => isAvailable && setSelectedItem(item)}
+                        data-testid={`menu-item-${item.id}`}
+                      >
+                        {item.imageUrl && (
+                          <img src={item.imageUrl} alt={item.name} className="w-14 h-14 rounded-lg object-cover shrink-0" />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="font-medium text-sm">{item.name}</h3>
+                            {item.isPopular && <Badge variant="secondary" className="no-default-active-elevate text-xs">Popular</Badge>}
+                            {item.isNew && <Badge variant="secondary" className="no-default-active-elevate text-xs">New</Badge>}
+                          </div>
+                          {item.description && (
+                            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{item.description}</p>
+                          )}
+                          {hasModifiers && <p className="text-xs text-muted-foreground/60 mt-0.5">Customizable</p>}
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="font-semibold text-sm">{currency}{parseFloat(item.price).toFixed(2)}</span>
+                          {isAvailable ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-8 px-2"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (hasModifiers) setSelectedItem(item);
+                                else addToCart(item, 1, []);
+                              }}
+                              data-testid={`button-add-${item.id}`}
+                            >
+                              <Plus className="h-3.5 w-3.5" />
+                            </Button>
+                          ) : (
+                            <Badge variant="secondary" className="no-default-active-elevate text-xs">Unavailable</Badge>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            }
+
+            return (
+              <div className="space-y-3">
+                {currentCategory.items.map((item) => {
+                  const isAvailable = item.isAvailable !== false;
+                  const hasModifiers = item.modifierGroups && item.modifierGroups.length > 0;
+                  return (
+                    <Card
+                      key={item.id}
+                      className={`${!isAvailable ? "opacity-60" : "hover-elevate cursor-pointer"}`}
+                      onClick={() => isAvailable && setSelectedItem(item)}
+                      data-testid={`menu-item-${item.id}`}
+                    >
+                      <CardContent className="flex gap-4 p-4">
+                        {item.imageUrl && (
+                          <img src={item.imageUrl} alt={item.name} className="w-24 h-24 rounded-md object-cover shrink-0" />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex justify-between items-start gap-2">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h3 className="font-semibold">{item.name}</h3>
+                                {item.isPopular && <Badge variant="secondary" className="no-default-active-elevate text-xs">Popular</Badge>}
+                                {item.isNew && <Badge variant="secondary" className="no-default-active-elevate text-xs">New</Badge>}
+                              </div>
+                              {item.description && (
+                                <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{item.description}</p>
+                              )}
+                            </div>
+                            <p className="font-semibold text-primary shrink-0">{currency}{parseFloat(item.price).toFixed(2)}</p>
+                          </div>
+                          <div className="mt-3 flex items-center justify-between gap-2 flex-wrap">
+                            {hasModifiers && <p className="text-xs text-muted-foreground">Customizable</p>}
+                            <div className="ml-auto">
+                              {isAvailable ? (
+                                <Button
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (hasModifiers) setSelectedItem(item);
+                                    else addToCart(item, 1, []);
+                                  }}
+                                  data-testid={`button-add-${item.id}`}
+                                >
+                                  <Plus className="mr-1 h-4 w-4" />
+                                  Add
+                                </Button>
+                              ) : (
+                                <Badge variant="secondary" className="no-default-active-elevate">Unavailable</Badge>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            );
+          })()}
         </div>
       </main>
 
