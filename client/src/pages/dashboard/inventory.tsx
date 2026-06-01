@@ -81,7 +81,7 @@ interface InventoryTransaction {
   type: string;
   quantity: string;
   costPerUnit: string | null;
-  totalCost: string | null;
+  // totalCost: string | null;
   notes: string | null;
   createdAt: string;
 }
@@ -530,9 +530,11 @@ export default function InventoryPage() {
                             {Math.abs(qty).toFixed(3)} {item?.unit}
                           </span>
                         </TableCell>
-                        <TableCell>
-                          {tx.totalCost ? `$${parseFloat(tx.totalCost).toFixed(2)}` : "—"}
-                        </TableCell>
+                      <TableCell>
+  {tx.costPerUnit
+    ? `$${(Math.abs(parseFloat(tx.quantity)) * parseFloat(tx.costPerUnit)).toFixed(2)}`
+    : "—"}
+</TableCell>
                         <TableCell className="text-muted-foreground">{tx.notes ?? "—"}</TableCell>
                         <TableCell className="text-muted-foreground">
                           {new Date(tx.createdAt).toLocaleDateString()}

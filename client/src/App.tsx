@@ -125,7 +125,7 @@ function AppRouter() {
           </DashboardLayout>
         </ProtectedRoute>
       </Route>
-            <Route path="/dashboard/recipe-costing">
+      <Route path="/dashboard/recipe-costing">
         <ProtectedRoute requireRestaurantAccess requiredPermissions={["menu:read"]}>
           <DashboardLayout>
             <RecipeCostingPage />
@@ -140,7 +140,7 @@ function AppRouter() {
         </ProtectedRoute>
       </Route>
 
-            <Route path="/dashboard/inventory">
+      <Route path="/dashboard/inventory">
         <ProtectedRoute requireRestaurantAccess requiredPermissions={["menu:read"]}>
           <DashboardLayout>
             <InventoryPage />

@@ -74,6 +74,12 @@ interface RecipeIngredient {
   createdAt: string;
 }
 
+interface InventoryItem {
+  id: string;
+  name: string;
+  unit: string;
+}
+
 interface ProfitReportItem {
   menuItemId: string;
   name: string;
@@ -121,6 +127,12 @@ function RecipeBuilderTab({ restaurantId }: { restaurantId: string }) {
     queryKey: ["/api/restaurants", restaurantId, "recipes"],
     enabled: !!restaurantId,
   });
+
+  const { data: inventoryItemsData } = useQuery<InventoryItem[]>({
+    queryKey: ["/api/restaurants", restaurantId, "inventory"],
+    enabled: !!restaurantId,
+  });
+  const inventoryItems = inventoryItemsData || [];
 
   const addMutation = useMutation({
     mutationFn: async (data: typeof form & { menuItemId: string }) => {
@@ -255,7 +267,7 @@ function RecipeBuilderTab({ restaurantId }: { restaurantId: string }) {
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Inventory Item ID</TableHead>
+                            <TableHead>Ingredient</TableHead>
                             <TableHead>Quantity</TableHead>
                             <TableHead>Unit</TableHead>
                             <TableHead>Notes</TableHead>
@@ -265,8 +277,8 @@ function RecipeBuilderTab({ restaurantId }: { restaurantId: string }) {
                         <TableBody>
                           {itemRecipes.map((r) => (
                             <TableRow key={r.id}>
-                              <TableCell className="font-mono text-xs">
-                                {r.inventoryItemId}
+                              <TableCell className="font-medium">
+                                {inventoryItems.find((i) => i.id === r.inventoryItemId)?.name ?? r.inventoryItemId}
                               </TableCell>
                               <TableCell>{r.quantity}</TableCell>
                               <TableCell>{r.unit}</TableCell>
@@ -345,17 +357,22 @@ function RecipeBuilderTab({ restaurantId }: { restaurantId: string }) {
             </div>
 
             <div className="space-y-1.5">
-              <Label>Inventory Item ID *</Label>
-              <Input
-                placeholder="e.g. uuid of inventory item"
+              <Label>Inventory Item *</Label>
+              <Select
                 value={form.inventoryItemId}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, inventoryItemId: e.target.value }))
-                }
-              />
-              <p className="text-xs text-muted-foreground">
-                Paste the inventory item ID from your inventory module.
-              </p>
+                onValueChange={(v) => setForm((f) => ({ ...f, inventoryItemId: v }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select inventory item…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {inventoryItems.map((inv) => (
+                    <SelectItem key={inv.id} value={inv.id}>
+                      {inv.name} ({inv.unit})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -560,11 +577,10 @@ function ProfitReportTab({ restaurantId }: { restaurantId: string }) {
                       )}
                     </TableCell>
                     <TableCell
-                      className={`text-right font-semibold ${
-                        item.hasCost
+                      className={`text-right font-semibold ${item.hasCost
                           ? getMarginColor(item.marginPercent)
                           : "text-muted-foreground"
-                      }`}
+                        }`}
                     >
                       {item.hasCost ? `${item.marginPercent}%` : "—"}
                     </TableCell>

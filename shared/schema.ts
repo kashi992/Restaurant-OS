@@ -268,6 +268,107 @@ export const menuItemModifierGroups = pgTable("menu_item_modifier_groups", {
   index("menu_item_modifier_groups_menu_item_id_idx").on(table.menuItemId),
 ]);
 
+
+// ============================================================================
+// INVENTORY MANAGEMENT
+// ============================================================================
+
+export const inventoryItems = pgTable("inventory_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  restaurantId: varchar("restaurant_id").notNull().references(() => restaurants.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  sku: text("sku"),
+  unit: text("unit").notNull().default("pcs"), // pcs, kg, litre, box, etc.
+  currentStock: decimal("current_stock", { precision: 10, scale: 2 }).notNull().default("0"),
+  minStockLevel: decimal("min_stock_level", { precision: 10, scale: 2 }).default("0"),
+  maxStockLevel: decimal("max_stock_level", { precision: 10, scale: 2 }),
+  costPerUnit: decimal("cost_per_unit", { precision: 10, scale: 2 }).default("0"),
+  category: text("category"),
+  supplier: text("supplier"),
+    storageLocation: text("storage_location"),
+  description: text("description"),
+  notes: text("notes"),
+  isActive: boolean("is_active").default(true),
+  lastRestockedAt: timestamp("last_restocked_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("inventory_items_restaurant_id_idx").on(table.restaurantId),
+  index("inventory_items_sku_idx").on(table.sku),
+]);
+
+export const inventoryTransactions = pgTable("inventory_transactions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  restaurantId: varchar("restaurant_id").notNull().references(() => restaurants.id, { onDelete: "cascade" }),
+  inventoryItemId: varchar("inventory_item_id").notNull().references(() => inventoryItems.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "set null" }),
+  type: text("type").notNull(), // restock, usage, waste, adjustment, sale
+  quantity: decimal("quantity", { precision: 10, scale: 2 }).notNull(), // positive = added, negative = removed
+  previousStock: decimal("previous_stock", { precision: 10, scale: 2 }),
+  newStock: decimal("new_stock", { precision: 10, scale: 2 }),
+  costPerUnit: decimal("cost_per_unit", { precision: 10, scale: 2 }),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("inventory_transactions_restaurant_id_idx").on(table.restaurantId),
+  index("inventory_transactions_item_id_idx").on(table.inventoryItemId),
+  index("inventory_transactions_created_at_idx").on(table.createdAt),
+]);
+
+export const inventoryAlerts = pgTable("inventory_alerts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  restaurantId: varchar("restaurant_id").notNull().references(() => restaurants.id, { onDelete: "cascade" }),
+  inventoryItemId: varchar("inventory_item_id").notNull().references(() => inventoryItems.id, { onDelete: "cascade" }),
+  alertType: text("alert_type").notNull(), // low_stock, out_of_stock, expiry
+  message: text("message"),
+  isResolved: boolean("is_resolved").default(false),
+  resolvedAt: timestamp("resolved_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("inventory_alerts_restaurant_id_idx").on(table.restaurantId),
+  index("inventory_alerts_item_id_idx").on(table.inventoryItemId),
+  index("inventory_alerts_is_resolved_idx").on(table.isResolved),
+]);
+
+// Insert schemas
+export const insertInventoryItemSchema = createInsertSchema(inventoryItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  lastRestockedAt: true,
+});
+
+export const insertInventoryTransactionSchema = createInsertSchema(inventoryTransactions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertInventoryAlertSchema = createInsertSchema(inventoryAlerts).omit({
+  id: true,
+  createdAt: true,
+  resolvedAt: true,
+});
+
+// Types
+export type InsertInventoryItem = z.infer<typeof insertInventoryItemSchema>;
+export type InventoryItem = typeof inventoryItems.$inferSelect;
+
+export type InsertInventoryTransaction = z.infer<typeof insertInventoryTransactionSchema>;
+export type InventoryTransaction = typeof inventoryTransactions.$inferSelect;
+
+export type InsertInventoryAlert = z.infer<typeof insertInventoryAlertSchema>;
+export type InventoryAlert = typeof inventoryAlerts.$inferSelect;
+
+// Recipe Costing
+export const insertMenuItemRecipeSchema = createInsertSchema(menuItemRecipes).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertMenuItemRecipe = z.infer<typeof insertMenuItemRecipeSchema>;
+export type MenuItemRecipe = typeof menuItemRecipes.$inferSelect;
+
 // ============================================================================
 // RECIPE COSTING - Links menu items/modifiers to inventory ingredients
 // ============================================================================
@@ -837,104 +938,3 @@ export const SPLIT_TYPES = [
   "by_amount",
   "custom",
 ] as const;
-
-
-// ============================================================================
-// INVENTORY MANAGEMENT
-// ============================================================================
-
-export const inventoryItems = pgTable("inventory_items", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  restaurantId: varchar("restaurant_id").notNull().references(() => restaurants.id, { onDelete: "cascade" }),
-  name: text("name").notNull(),
-  sku: text("sku"),
-  unit: text("unit").notNull().default("pcs"), // pcs, kg, litre, box, etc.
-  currentStock: decimal("current_stock", { precision: 10, scale: 2 }).notNull().default("0"),
-  minStockLevel: decimal("min_stock_level", { precision: 10, scale: 2 }).default("0"),
-  maxStockLevel: decimal("max_stock_level", { precision: 10, scale: 2 }),
-  costPerUnit: decimal("cost_per_unit", { precision: 10, scale: 2 }).default("0"),
-  category: text("category"),
-  supplier: text("supplier"),
-    storageLocation: text("storage_location"),
-  description: text("description"),
-  notes: text("notes"),
-  isActive: boolean("is_active").default(true),
-  lastRestockedAt: timestamp("last_restocked_at"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-}, (table) => [
-  index("inventory_items_restaurant_id_idx").on(table.restaurantId),
-  index("inventory_items_sku_idx").on(table.sku),
-]);
-
-export const inventoryTransactions = pgTable("inventory_transactions", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  restaurantId: varchar("restaurant_id").notNull().references(() => restaurants.id, { onDelete: "cascade" }),
-  inventoryItemId: varchar("inventory_item_id").notNull().references(() => inventoryItems.id, { onDelete: "cascade" }),
-  userId: varchar("user_id").references(() => users.id, { onDelete: "set null" }),
-  type: text("type").notNull(), // restock, usage, waste, adjustment, sale
-  quantity: decimal("quantity", { precision: 10, scale: 2 }).notNull(), // positive = added, negative = removed
-  previousStock: decimal("previous_stock", { precision: 10, scale: 2 }),
-  newStock: decimal("new_stock", { precision: 10, scale: 2 }),
-  costPerUnit: decimal("cost_per_unit", { precision: 10, scale: 2 }),
-  notes: text("notes"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  index("inventory_transactions_restaurant_id_idx").on(table.restaurantId),
-  index("inventory_transactions_item_id_idx").on(table.inventoryItemId),
-  index("inventory_transactions_created_at_idx").on(table.createdAt),
-]);
-
-export const inventoryAlerts = pgTable("inventory_alerts", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  restaurantId: varchar("restaurant_id").notNull().references(() => restaurants.id, { onDelete: "cascade" }),
-  inventoryItemId: varchar("inventory_item_id").notNull().references(() => inventoryItems.id, { onDelete: "cascade" }),
-  alertType: text("alert_type").notNull(), // low_stock, out_of_stock, expiry
-  message: text("message"),
-  isResolved: boolean("is_resolved").default(false),
-  resolvedAt: timestamp("resolved_at"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  index("inventory_alerts_restaurant_id_idx").on(table.restaurantId),
-  index("inventory_alerts_item_id_idx").on(table.inventoryItemId),
-  index("inventory_alerts_is_resolved_idx").on(table.isResolved),
-]);
-
-// Insert schemas
-export const insertInventoryItemSchema = createInsertSchema(inventoryItems).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-  lastRestockedAt: true,
-});
-
-export const insertInventoryTransactionSchema = createInsertSchema(inventoryTransactions).omit({
-  id: true,
-  createdAt: true,
-});
-
-export const insertInventoryAlertSchema = createInsertSchema(inventoryAlerts).omit({
-  id: true,
-  createdAt: true,
-  resolvedAt: true,
-});
-
-// Types
-export type InsertInventoryItem = z.infer<typeof insertInventoryItemSchema>;
-export type InventoryItem = typeof inventoryItems.$inferSelect;
-
-export type InsertInventoryTransaction = z.infer<typeof insertInventoryTransactionSchema>;
-export type InventoryTransaction = typeof inventoryTransactions.$inferSelect;
-
-export type InsertInventoryAlert = z.infer<typeof insertInventoryAlertSchema>;
-export type InventoryAlert = typeof inventoryAlerts.$inferSelect;
-
-// Recipe Costing
-export const insertMenuItemRecipeSchema = createInsertSchema(menuItemRecipes).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export type InsertMenuItemRecipe = z.infer<typeof insertMenuItemRecipeSchema>;
-export type MenuItemRecipe = typeof menuItemRecipes.$inferSelect;
