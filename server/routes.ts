@@ -32,6 +32,10 @@ import {
   splitSessions,
   splitShares,
   splitSharePayments,
+  inventoryItems,
+  inventoryTransactions,
+  inventoryAlerts,
+  menuItemRecipes
 } from "@shared/schema";
 import {
   generateAccessToken,
@@ -426,8 +430,8 @@ export async function registerRoutes(
           }
 
           // Check if restaurant subscription has expired
-          if (restaurantUser.restaurant.subscriptionEndAt && 
-              new Date(restaurantUser.restaurant.subscriptionEndAt) < new Date()) {
+          if (restaurantUser.restaurant.subscriptionEndAt &&
+            new Date(restaurantUser.restaurant.subscriptionEndAt) < new Date()) {
             return res.status(403).json({
               error: "Subscription Expired",
               message: "Your restaurant subscription has expired. Please contact your administrator to renew.",
@@ -440,7 +444,7 @@ export async function registerRoutes(
             .select()
             .from(restaurantFeatureAllowlist)
             .where(eq(restaurantFeatureAllowlist.restaurantId, restaurantUser.restaurant.id));
-          
+
           const features = featureList.reduce((acc, f) => ({
             ...acc,
             [f.featureKey]: f.isEnabled ?? false
@@ -697,7 +701,7 @@ export async function registerRoutes(
             .select()
             .from(restaurantFeatureAllowlist)
             .where(eq(restaurantFeatureAllowlist.restaurantId, ra.restaurant.id));
-          
+
           const featureFlags = features.reduce((acc, f) => ({
             ...acc,
             [f.featureKey]: f.isEnabled ?? false
@@ -840,22 +844,22 @@ export async function registerRoutes(
   // Helper function to compute restaurant status
   const computeRestaurantStatus = (restaurant: any) => {
     const now = new Date();
-    
+
     // Check manual suspension first
     if (restaurant.isSuspended) {
       return "suspended";
     }
-    
+
     // Check subscription expiry
     if (restaurant.subscriptionEndAt && new Date(restaurant.subscriptionEndAt) < now) {
       return "expired";
     }
-    
+
     // Check if active
     if (!restaurant.isActive) {
       return "inactive";
     }
-    
+
     return "active";
   };
 
@@ -871,7 +875,7 @@ export async function registerRoutes(
       const restaurantsWithStatus = allRestaurants.map((r) => ({
         ...r,
         status: computeRestaurantStatus(r),
-        daysRemaining: r.subscriptionEndAt 
+        daysRemaining: r.subscriptionEndAt
           ? Math.max(0, Math.ceil((new Date(r.subscriptionEndAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
           : null,
       }));
@@ -960,7 +964,7 @@ export async function registerRoutes(
       // Calculate subscription end date
       const subscriptionStartAt = new Date();
       let subscriptionEndAt: Date | null = null;
-      
+
       if (subscriptionEndDate) {
         subscriptionEndAt = new Date(subscriptionEndDate);
       } else if (subscriptionDuration) {
@@ -1040,10 +1044,10 @@ export async function registerRoutes(
 
       // Seed default staff roles
       const defaultStaffRoles = [
-        { name: "manager", description: "Manage staff and settings", permissions: ["staff:read","staff:create","staff:update","orders:read","orders:create","orders:update","orders:delete","menu:read","menu:create","menu:update","menu:delete","tables:read","tables:create","tables:update","tables:delete","settings:read","settings:update","payments:read","payments:create"] },
-        { name: "server", description: "Take orders and manage tables", permissions: ["orders:read","orders:create","orders:update","tables:read","tables:update","menu:read","payments:read"] },
-        { name: "kitchen", description: "View and manage kitchen orders", permissions: ["orders:read","orders:update","menu:read"] },
-        { name: "cashier", description: "Process payments", permissions: ["orders:read","payments:read","payments:create","tables:read"] },
+        { name: "manager", description: "Manage staff and settings", permissions: ["staff:read", "staff:create", "staff:update", "orders:read", "orders:create", "orders:update", "orders:delete", "menu:read", "menu:create", "menu:update", "menu:delete", "tables:read", "tables:create", "tables:update", "tables:delete", "settings:read", "settings:update", "payments:read", "payments:create"] },
+        { name: "server", description: "Take orders and manage tables", permissions: ["orders:read", "orders:create", "orders:update", "tables:read", "tables:update", "menu:read", "payments:read"] },
+        { name: "kitchen", description: "View and manage kitchen orders", permissions: ["orders:read", "orders:update", "menu:read"] },
+        { name: "cashier", description: "Process payments", permissions: ["orders:read", "payments:read", "payments:create", "tables:read"] },
       ];
       for (const r of defaultStaffRoles) {
         await db.insert(roles).values({
@@ -1124,7 +1128,7 @@ export async function registerRoutes(
 
       // Compute status and days remaining
       const status = computeRestaurantStatus(restaurant);
-      const daysRemaining = restaurant.subscriptionEndAt 
+      const daysRemaining = restaurant.subscriptionEndAt
         ? Math.max(0, Math.ceil((new Date(restaurant.subscriptionEndAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
         : null;
 
@@ -1647,12 +1651,12 @@ export async function registerRoutes(
       }
 
       let newEndDate: Date;
-      
+
       if (endDate) {
         newEndDate = new Date(endDate);
       } else if (months) {
         // Extend from current end date or from now if expired
-        const baseDate = existing.subscriptionEndAt && new Date(existing.subscriptionEndAt) > new Date() 
+        const baseDate = existing.subscriptionEndAt && new Date(existing.subscriptionEndAt) > new Date()
           ? new Date(existing.subscriptionEndAt)
           : new Date();
         newEndDate = new Date(baseDate);
@@ -1685,9 +1689,9 @@ export async function registerRoutes(
         req,
       });
 
-      res.json({ 
-        restaurant, 
-        message: `Subscription extended to ${newEndDate.toLocaleDateString()}` 
+      res.json({
+        restaurant,
+        message: `Subscription extended to ${newEndDate.toLocaleDateString()}`
       });
     } catch (error) {
       console.error("Extend subscription error:", error);
@@ -1699,61 +1703,61 @@ export async function registerRoutes(
   });
 
   // Delete restaurant (super admin only) - PERMANENT deletion
-app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdmin, async (req, res) => {
-  try {
-    const { restaurantId } = req.params;
+  app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdmin, async (req, res) => {
+    try {
+      const { restaurantId } = req.params;
 
-    // Get restaurant details before deletion
-    const [restaurant] = await db
-      .select()
-      .from(restaurants)
-      .where(eq(restaurants.id, restaurantId))
-      .limit(1);
+      // Get restaurant details before deletion
+      const [restaurant] = await db
+        .select()
+        .from(restaurants)
+        .where(eq(restaurants.id, restaurantId))
+        .limit(1);
 
-    if (!restaurant) {
-      return res.status(404).json({
-        error: "Not Found",
-        message: "Restaurant not found"
+      if (!restaurant) {
+        return res.status(404).json({
+          error: "Not Found",
+          message: "Restaurant not found"
+        });
+      }
+
+      console.log(`⚠️ DELETING RESTAURANT: ${restaurant.name} (${restaurantId})`);
+      console.log("This will permanently delete all associated data!");
+
+      // Delete the restaurant (cascading deletes will handle related data)
+      await db
+        .delete(restaurants)
+        .where(eq(restaurants.id, restaurantId));
+
+      // Create audit log
+      await createAuditLog({
+        adminUserId: req.user!.userId,
+        action: AUDIT_ACTIONS.RESTAURANT_DELETE,
+        targetType: "restaurant",
+        targetId: restaurantId,
+        targetName: restaurant.name,
+        previousValue: restaurant,
+        metadata: {
+          deletedAt: new Date().toISOString(),
+          reason: "Permanent deletion by super admin"
+        },
+        req,
+      });
+
+      console.log(`✅ Restaurant deleted: ${restaurant.name}`);
+
+      res.json({
+        message: "Restaurant deleted permanently",
+        restaurantName: restaurant.name
+      });
+    } catch (error) {
+      console.error("Delete restaurant error:", error);
+      res.status(500).json({
+        error: "Internal Server Error",
+        message: "Failed to delete restaurant"
       });
     }
-
-    console.log(`⚠️ DELETING RESTAURANT: ${restaurant.name} (${restaurantId})`);
-    console.log("This will permanently delete all associated data!");
-
-    // Delete the restaurant (cascading deletes will handle related data)
-    await db
-      .delete(restaurants)
-      .where(eq(restaurants.id, restaurantId));
-
-    // Create audit log
-    await createAuditLog({
-      adminUserId: req.user!.userId,
-      action: AUDIT_ACTIONS.RESTAURANT_DELETE,
-      targetType: "restaurant",
-      targetId: restaurantId,
-      targetName: restaurant.name,
-      previousValue: restaurant,
-      metadata: {
-        deletedAt: new Date().toISOString(),
-        reason: "Permanent deletion by super admin"
-      },
-      req,
-    });
-
-    console.log(`✅ Restaurant deleted: ${restaurant.name}`);
-
-    res.json({
-      message: "Restaurant deleted permanently",
-      restaurantName: restaurant.name
-    });
-  } catch (error) {
-    console.error("Delete restaurant error:", error);
-    res.status(500).json({
-      error: "Internal Server Error",
-      message: "Failed to delete restaurant"
-    });
-  }
-});
+  });
 
   // Create restaurant admin user (super admin only)
   app.post("/api/admin/restaurants/:restaurantId/admin", authenticate, requireSuperAdmin, async (req, res) => {
@@ -4758,7 +4762,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
     qrTokenId: z.string().min(1),
     tableId: z.string().optional(),
     tableLabel: z.string().optional(),
- customerName: z.string().min(1, "Customer name is required"),
+    customerName: z.string().min(1, "Customer name is required"),
     customerPhone: z.string().optional(),
     customerEmail: z.string().email().optional().or(z.literal("")),
     guestCount: z.number().int().min(1).default(1),
@@ -4927,7 +4931,7 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
         // Validate QR payment requirement: if online payment methods are enabled, payment is required
         const qrPayMethods = await resolvePaymentMethods(restaurantId);
         const hasOnlinePayment = qrPayMethods.card || qrPayMethods.stripe || qrPayMethods.paypal;
-        
+
         if (hasOnlinePayment && !orderData.paymentMethod) {
           return res.status(400).json({ error: "Online payment is required to place this order" });
         }
@@ -7411,6 +7415,690 @@ app.delete("/api/admin/restaurants/:restaurantId", authenticate, requireSuperAdm
       message: "Use POST /api/order with a valid QR token"
     });
   });
+
+  // ============================================================================
+  // INVENTORY MANAGEMENT
+  // ============================================================================
+  const checkInventoryFeature = async (restaurantId: string): Promise<boolean> => {
+    const [feature] = await db.select().from(restaurantFeatureAllowlist)
+      .where(and(
+        eq(restaurantFeatureAllowlist.restaurantId, restaurantId),
+        eq(restaurantFeatureAllowlist.featureKey, "inventory_management"),
+        eq(restaurantFeatureAllowlist.isEnabled, true)
+      ));
+    return !!feature;
+  };
+  // List inventory items
+  app.get(
+    "/api/restaurants/:restaurantId/inventory",
+    authenticate,
+    requireRestaurantAccess,
+    requirePermission("menu:read"),
+    async (req, res) => {
+
+      try {
+        const { restaurantId } = req.params;
+        const allowed = await checkInventoryFeature(restaurantId);
+        if (!allowed) return res.status(403).json({ error: "Inventory management is not enabled for this restaurant" });
+        const items = await db
+          .select()
+          .from(inventoryItems)
+          .where(and(eq(inventoryItems.restaurantId, restaurantId), eq(inventoryItems.isActive, true)))
+          .orderBy(inventoryItems.name);
+        res.json(items);
+      } catch (error) {
+        console.error("List inventory error:", error);
+        res.status(500).json({ error: "Failed to list inventory" });
+      }
+    }
+  );
+
+  // Create inventory item
+  app.post(
+    "/api/restaurants/:restaurantId/inventory",
+    authenticate,
+    requireRestaurantAccess,
+    requirePermission("menu:create"),
+    async (req, res) => {
+      try {
+        const { restaurantId } = req.params;
+        const allowed = await checkInventoryFeature(restaurantId);
+        if (!allowed) return res.status(403).json({ error: "Inventory management is not enabled for this restaurant" });
+        const { name, sku, unit, currentStock, minStockLevel, maxStockLevel, costPerUnit, category, supplier, storageLocation, description, notes } = req.body;
+
+        if (!name || !unit) {
+          return res.status(400).json({ error: "Name and unit are required" });
+        }
+
+        const [item] = await db
+          .insert(inventoryItems)
+          .values({
+            restaurantId,
+            name,
+            sku,
+            unit,
+            currentStock: currentStock?.toString() ?? "0",
+            minStockLevel: minStockLevel?.toString() ?? "0",
+            maxStockLevel: maxStockLevel?.toString() ?? null,
+            costPerUnit: costPerUnit?.toString() ?? "0",
+            category,
+            supplier,
+            storageLocation: storageLocation ?? null,
+            description: description ?? null,
+            notes,
+          })
+          .returning();
+
+        // Log the initial stock as a transaction
+        if (parseFloat(currentStock ?? "0") > 0) {
+          await db.insert(inventoryTransactions).values({
+            restaurantId,
+            inventoryItemId: item.id,
+            userId: req.user!.userId,
+            type: "restock",
+            quantity: currentStock.toString(),
+            previousStock: "0",
+            newStock: currentStock.toString(),
+            costPerUnit: costPerUnit?.toString() ?? "0",
+            notes: "Initial stock",
+          });
+        }
+
+        res.status(201).json(item);
+      } catch (error) {
+        console.error("Create inventory item error:", error);
+        res.status(500).json({ error: "Failed to create inventory item" });
+      }
+    }
+  );
+
+  // Update inventory item
+  app.patch(
+    "/api/restaurants/:restaurantId/inventory/:itemId",
+    authenticate,
+    requireRestaurantAccess,
+    requirePermission("menu:update"),
+    async (req, res) => {
+      try {
+        const { restaurantId, itemId } = req.params;
+        const allowed = await checkInventoryFeature(restaurantId);
+        if (!allowed) return res.status(403).json({ error: "Inventory management is not enabled for this restaurant" });
+        const updates = { ...req.body };
+
+        if (updates.currentStock !== undefined) updates.currentStock = updates.currentStock.toString();
+        if (updates.minStockLevel !== undefined) updates.minStockLevel = updates.minStockLevel.toString();
+        if (updates.maxStockLevel !== undefined) updates.maxStockLevel = updates.maxStockLevel.toString();
+        if (updates.costPerUnit !== undefined) updates.costPerUnit = updates.costPerUnit.toString();
+
+        const [existing] = await db
+          .select()
+          .from(inventoryItems)
+          .where(and(eq(inventoryItems.id, itemId), eq(inventoryItems.restaurantId, restaurantId)));
+
+        if (!existing) return res.status(404).json({ error: "Item not found" });
+
+        const [updated] = await db
+          .update(inventoryItems)
+          .set({ ...updates, updatedAt: new Date() })
+          .where(eq(inventoryItems.id, itemId))
+          .returning();
+
+        res.json(updated);
+      } catch (error) {
+        console.error("Update inventory item error:", error);
+        res.status(500).json({ error: "Failed to update inventory item" });
+      }
+    }
+  );
+
+  // Delete inventory item
+  app.delete(
+    "/api/restaurants/:restaurantId/inventory/:itemId",
+    authenticate,
+    requireRestaurantAccess,
+    requirePermission("menu:delete"),
+    async (req, res) => {
+      try {
+        const { restaurantId, itemId } = req.params;
+        const allowed = await checkInventoryFeature(restaurantId);
+        if (!allowed) return res.status(403).json({ error: "Inventory management is not enabled for this restaurant" });
+        const [existing] = await db
+          .select()
+          .from(inventoryItems)
+          .where(and(eq(inventoryItems.id, itemId), eq(inventoryItems.restaurantId, restaurantId)));
+
+        if (!existing) return res.status(404).json({ error: "Item not found" });
+
+        await db.update(inventoryItems)
+          .set({ isActive: false, updatedAt: new Date() })
+          .where(eq(inventoryItems.id, itemId));
+
+        res.json({ message: "Item deleted" });
+      } catch (error) {
+        console.error("Delete inventory item error:", error);
+        res.status(500).json({ error: "Failed to delete inventory item" });
+      }
+    }
+  );
+
+  // Log a transaction (restock / usage / waste / adjustment)
+  app.post(
+    "/api/restaurants/:restaurantId/inventory/:itemId/transactions",
+    authenticate,
+    requireRestaurantAccess,
+    requirePermission("menu:update"),
+    async (req, res) => {
+      try {
+        const { restaurantId, itemId } = req.params;
+        const allowed = await checkInventoryFeature(restaurantId);
+        if (!allowed) return res.status(403).json({ error: "Inventory management is not enabled for this restaurant" });
+        const { type, quantity, costPerUnit, notes } = req.body;
+
+        if (!type || quantity === undefined) {
+          return res.status(400).json({ error: "Type and quantity are required" });
+        }
+
+        const [item] = await db
+          .select()
+          .from(inventoryItems)
+          .where(and(eq(inventoryItems.id, itemId), eq(inventoryItems.restaurantId, restaurantId)));
+
+        if (!item) return res.status(404).json({ error: "Item not found" });
+
+        const previousStock = parseFloat(item.currentStock);
+        const change = parseFloat(quantity);
+        const newStock = previousStock + change;
+
+        // Update item stock
+        await db.update(inventoryItems)
+          .set({
+            currentStock: newStock.toFixed(2),
+            lastRestockedAt: type === "restock" ? new Date() : item.lastRestockedAt,
+            updatedAt: new Date(),
+          })
+          .where(eq(inventoryItems.id, itemId));
+
+        // Record transaction
+        const [transaction] = await db.insert(inventoryTransactions).values({
+          restaurantId,
+          inventoryItemId: itemId,
+          userId: req.user!.userId,
+          type,
+          quantity: change.toFixed(2),
+          previousStock: previousStock.toFixed(2),
+          newStock: newStock.toFixed(2),
+          costPerUnit: costPerUnit?.toString(),
+          notes,
+        }).returning();
+
+        res.status(201).json({ transaction, newStock: newStock.toFixed(2) });
+      } catch (error) {
+        console.error("Log transaction error:", error);
+        res.status(500).json({ error: "Failed to log transaction" });
+      }
+    }
+  );
+
+  // Get transactions for an item
+  app.get(
+    "/api/restaurants/:restaurantId/inventory/:itemId/transactions",
+    authenticate,
+    requireRestaurantAccess,
+    requirePermission("menu:read"),
+    async (req, res) => {
+      try {
+        const { restaurantId, itemId } = req.params;
+        const allowed = await checkInventoryFeature(restaurantId);
+        if (!allowed) return res.status(403).json({ error: "Inventory management is not enabled for this restaurant" });
+        const transactions = await db
+          .select()
+          .from(inventoryTransactions)
+          .where(and(
+            eq(inventoryTransactions.inventoryItemId, itemId),
+            eq(inventoryTransactions.restaurantId, restaurantId)
+          ))
+          .orderBy(desc(inventoryTransactions.createdAt));
+
+        res.json(transactions);
+      } catch (error) {
+        console.error("Get transactions error:", error);
+        res.status(500).json({ error: "Failed to get transactions" });
+      }
+    }
+  );
+
+  // ── GET /inventory/summary ──────────────────────────────────────────────
+  app.get(
+    "/api/restaurants/:restaurantId/inventory/summary",
+    authenticate, requireRestaurantAccess, requirePermission("menu:read"),
+    async (req, res) => {
+      try {
+        const { restaurantId } = req.params;
+        const allowed = await checkInventoryFeature(restaurantId);
+        if (!allowed) return res.status(403).json({ error: "Inventory management is not enabled for this restaurant" });
+        const items = await db.select().from(inventoryItems)
+          .where(and(eq(inventoryItems.restaurantId, restaurantId), eq(inventoryItems.isActive, true)));
+
+        const lowStockItems = items.filter(i => parseFloat(i.currentStock) > 0 && parseFloat(i.currentStock) <= parseFloat(i.minStockLevel ?? "0"));
+        const outOfStockItems = items.filter(i => parseFloat(i.currentStock) <= 0);
+        const totalStockValue = items.reduce((sum, i) => sum + parseFloat(i.currentStock) * parseFloat(i.costPerUnit ?? "0"), 0);
+        let activeAlertsCount = 0;
+        try {
+          const activeAlerts = await db.select().from(inventoryAlerts)
+            .where(and(eq(inventoryAlerts.restaurantId, restaurantId), eq(inventoryAlerts.isResolved, false)));
+          activeAlertsCount = activeAlerts.length;
+        } catch (_) { }
+
+        res.json({
+          totalItems: items.length,
+          lowStockCount: lowStockItems.length,
+          outOfStockCount: outOfStockItems.length,
+          activeAlertsCount,
+          totalStockValue: totalStockValue.toFixed(2),
+        });
+      } catch (error) {
+        console.error("Inventory summary error:", error);
+        res.status(500).json({ error: "Failed to fetch summary" });
+      }
+    }
+  );
+
+  // ── GET /inventory-transactions ─────────────────────────────────────────
+  app.get(
+    "/api/restaurants/:restaurantId/inventory-transactions",
+    authenticate, requireRestaurantAccess, requirePermission("menu:read"),
+    async (req, res) => {
+      try {
+        const { restaurantId } = req.params;
+        const allowed = await checkInventoryFeature(restaurantId);
+        if (!allowed) return res.status(403).json({ error: "Inventory management is not enabled for this restaurant" });
+        const txs = await db.select().from(inventoryTransactions)
+          .where(eq(inventoryTransactions.restaurantId, restaurantId))
+          .orderBy(desc(inventoryTransactions.createdAt));
+        res.json(txs);
+      } catch (error) {
+        console.error("List transactions error:", error);
+        res.status(500).json({ error: "Failed to fetch transactions" });
+      }
+    }
+  );
+
+  // ── POST /inventory-transactions ────────────────────────────────────────
+  app.post(
+    "/api/restaurants/:restaurantId/inventory-transactions",
+    authenticate, requireRestaurantAccess, requirePermission("menu:update"),
+    async (req, res) => {
+      try {
+        const { restaurantId } = req.params;
+        const allowed = await checkInventoryFeature(restaurantId);
+        if (!allowed) return res.status(403).json({ error: "Inventory management is not enabled for this restaurant" });
+        const { inventoryItemId, type, quantity, costPerUnit, notes } = req.body;
+
+        if (!inventoryItemId || !type || quantity === undefined) {
+          return res.status(400).json({ error: "inventoryItemId, type and quantity are required" });
+        }
+
+        const [item] = await db.select().from(inventoryItems)
+          .where(and(eq(inventoryItems.id, inventoryItemId), eq(inventoryItems.restaurantId, restaurantId)));
+        if (!item) return res.status(404).json({ error: "Item not found" });
+
+        const previousStock = parseFloat(item.currentStock);
+        const change = parseFloat(quantity); // already signed from frontend (-ve for usage/waste)
+        const newStock = previousStock + change;
+
+        // Update stock
+        await db.update(inventoryItems)
+          .set({
+            currentStock: newStock.toFixed(2),
+            lastRestockedAt: (type === "purchase" || type === "return") ? new Date() : item.lastRestockedAt,
+            updatedAt: new Date(),
+          })
+          .where(eq(inventoryItems.id, inventoryItemId));
+
+        // Record transaction
+        const [tx] = await db.insert(inventoryTransactions).values({
+          restaurantId,
+          inventoryItemId,
+          userId: req.user!.userId,
+          type,
+          quantity: change.toFixed(2),
+          previousStock: previousStock.toFixed(2),
+          newStock: newStock.toFixed(2),
+          costPerUnit: costPerUnit?.toString() ?? null,
+          notes: notes ?? null,
+        }).returning();
+
+        // Auto-create alerts if stock is low/out
+        const minLevel = parseFloat(item.minStockLevel ?? "0");
+        if (newStock <= 0 || newStock <= minLevel) {
+          try {
+            await db.insert(inventoryAlerts).values({
+              restaurantId,
+              inventoryItemId,
+              alertType: newStock <= 0 ? "out_of_stock" : "low_stock",
+              message: newStock <= 0
+                ? `${item.name} is out of stock`
+                : `${item.name} is below minimum stock level (${newStock} ${item.unit} remaining)`,
+              isResolved: false,
+            });
+          } catch (_) { } // ← curly braces required!
+        }
+
+        res.status(201).json(tx);
+      } catch (error) {
+        console.error("Log transaction error:", error);
+        res.status(500).json({ error: "Failed to log transaction" });
+      }
+    }
+  );
+
+  // ── GET /inventory-alerts ───────────────────────────────────────────────
+  app.get(
+    "/api/restaurants/:restaurantId/inventory-alerts",
+    authenticate, requireRestaurantAccess, requirePermission("menu:read"),
+    async (req, res) => {
+      try {
+        const { restaurantId } = req.params;
+        const allowed = await checkInventoryFeature(restaurantId);
+        if (!allowed) return res.status(403).json({ error: "Inventory management is not enabled for this restaurant" });
+        const unresolvedOnly = req.query.unresolved === "true";
+        const conditions = [eq(inventoryAlerts.restaurantId, restaurantId)];
+        if (unresolvedOnly) conditions.push(eq(inventoryAlerts.isResolved, false));
+
+        const alerts = await db.select().from(inventoryAlerts)
+          .where(and(...conditions))
+          .orderBy(desc(inventoryAlerts.createdAt));
+        res.json(alerts);
+      } catch (error) {
+        console.error("List alerts error:", error);
+        res.status(500).json({ error: "Failed to fetch alerts" });
+      }
+    }
+  );
+
+  // ── PATCH /inventory-alerts/:alertId/resolve ────────────────────────────
+  app.patch(
+    "/api/restaurants/:restaurantId/inventory-alerts/:alertId/resolve",
+    authenticate, requireRestaurantAccess, requirePermission("menu:update"),
+    async (req, res) => {
+      try {
+        const { alertId, restaurantId } = req.params;
+        const allowed = await checkInventoryFeature(restaurantId);
+        if (!allowed) return res.status(403).json({ error: "Inventory management is not enabled for this restaurant" });
+        const [alert] = await db.update(inventoryAlerts)
+          .set({ isResolved: true, resolvedAt: new Date() })
+          .where(and(eq(inventoryAlerts.id, alertId), eq(inventoryAlerts.restaurantId, restaurantId)))
+          .returning();
+        if (!alert) return res.status(404).json({ error: "Alert not found" });
+        res.json(alert);
+      } catch (error) {
+        console.error("Resolve alert error:", error);
+        res.status(500).json({ error: "Failed to resolve alert" });
+      }
+    }
+  );
+
+    // ============================================================================
+  // RECIPE COSTING (inventory_management feature gate)
+  // ============================================================================
+
+  // GET all recipes for a restaurant
+  app.get(
+    "/api/restaurants/:restaurantId/recipes",
+    authenticate,
+    requireRestaurantAccess, requireActiveRestaurant,
+    requireFeature("inventory_management"),
+    requirePermission("menu:read"),
+    async (req, res) => {
+      try {
+        const { restaurantId } = req.params;
+
+        const recipes = await db
+          .select({
+            id: menuItemRecipes.id,
+            menuItemId: menuItemRecipes.menuItemId,
+            menuItemName: menuItems.name,
+            menuItemPrice: menuItems.price,
+            menuItemCost: menuItems.cost,
+            modifierId: menuItemRecipes.modifierId,
+            inventoryItemId: menuItemRecipes.inventoryItemId,
+            quantity: menuItemRecipes.quantity,
+            unit: menuItemRecipes.unit,
+            notes: menuItemRecipes.notes,
+            createdAt: menuItemRecipes.createdAt,
+          })
+          .from(menuItemRecipes)
+          .innerJoin(menuItems, eq(menuItemRecipes.menuItemId, menuItems.id))
+          .where(eq(menuItemRecipes.restaurantId, restaurantId))
+          .orderBy(menuItems.name);
+
+        res.json({ recipes });
+      } catch (error) {
+        console.error("List recipes error:", error);
+        res.status(500).json({ error: "Failed to list recipes" });
+      }
+    }
+  );
+
+  // GET recipes for a specific menu item
+  app.get(
+    "/api/restaurants/:restaurantId/menu-items/:itemId/recipes",
+    authenticate,
+    requireRestaurantAccess, requireActiveRestaurant,
+    requireFeature("inventory_management"),
+    requirePermission("menu:read"),
+    async (req, res) => {
+      try {
+        const { restaurantId, itemId } = req.params;
+
+        // Verify menu item belongs to restaurant
+        const [item] = await db
+          .select()
+          .from(menuItems)
+          .where(and(eq(menuItems.id, itemId), eq(menuItems.restaurantId, restaurantId)));
+
+        if (!item) {
+          return res.status(404).json({ error: "Menu item not found" });
+        }
+
+        const recipes = await db
+          .select()
+          .from(menuItemRecipes)
+          .where(
+            and(
+              eq(menuItemRecipes.menuItemId, itemId),
+              eq(menuItemRecipes.restaurantId, restaurantId)
+            )
+          );
+
+        res.json({ item, recipes });
+      } catch (error) {
+        console.error("Get item recipes error:", error);
+        res.status(500).json({ error: "Failed to get recipes" });
+      }
+    }
+  );
+
+  // POST add an ingredient to a menu item's recipe
+  app.post(
+    "/api/restaurants/:restaurantId/menu-items/:itemId/recipes",
+    authenticate,
+    requireRestaurantAccess, requireActiveRestaurant,
+    requireFeature("inventory_management"),
+    requirePermission("menu:update"),
+    async (req, res) => {
+      try {
+        const { restaurantId, itemId } = req.params;
+        const { inventoryItemId, modifierId, quantity, unit, notes } = req.body;
+
+        if (!inventoryItemId || !quantity || !unit) {
+          return res.status(400).json({ error: "inventoryItemId, quantity, and unit are required" });
+        }
+
+        // Verify menu item belongs to restaurant
+        const [item] = await db
+          .select()
+          .from(menuItems)
+          .where(and(eq(menuItems.id, itemId), eq(menuItems.restaurantId, restaurantId)));
+
+        if (!item) {
+          return res.status(404).json({ error: "Menu item not found" });
+        }
+
+        const [recipe] = await db
+          .insert(menuItemRecipes)
+          .values({
+            restaurantId,
+            menuItemId: itemId,
+            modifierId: modifierId || null,
+            inventoryItemId,
+            quantity: quantity.toString(),
+            unit,
+            notes,
+          })
+          .returning();
+
+        res.status(201).json({ recipe });
+      } catch (error) {
+        console.error("Add recipe error:", error);
+        res.status(500).json({ error: "Failed to add recipe ingredient" });
+      }
+    }
+  );
+
+  // PATCH update a recipe ingredient
+  app.patch(
+    "/api/restaurants/:restaurantId/recipes/:recipeId",
+    authenticate,
+    requireRestaurantAccess, requireActiveRestaurant,
+    requireFeature("inventory_management"),
+    requirePermission("menu:update"),
+    async (req, res) => {
+      try {
+        const { restaurantId, recipeId } = req.params;
+        const { quantity, unit, notes } = req.body;
+
+        const [existing] = await db
+          .select()
+          .from(menuItemRecipes)
+          .where(and(eq(menuItemRecipes.id, recipeId), eq(menuItemRecipes.restaurantId, restaurantId)));
+
+        if (!existing) {
+          return res.status(404).json({ error: "Recipe ingredient not found" });
+        }
+
+        const [updated] = await db
+          .update(menuItemRecipes)
+          .set({
+            quantity: quantity !== undefined ? quantity.toString() : existing.quantity,
+            unit: unit ?? existing.unit,
+            notes: notes ?? existing.notes,
+            updatedAt: new Date(),
+          })
+          .where(eq(menuItemRecipes.id, recipeId))
+          .returning();
+
+        res.json({ recipe: updated });
+      } catch (error) {
+        console.error("Update recipe error:", error);
+        res.status(500).json({ error: "Failed to update recipe ingredient" });
+      }
+    }
+  );
+
+  // DELETE a recipe ingredient
+  app.delete(
+    "/api/restaurants/:restaurantId/recipes/:recipeId",
+    authenticate,
+    requireRestaurantAccess, requireActiveRestaurant,
+    requireFeature("inventory_management"),
+    requirePermission("menu:update"),
+    async (req, res) => {
+      try {
+        const { restaurantId, recipeId } = req.params;
+
+        const [existing] = await db
+          .select()
+          .from(menuItemRecipes)
+          .where(and(eq(menuItemRecipes.id, recipeId), eq(menuItemRecipes.restaurantId, restaurantId)));
+
+        if (!existing) {
+          return res.status(404).json({ error: "Recipe ingredient not found" });
+        }
+
+        await db.delete(menuItemRecipes).where(eq(menuItemRecipes.id, recipeId));
+
+        res.json({ message: "Recipe ingredient deleted" });
+      } catch (error) {
+        console.error("Delete recipe error:", error);
+        res.status(500).json({ error: "Failed to delete recipe ingredient" });
+      }
+    }
+  );
+
+  // GET profit report - cost vs price per menu item
+  app.get(
+    "/api/restaurants/:restaurantId/recipes/profit-report",
+    authenticate,
+    requireRestaurantAccess, requireActiveRestaurant,
+    requireFeature("inventory_management"),
+    requirePermission("menu:read"),
+    async (req, res) => {
+      try {
+        const { restaurantId } = req.params;
+
+        // Get all menu items with their recipes
+        const items = await db
+          .select({
+            id: menuItems.id,
+            name: menuItems.name,
+            price: menuItems.price,
+            cost: menuItems.cost,
+          })
+          .from(menuItems)
+          .where(eq(menuItems.restaurantId, restaurantId))
+          .orderBy(menuItems.name);
+
+        const report = items.map((item) => {
+          const sellingPrice = parseFloat(item.price || "0");
+          const costPrice = parseFloat(item.cost || "0");
+          const grossProfit = sellingPrice - costPrice;
+          const marginPct = sellingPrice > 0
+            ? ((grossProfit / sellingPrice) * 100).toFixed(1)
+            : "0.0";
+
+          return {
+            menuItemId: item.id,
+            name: item.name,
+            sellingPrice: sellingPrice.toFixed(2),
+            costPrice: costPrice.toFixed(2),
+            grossProfit: grossProfit.toFixed(2),
+            marginPercent: marginPct,
+            hasCost: costPrice > 0,
+          };
+        });
+
+        const totalRevenuePotential = report.reduce((sum, r) => sum + parseFloat(r.sellingPrice), 0);
+        const totalCost = report.reduce((sum, r) => sum + parseFloat(r.costPrice), 0);
+        const totalProfit = totalRevenuePotential - totalCost;
+        const avgMargin = totalRevenuePotential > 0
+          ? ((totalProfit / totalRevenuePotential) * 100).toFixed(1)
+          : "0.0";
+
+        res.json({
+          items: report,
+          summary: {
+            totalItems: report.length,
+            itemsWithCost: report.filter((r) => r.hasCost).length,
+            avgMarginPercent: avgMargin,
+          },
+        });
+      } catch (error) {
+        console.error("Profit report error:", error);
+        res.status(500).json({ error: "Failed to generate profit report" });
+      }
+    }
+  );
 
   log("API routes registered", "express");
   return httpServer;

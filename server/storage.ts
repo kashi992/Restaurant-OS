@@ -21,6 +21,11 @@ import {
   type SplitShare, type InsertSplitShare,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
+import {
+  type InventoryItem, type InsertInventoryItem,
+  type InventoryTransaction, type InsertInventoryTransaction,
+  type InventoryAlert, type InsertInventoryAlert,
+} from "@shared/schema";
 
 // ============================================================================
 // STORAGE INTERFACE
@@ -101,6 +106,22 @@ export interface IStorage {
   getPaymentsByOrder(orderId: string): Promise<Payment[]>;
   createPayment(payment: InsertPayment): Promise<Payment>;
   updatePayment(id: string, payment: Partial<InsertPayment>): Promise<Payment | undefined>;
+    // Inventory Items
+  getInventoryItems(restaurantId: string): Promise<InventoryItem[]>;
+  getInventoryItem(id: string): Promise<InventoryItem | undefined>;
+  createInventoryItem(item: InsertInventoryItem): Promise<InventoryItem>;
+  updateInventoryItem(id: string, item: Partial<InsertInventoryItem>): Promise<InventoryItem | undefined>;
+  deleteInventoryItem(id: string): Promise<boolean>;
+  getLowStockItems(restaurantId: string): Promise<InventoryItem[]>;
+
+  // Inventory Transactions
+  getInventoryTransactions(restaurantId: string, itemId?: string): Promise<InventoryTransaction[]>;
+  createInventoryTransaction(tx: InsertInventoryTransaction): Promise<InventoryTransaction>;
+
+  // Inventory Alerts
+  getInventoryAlerts(restaurantId: string, onlyUnresolved?: boolean): Promise<InventoryAlert[]>;
+  createInventoryAlert(alert: InsertInventoryAlert): Promise<InventoryAlert>;
+  resolveInventoryAlert(id: string, resolvedByUserId: string): Promise<InventoryAlert | undefined>;
 }
 
 // ============================================================================
@@ -121,9 +142,15 @@ export class MemStorage implements IStorage {
   private orders: Map<string, Order>;
   private orderItems: Map<string, OrderItem>;
   private payments: Map<string, Payment>;
+    private inventoryItems: Map<string, InventoryItem>;
+  private inventoryTransactions: Map<string, InventoryTransaction>;
+  private inventoryAlerts: Map<string, InventoryAlert>;
 
   constructor() {
     this.users = new Map();
+        this.inventoryItems = new Map();
+    this.inventoryTransactions = new Map();
+    this.inventoryAlerts = new Map();
     this.restaurants = new Map();
     this.restaurantUsers = new Map();
     this.roles = new Map();
@@ -629,6 +656,183 @@ export class MemStorage implements IStorage {
     if (!payment) return undefined;
     const updated = { ...payment, ...updates, updatedAt: new Date() } as Payment;
     this.payments.set(id, updated);
+    return updated;
+  }
+
+    // ── Inventory Items ──────────────────────────────────────────────────────────
+
+  async getInventoryItems(restaurantId: string): Promise<InventoryItem[]> {
+    return Array.from(this.inventoryItems.values())
+      .filter(item => item.restaurantId === restaurantId && item.isActive)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  async getInventoryItem(id: string): Promise<InventoryItem | undefined> {
+    return this.inventoryItems.get(id);
+  }
+
+  async createInventoryItem(insert: InsertInventoryItem): Promise<InventoryItem> {
+    const id = randomUUID();
+    const now = new Date();
+    const item: InventoryItem = {
+      id,
+      restaurantId: insert.restaurantId,
+      menuItemId: insert.menuItemId ?? null,
+      name: insert.name,
+      description: insert.description ?? null,
+      sku: insert.sku ?? null,
+      unit: insert.unit ?? "pcs",
+      currentStock: insert.currentStock ?? "0.000",
+      minStockLevel: insert.minStockLevel ?? "0.000",
+      maxStockLevel: insert.maxStockLevel ?? null,
+      costPerUnit: insert.costPerUnit ?? "0.00",
+      supplier: insert.supplier ?? null,
+      storageLocation: insert.storageLocation ?? null,
+      isActive: insert.isActive ?? true,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.inventoryItems.set(id, item);
+    return item;
+  }
+
+  async updateInventoryItem(id: string, updates: Partial<InsertInventoryItem>): Promise<InventoryItem | undefined> {
+    const item = this.inventoryItems.get(id);
+    if (!item) return undefined;
+    const updated = { ...item, ...updates, updatedAt: new Date() } as InventoryItem;
+    this.inventoryItems.set(id, updated);
+    return updated;
+  }
+
+  async deleteInventoryItem(id: string): Promise<boolean> {
+    const item = this.inventoryItems.get(id);
+    if (!item) return false;
+    // Soft delete
+    const updated = { ...item, isActive: false, updatedAt: new Date() };
+    this.inventoryItems.set(id, updated);
+    return true;
+  }
+
+  async getLowStockItems(restaurantId: string): Promise<InventoryItem[]> {
+    return Array.from(this.inventoryItems.values()).filter(item => {
+      if (item.restaurantId !== restaurantId || !item.isActive) return false;
+      const current = parseFloat(item.currentStock ?? "0");
+      const min = parseFloat(item.minStockLevel ?? "0");
+      return current <= min;
+    });
+  }
+
+  // ── Inventory Transactions ────────────────────────────────────────────────────
+
+  async getInventoryTransactions(restaurantId: string, itemId?: string): Promise<InventoryTransaction[]> {
+    return Array.from(this.inventoryTransactions.values())
+      .filter(tx => {
+        if (tx.restaurantId !== restaurantId) return false;
+        if (itemId && tx.inventoryItemId !== itemId) return false;
+        return true;
+      })
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  async createInventoryTransaction(insert: InsertInventoryTransaction): Promise<InventoryTransaction> {
+    const id = randomUUID();
+    const now = new Date();
+    const tx: InventoryTransaction = {
+      id,
+      restaurantId: insert.restaurantId,
+      inventoryItemId: insert.inventoryItemId,
+      type: insert.type,
+      quantity: insert.quantity,
+      costPerUnit: insert.costPerUnit ?? null,
+      totalCost: insert.totalCost ?? null,
+      notes: insert.notes ?? null,
+      referenceId: insert.referenceId ?? null,
+      performedByUserId: insert.performedByUserId ?? null,
+      createdAt: now,
+    };
+    this.inventoryTransactions.set(id, tx);
+
+    // Update the item's currentStock
+    const item = this.inventoryItems.get(insert.inventoryItemId);
+    if (item) {
+      const delta = parseFloat(insert.quantity);
+      const current = parseFloat(item.currentStock ?? "0");
+      const newStock = (current + delta).toFixed(3);
+      const updatedItem = { ...item, currentStock: newStock, updatedAt: now };
+      this.inventoryItems.set(item.id, updatedItem);
+
+      // Auto-create alert if stock drops to/below minimum
+      const min = parseFloat(item.minStockLevel ?? "0");
+      const newStockNum = parseFloat(newStock);
+      if (newStockNum <= 0) {
+        await this.createInventoryAlert({
+          restaurantId: insert.restaurantId,
+          inventoryItemId: item.id,
+          alertType: "out_of_stock",
+          isResolved: false,
+          resolvedByUserId: null,
+        });
+      } else if (newStockNum <= min) {
+        await this.createInventoryAlert({
+          restaurantId: insert.restaurantId,
+          inventoryItemId: item.id,
+          alertType: "low_stock",
+          isResolved: false,
+          resolvedByUserId: null,
+        });
+      }
+    }
+
+    return tx;
+  }
+
+  // ── Inventory Alerts ────────────────────────────────────────────────────���─────
+
+  async getInventoryAlerts(restaurantId: string, onlyUnresolved = false): Promise<InventoryAlert[]> {
+    return Array.from(this.inventoryAlerts.values())
+      .filter(alert => {
+        if (alert.restaurantId !== restaurantId) return false;
+        if (onlyUnresolved && alert.isResolved) return false;
+        return true;
+      })
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  async createInventoryAlert(insert: InsertInventoryAlert): Promise<InventoryAlert> {
+    // Avoid duplicate active alerts for same item + type
+    const existing = Array.from(this.inventoryAlerts.values()).find(
+      a => a.inventoryItemId === insert.inventoryItemId &&
+           a.alertType === insert.alertType &&
+           !a.isResolved
+    );
+    if (existing) return existing;
+
+    const id = randomUUID();
+    const now = new Date();
+    const alert: InventoryAlert = {
+      id,
+      restaurantId: insert.restaurantId,
+      inventoryItemId: insert.inventoryItemId,
+      alertType: insert.alertType,
+      isResolved: insert.isResolved ?? false,
+      resolvedAt: null,
+      resolvedByUserId: insert.resolvedByUserId ?? null,
+      createdAt: now,
+    };
+    this.inventoryAlerts.set(id, alert);
+    return alert;
+  }
+
+  async resolveInventoryAlert(id: string, resolvedByUserId: string): Promise<InventoryAlert | undefined> {
+    const alert = this.inventoryAlerts.get(id);
+    if (!alert) return undefined;
+    const updated = {
+      ...alert,
+      isResolved: true,
+      resolvedAt: new Date(),
+      resolvedByUserId,
+    };
+    this.inventoryAlerts.set(id, updated);
     return updated;
   }
 }

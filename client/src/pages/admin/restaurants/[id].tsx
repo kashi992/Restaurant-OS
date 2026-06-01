@@ -57,7 +57,7 @@ const MASTER_FEATURES = [
   { key: "paypal_payments", label: "PayPal Payments", description: "PayPal payment processing" },
   { key: "counter_payments", label: "Counter Payments", description: "Cash/counter payments" },
   { key: "modifiers", label: "Item Modifiers", description: "Menu item customization" },
-  { key: "inventory", label: "Inventory Management", description: "Stock tracking" },
+{ key: "inventory_management", label: "Inventory Management", description: "Stock tracking" },
   { key: "reporting", label: "Reports & Analytics", description: "Sales and performance reports" },
 ];
 

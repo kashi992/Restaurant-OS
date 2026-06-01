@@ -31,6 +31,7 @@ import {
   Plus,
   Minus,
   Trash2,
+  UtensilsCrossed,
   Utensils,
   Loader2,
   MapPin,
@@ -237,9 +238,9 @@ function ItemDetailDialog({
       <DialogContent className="max-w-lg p-0 gap-0 max-h-[90vh] flex flex-col overflow-hidden">
         <div className="flex items-center justify-between p-4 border-b">
           <h2 className="text-lg font-semibold" data-testid="text-item-detail-name">{item.name}</h2>
-          <Button size="icon" variant="ghost" onClick={onClose} data-testid="button-close-item-detail">
+          {/* <Button size="icon" variant="ghost" onClick={onClose} data-testid="button-close-item-detail">
             <X className="h-4 w-4" />
-          </Button>
+          </Button> */}
         </div>
 
         <ScrollArea className="flex-1 overflow-y-auto">
@@ -296,7 +297,7 @@ function ItemDetailDialog({
 
                       {!isCollapsed && (
                         <div className="px-4 py-3">
-                          <div className="grid grid-cols-2 gap-3">
+                          <div className="grid grid-cols-2 gap-4">
                             {group.modifiers.map((mod) => {
                               const isSelected = selected.includes(mod.id);
                               const price = parseFloat(mod.price);
@@ -606,7 +607,7 @@ export default function QROrderingPage({ token }: { token: string }) {
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <header className="sticky top-0 z-50 bg-background border-b px-4 py-3">
-        <div className="max-w-2xl mx-auto flex items-center justify-between gap-2">
+        <div className="max-w-[85%] mx-auto flex items-center justify-between gap-2">
           <div className="flex items-center gap-3 min-w-0">
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary shrink-0">
               <Utensils className="h-5 w-5 text-primary-foreground" />
@@ -831,7 +832,7 @@ export default function QROrderingPage({ token }: { token: string }) {
 
       {menu?.categories && menu.categories.length > 0 && (
         <div className="sticky top-[61px] z-40 bg-background border-b">
-          <ScrollArea className="max-w-2xl mx-auto">
+          <ScrollArea className="max-w-[85%] mx-auto">
             <div className="flex gap-2 p-4">
               {menu.categories.map((category) => (
                 <Button
@@ -851,12 +852,12 @@ export default function QROrderingPage({ token }: { token: string }) {
       )}
 
       <main className="flex-1 px-4 py-6">
-        <div className="max-w-2xl mx-auto">
+        <div className="max-w-[85%] mx-auto">
           {(() => {
             const template: QrTemplate = tokenData.qrTemplate ?? "classic";
             if (loadingMenu) {
               return (
-                <div className={template === "bento" ? "grid grid-cols-2 gap-3" : "space-y-4"}>
+                <div className={template === "bento" ? "grid grid-cols-2 gap-4 beneto" : "space-y-4"}>
                   {[1, 2, 3, 4].map((i) => (
                     <Skeleton key={i} className={template === "bento" ? "h-44 w-full" : "h-28 w-full"} />
                   ))}
@@ -876,7 +877,7 @@ export default function QROrderingPage({ token }: { token: string }) {
 
             if (template === "bento") {
               return (
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-4">
                   {currentCategory.items.map((item) => {
                     const isAvailable = item.isAvailable !== false;
                     const hasModifiers = item.modifierGroups && item.modifierGroups.length > 0;
@@ -888,32 +889,32 @@ export default function QROrderingPage({ token }: { token: string }) {
                         data-testid={`menu-item-${item.id}`}
                       >
                         {item.imageUrl ? (
-                          <img src={item.imageUrl} alt={item.name} className="w-full h-32 object-cover" />
+                          <img src={item.imageUrl} alt={item.name} className="w-full h-[250px] object-cover" />
                         ) : (
-                          <div className="w-full h-32 bg-primary/10 flex items-center justify-center">
-                            <Utensils className="h-8 w-8 text-primary/40" />
+                          <div className="w-full h-[250px] bg-primary/10 flex items-center justify-center">
+                            <Utensils className="h-[50%] w-[50%] text-primary/40" />
                           </div>
                         )}
                         <div className="p-3 flex flex-col flex-1">
                           <div className="flex items-start justify-between gap-1 mb-1">
-                            <h3 className="font-semibold text-sm leading-tight line-clamp-2 flex-1">{item.name}</h3>
+                            <h3 className="font-semibold text-lg leading-tight line-clamp-2 flex-1">{item.name}</h3>
                           </div>
                           {item.description && (
                             <p className="text-xs text-muted-foreground line-clamp-2 mb-2">{item.description}</p>
                           )}
                           <div className="mt-auto flex items-center justify-between gap-1">
-                            <span className="font-bold text-primary text-sm">{currency}{parseFloat(item.price).toFixed(2)}</span>
+                            <span className="font-bold text-primary text-lg">{currency}{parseFloat(item.price).toFixed(2)}</span>
                             {isAvailable ? (
                               <Button
                                 size="icon"
-                                className="h-7 w-7 shrink-0"
+                                className="w-fit px-3"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   if (hasModifiers) setSelectedItem(item);
                                   else addToCart(item, 1, []);
                                 }}
                                 data-testid={`button-add-${item.id}`}
-                              >
+                              > Add to Cart
                                 <Plus className="h-4 w-4" />
                               </Button>
                             ) : (
@@ -930,23 +931,27 @@ export default function QROrderingPage({ token }: { token: string }) {
 
             if (template === "minimal") {
               return (
-                <div className="divide-y">
+                <div className="flex flex-col gap-4">
                   {currentCategory.items.map((item) => {
                     const isAvailable = item.isAvailable !== false;
                     const hasModifiers = item.modifierGroups && item.modifierGroups.length > 0;
                     return (
                       <div
                         key={item.id}
-                        className={`flex items-center gap-3 py-4 ${!isAvailable ? "opacity-60" : "cursor-pointer"}`}
+                        className={`flex items-center gap-4 py-6 px-6 bg-card shadow-sm rounded-xl border border-card-border ${!isAvailable ? "opacity-60" : "cursor-pointer"}`}
                         onClick={() => isAvailable && setSelectedItem(item)}
                         data-testid={`menu-item-${item.id}`}
                       >
-                        {item.imageUrl && (
-                          <img src={item.imageUrl} alt={item.name} className="w-14 h-14 rounded-lg object-cover shrink-0" />
-                        )}
+                        {item.imageUrl ? (
+                          <img src={item.imageUrl} alt={item.name} className="w-20 h-20 rounded-lg object-cover shrink-0" />
+                        ) :
+                          <div className="w-20 h-20 rounded-md bg-muted flex items-center justify-center shrink-0" data-testid={`img-placeholder-${item.id}`}>
+                            <UtensilsCrossed className="h-[50%] w-[50%] text-muted-foreground" />
+                          </div>
+                        }
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <h3 className="font-medium text-sm">{item.name}</h3>
+                            <h3 className="font-semibold text-lg">{item.name}</h3>
                             {item.isPopular && <Badge variant="secondary" className="no-default-active-elevate text-xs">Popular</Badge>}
                             {item.isNew && <Badge variant="secondary" className="no-default-active-elevate text-xs">New</Badge>}
                           </div>
@@ -954,21 +959,20 @@ export default function QROrderingPage({ token }: { token: string }) {
                             <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{item.description}</p>
                           )}
                           {hasModifiers && <p className="text-xs text-muted-foreground/60 mt-0.5">Customizable</p>}
+
                         </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className="font-semibold text-sm">{currency}{parseFloat(item.price).toFixed(2)}</span>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <span className="font-semibold text-lg">{currency}{parseFloat(item.price).toFixed(2)}</span>
                           {isAvailable ? (
                             <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-8 px-2"
+                              className="h-8 px-2 bg-primary text-white"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 if (hasModifiers) setSelectedItem(item);
                                 else addToCart(item, 1, []);
                               }}
                               data-testid={`button-add-${item.id}`}
-                            >
+                            > Add to Cart
                               <Plus className="h-3.5 w-3.5" />
                             </Button>
                           ) : (
@@ -1045,9 +1049,9 @@ export default function QROrderingPage({ token }: { token: string }) {
       </main>
 
       {cart.length > 0 && !cartOpen && (
-        <div className="fixed bottom-4 left-4 right-4 max-w-2xl mx-auto z-30">
+        <div className="fixed bottom-4 left-4 right-4 max-w-[85%] mx-auto z-30">
           <Button
-            className="w-full h-14 text-lg"
+            className="w-fit ms-auto h-14 text-lg flex"
             onClick={() => setCartOpen(true)}
             data-testid="button-view-cart"
           >

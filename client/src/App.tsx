@@ -29,6 +29,8 @@ import OrdersPage from "@/pages/pos/orders";
 import PaymentsPage from "@/pages/pos/payments";
 import QROrderingPage from "@/pages/qr/[token]";
 import OrderStatusPage from "@/pages/qr/status/[orderId]";
+import InventoryPage from "@/pages/dashboard/inventory";
+import RecipeCostingPage from "@/pages/dashboard/recipe-costing";
 
 export function getDefaultRoute(user: { isSuperAdmin: boolean; permissions: string[]; role: string }): string {
   if (user.isSuperAdmin) return "/admin";
@@ -123,10 +125,25 @@ function AppRouter() {
           </DashboardLayout>
         </ProtectedRoute>
       </Route>
+            <Route path="/dashboard/recipe-costing">
+        <ProtectedRoute requireRestaurantAccess requiredPermissions={["menu:read"]}>
+          <DashboardLayout>
+            <RecipeCostingPage />
+          </DashboardLayout>
+        </ProtectedRoute>
+      </Route>
       <Route path="/dashboard">
         <ProtectedRoute requireRestaurantAccess requiredPermissions={["staff:read"]}>
           <DashboardLayout>
             <DashboardHome />
+          </DashboardLayout>
+        </ProtectedRoute>
+      </Route>
+
+            <Route path="/dashboard/inventory">
+        <ProtectedRoute requireRestaurantAccess requiredPermissions={["menu:read"]}>
+          <DashboardLayout>
+            <InventoryPage />
           </DashboardLayout>
         </ProtectedRoute>
       </Route>

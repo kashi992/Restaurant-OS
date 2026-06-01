@@ -41,13 +41,18 @@ import {
   QrCode,
   CreditCard,
   SplitSquareHorizontal,
+   Package,
+   FlaskConical,
 } from "lucide-react";
+
 
 const navItems = [
   { title: "Overview", url: "/dashboard", icon: LayoutDashboard, feature: null, permission: "staff:read" },
   { title: "Menu", url: "/dashboard/menu", icon: UtensilsCrossed, feature: null, permission: "menu:read" },
   { title: "Tables", url: "/dashboard/tables", icon: Grid3X3, feature: null, permission: "tables:read" },
   { title: "Staff", url: "/dashboard/staff", icon: Users, feature: null, permission: "staff:read" },
+  { title: "Inventory",  url: "/dashboard/inventory",   icon: Package , feature: "inventory_management", permission: "menu:read"},
+  { title: "Recipe Costing",  url: "/dashboard/recipe-costing", icon: FlaskConical,  feature: "inventory_management", permission: "menu:read"     }, 
   { title: "Settings", url: "/dashboard/settings", icon: Settings, feature: null, permission: "settings:read" },
 ];
 
