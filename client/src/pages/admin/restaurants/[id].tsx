@@ -49,16 +49,23 @@ interface FeatureAllowlist {
 }
 
 const MASTER_FEATURES = [
-  { key: "pos", label: "POS System", description: "Point of Sale functionality" },
-  { key: "qr_ordering", label: "QR Ordering", description: "Customer QR code ordering" },
-  { key: "kitchen_display", label: "Kitchen Display", description: "Kitchen order management" },
-  { key: "split_billing", label: "Split Billing", description: "Bill splitting for tables" },
-  { key: "stripe_payments", label: "Stripe Payments", description: "Card payments via Stripe" },
-  { key: "paypal_payments", label: "PayPal Payments", description: "PayPal payment processing" },
-  { key: "counter_payments", label: "Counter Payments", description: "Cash/counter payments" },
-  { key: "modifiers", label: "Item Modifiers", description: "Menu item customization" },
-{ key: "inventory_management", label: "Inventory Management", description: "Stock tracking" },
-  { key: "reporting", label: "Reports & Analytics", description: "Sales and performance reports" },
+  // ── Core Operations ──────────────────────────────────────────────────
+  { key: "pos",               label: "POS System",           description: "Point of Sale terminal for staff" },
+  { key: "kitchen_display",   label: "Kitchen Display",       description: "Kitchen order management screen" },
+  { key: "qr_ordering",       label: "QR Ordering",           description: "Customer self-ordering via QR code" },
+  // ── Table & Billing ──────────────────────────────────────────────────
+  { key: "table_management",  label: "Table Management",      description: "Dining tables and floor plan" },
+  { key: "split_billing",     label: "Split Billing",         description: "Bill splitting for tables" },
+  // ── Inventory & Recipes ──────────────────────────────────────────────
+  { key: "inventory_management", label: "Inventory Management", description: "Stock tracking and low-stock alerts" },
+  { key: "recipe_management", label: "Recipe & Cost Management", description: "Recipe builder and profit margin reports" },
+  // ── Menu ─────────────────────────────────────────────────────────────
+  { key: "modifiers",         label: "Item Modifiers",        description: "Menu item customization options" },
+  { key: "reporting",         label: "Reports & Analytics",   description: "Sales and performance reports" },
+  // ── Payments ─────────────────────────────────────────────────────────
+  { key: "stripe_payments",   label: "Stripe Payments",       description: "Card payments via Stripe" },
+  { key: "paypal_payments",   label: "PayPal Payments",       description: "PayPal payment processing" },
+  { key: "counter_payments",  label: "Counter Payments",      description: "Cash / counter payments" },
 ];
 
 export default function RestaurantDetailPage() {

@@ -359,16 +359,6 @@ export type InventoryTransaction = typeof inventoryTransactions.$inferSelect;
 export type InsertInventoryAlert = z.infer<typeof insertInventoryAlertSchema>;
 export type InventoryAlert = typeof inventoryAlerts.$inferSelect;
 
-// Recipe Costing
-export const insertMenuItemRecipeSchema = createInsertSchema(menuItemRecipes).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export type InsertMenuItemRecipe = z.infer<typeof insertMenuItemRecipeSchema>;
-export type MenuItemRecipe = typeof menuItemRecipes.$inferSelect;
-
 // ============================================================================
 // RECIPE COSTING - Links menu items/modifiers to inventory ingredients
 // ============================================================================
@@ -390,6 +380,16 @@ export const menuItemRecipes = pgTable("menu_item_recipes", {
   index("menu_item_recipes_modifier_id_idx").on(table.modifierId),
   index("menu_item_recipes_inventory_item_id_idx").on(table.inventoryItemId),
 ]);
+
+// Recipe Costing
+export const insertMenuItemRecipeSchema = createInsertSchema(menuItemRecipes).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertMenuItemRecipe = z.infer<typeof insertMenuItemRecipeSchema>;
+export type MenuItemRecipe = typeof menuItemRecipes.$inferSelect;
 
 // ============================================================================
 // DINING TABLES & QR CODES

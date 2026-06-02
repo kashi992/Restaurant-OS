@@ -4482,6 +4482,25 @@ export async function registerRoutes(
           ));
         const qrTemplate = (templateSetting?.settingValue as string) || "classic";
 
+        // ── Read qr_template and qr_theme_colors settings ──────────────────────
+        const allRestaurantSettings = await db
+          .select()
+          .from(restaurantSettings)
+          .where(eq(restaurantSettings.restaurantId, qrToken.restaurantId));
+
+        const settingsMap: Record<string, any> = {};
+        for (const s of allRestaurantSettings) {
+          settingsMap[s.settingKey] = s.settingValue;
+        }
+
+        const qrTemplate = (settingsMap["qr_template"] as string) || "luxe-dark";
+        const qrThemeColors = settingsMap["qr_theme_colors"]
+          ? (typeof settingsMap["qr_theme_colors"] === "string"
+            ? JSON.parse(settingsMap["qr_theme_colors"])
+            : settingsMap["qr_theme_colors"])
+          : null;
+
+        // ── Build response ────────────────────────────────────────────────────
         const response: any = {
           restaurant: {
             id: restaurant.id,
@@ -4497,11 +4516,7 @@ export async function registerRoutes(
           },
           orderingMode: qrSettings.mode,
           qrTemplate,
-          paymentMethods: {
-            card: payMethods.card,
-            stripe: payMethods.stripe,
-            paypal: payMethods.paypal,
-          },
+          qrThemeColors, // null means "use defaults"
         };
 
         if (qrSettings.mode === "auto" && tableInfo) {
@@ -7838,7 +7853,7 @@ export async function registerRoutes(
     }
   );
 
-    // ============================================================================
+  // ============================================================================
   // RECIPE COSTING (inventory_management feature gate)
   // ============================================================================
 

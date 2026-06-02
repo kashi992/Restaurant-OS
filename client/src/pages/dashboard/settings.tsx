@@ -49,7 +49,7 @@ interface CredentialInfo {
   mode?: string;
 }
 
-type QrTemplate = "classic" | "bento" | "minimal";
+import QrThemePicker, { QrTemplate, ThemeColors } from "./qr-theme-picker";
 
 interface RestaurantSettings {
   stripeEnabled: boolean;
@@ -58,6 +58,7 @@ interface RestaurantSettings {
   splitBillingEnabled: boolean;
   qrOrderingMode: "AUTO" | "MANUAL";
   qrTemplate: QrTemplate;
+  qrThemeColors: ThemeColors | null;
   defaultMenuId: string | null;
   stripeCredentials: CredentialInfo;
   paypalCredentials: CredentialInfo;
@@ -101,7 +102,12 @@ export default function SettingsPage() {
     counterPaymentsEnabled: settingsData?.settings?.counter_payments_enabled === "true" || settingsData?.settings?.counter_payments_enabled === true,
     splitBillingEnabled: settingsData?.settings?.split_billing_enabled === "true" || settingsData?.settings?.split_billing_enabled === true,
     qrOrderingMode: (settingsData?.settings?.qr_ordering_mode as "AUTO" | "MANUAL") || "AUTO",
-    qrTemplate: ((settingsData?.settings?.qr_template as QrTemplate) || "classic"),
+    qrTemplate: ((settingsData?.settings?.qr_template as QrTemplate) || "luxe-dark"),
+    qrThemeColors: settingsData?.settings?.qr_theme_colors
+      ? (typeof settingsData.settings.qr_theme_colors === "string"
+        ? JSON.parse(settingsData.settings.qr_theme_colors as string)
+        : settingsData.settings.qr_theme_colors as ThemeColors)
+      : null,
     defaultMenuId: settingsData?.settings?.default_menu_id as string | null,
     stripeCredentials: (settingsData?.settings?.stripe_credentials as CredentialInfo) || { configured: false },
     paypalCredentials: (settingsData?.settings?.paypal_credentials as CredentialInfo) || { configured: false },
@@ -133,6 +139,34 @@ export default function SettingsPage() {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
+
+  const saveColorsMutation = useMutation({
+  mutationFn: async ({ theme, colors }: { theme: QrTemplate; colors: ThemeColors }) => {
+    // Save theme selection
+    await fetch(`/api/restaurants/${restaurantId}/settings/qr_template`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      credentials: "include",
+      body: JSON.stringify({ value: theme }),
+    });
+    // Save colors as JSON string
+    const res = await fetch(`/api/restaurants/${restaurantId}/settings/qr_theme_colors`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      credentials: "include",
+      body: JSON.stringify({ value: JSON.stringify(colors) }),
+    });
+    if (!res.ok) throw new Error("Failed to save theme colors");
+    return res.json();
+  },
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "settings"] });
+    toast({ title: "Theme colors saved", description: "Your QR ordering page has been updated." });
+  },
+  onError: (error: Error) => {
+    toast({ title: "Error", description: error.message, variant: "destructive" });
+  },
+});
 
   const saveCredentialsMutation = useMutation({
     mutationFn: async ({ provider, data }: { provider: string; data: Record<string, string> }) => {
@@ -258,6 +292,7 @@ export default function SettingsPage() {
       </div>
     );
   }
+
 
   return (
     <div className="space-y-6">
@@ -504,7 +539,7 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        {/* <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Palette className="h-5 w-5" />
@@ -583,11 +618,10 @@ export default function SettingsPage() {
                     onClick={() => handleTemplateChange(tmpl.id)}
                     disabled={updateSettingMutation.isPending}
                     data-testid={`button-template-${tmpl.id}`}
-                    className={`rounded-xl border-2 p-3 text-left transition-all ${
-                      isSelected
-                        ? "border-primary bg-primary/5"
-                        : "border-muted hover:border-muted-foreground/40"
-                    }`}
+                    className={`rounded-xl border-2 p-3 text-left transition-all ${isSelected
+                      ? "border-primary bg-primary/5"
+                      : "border-muted hover:border-muted-foreground/40"
+                      }`}
                   >
                     <div className="mb-3 rounded-lg bg-muted/40 p-2.5 border border-muted">
                       {tmpl.preview}
@@ -606,7 +640,33 @@ export default function SettingsPage() {
               })}
             </div>
           </CardContent>
-        </Card>
+        </Card> */}
+    <Card>
+  <CardHeader>
+    <CardTitle className="flex items-center gap-2">
+      <Palette className="h-5 w-5" />
+      QR Ordering Theme
+    </CardTitle>
+    <CardDescription>
+      Choose your QR ordering page theme and customize its colors.
+      Click a theme to activate it and open the color editor.
+    </CardDescription>
+  </CardHeader>
+  <CardContent>
+    <QrThemePicker
+      currentTheme={settings.qrTemplate}
+      currentColors={settings.qrThemeColors}
+      onSelectTheme={(theme) =>
+        updateSettingMutation.mutate({ key: "qr_template", value: theme })
+      }
+      onSaveColors={(theme, colors) =>
+        saveColorsMutation.mutate({ theme, colors })
+      }
+      isSavingTheme={updateSettingMutation.isPending}
+      isSavingColors={saveColorsMutation.isPending}
+    />
+  </CardContent>
+</Card>
       </div>
 
       {updateSettingMutation.isPending && (

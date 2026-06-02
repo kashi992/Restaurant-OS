@@ -605,20 +605,20 @@ export default function RecipeCostingPage() {
   const restaurantId = user?.restaurantId;
 
   // Feature gate check
-  const hasInventoryFeature = user?.features?.["inventory_management"] === true;
+  const hasRecipeFeature  = user?.features?.["recipe_management"] === true;
 
-  if (!hasInventoryFeature) {
-    return (
-      <div className="flex flex-col items-center justify-center py-24 text-center">
-        <FlaskConical className="h-12 w-12 text-muted-foreground mb-4" />
-        <h2 className="text-xl font-semibold">Recipe Costing Unavailable</h2>
-        <p className="text-muted-foreground mt-2 max-w-sm">
-          The <strong>Inventory Management</strong> feature is not enabled for
-          your restaurant. Please contact your platform administrator.
-        </p>
-      </div>
-    );
-  }
+if (!hasRecipeFeature) {
+  return (
+    <div className="flex flex-col items-center justify-center py-24 text-center">
+      <FlaskConical className="h-12 w-12 text-muted-foreground mb-4" />
+      <h2 className="text-xl font-semibold">Recipe Costing Unavailable</h2>
+      <p className="text-muted-foreground mt-2 max-w-sm">
+        The <strong>Recipe & Cost Management</strong> feature is not enabled for
+        your restaurant. Please contact your platform administrator.
+      </p>
+    </div>
+  );
+}
 
   if (!restaurantId) return null;
 

@@ -1,0 +1,359 @@
+import { useEffect, useRef, useState } from "react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Search, ChevronDown, X, Menu } from "lucide-react";
+
+interface MenuItem {
+  id: string;
+  name: string;
+  description: string | null;
+  price: string;
+  imageUrl: string | null;
+  isAvailable?: boolean;
+  isPopular?: boolean;
+  isNew?: boolean;
+  modifierGroups?: { id: string }[];
+}
+
+interface Category {
+  id: string;
+  name: string;
+  items: MenuItem[];
+}
+
+interface ThemeColors {
+  bg?: string;
+  primary?: string;
+  primaryLight?: string;
+  primaryDark?: string;
+  text?: string;
+  surface?: string;
+}
+
+const DEFAULTS: Required<ThemeColors> = {
+  bg:           "#F7F5F0",
+  primary:      "#2D6A4F",
+  primaryLight: "#52B788",
+  primaryDark:  "#1B4332",
+  text:         "#1C1C1C",
+  surface:      "#FFFFFF",
+};
+
+export interface QrThemeProps {
+  restaurantName: string;
+  tableLabel: string | null;
+  categories: Category[];
+  currentCategory: Category | undefined;
+  selectedCategory: string;
+  onCategorySelect: (id: string) => void;
+  cartItemCount: number;
+  cartTotal: number;
+  currency: string;
+  onItemClick: (item: MenuItem) => void;
+  onQuickAdd: (item: MenuItem) => void;
+  onCartOpen: () => void;
+  isLoadingMenu: boolean;
+  themeColors?: ThemeColors;
+}
+
+export default function FreshMinimalTheme({
+  restaurantName,
+  tableLabel,
+  categories,
+  currentCategory,
+  selectedCategory,
+  onCategorySelect,
+  cartItemCount,
+  cartTotal,
+  currency,
+  onItemClick,
+  onQuickAdd,
+  onCartOpen,
+  isLoadingMenu,
+  themeColors,
+}: QrThemeProps) {
+
+  const c: Required<ThemeColors> = {
+    bg:           themeColors?.bg           ?? DEFAULTS.bg,
+    primary:      themeColors?.primary      ?? DEFAULTS.primary,
+    primaryLight: themeColors?.primaryLight ?? DEFAULTS.primaryLight,
+    primaryDark:  themeColors?.primaryDark  ?? DEFAULTS.primaryDark,
+    text:         themeColors?.text         ?? DEFAULTS.text,
+    surface:      themeColors?.surface      ?? DEFAULTS.surface,
+  };
+
+  const primaryPale = `${c.primary}22`;
+  const tagBg       = `${c.primary}14`;
+  const border      = "#EBEBEB";
+  const muted       = "#8E8E8E";
+
+  const menuSectionRef = useRef<HTMLDivElement>(null);
+  const [search, setSearch] = useState("");
+  const [menuDropdownOpen, setMenuDropdownOpen] = useState(false);
+  const [navScrolled, setNavScrolled] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = "https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Serif+Display&display=swap";
+    document.head.appendChild(link);
+    return () => { document.head.removeChild(link); };
+  }, []);
+
+  useEffect(() => {
+    const onScroll = () => setNavScrolled(window.scrollY > 40);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node))
+        setMenuDropdownOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const scrollToMenu = () => { menuSectionRef.current?.scrollIntoView({ behavior: "smooth" }); setMenuDropdownOpen(false); };
+  const scrollToCategory = (catId: string) => {
+    onCategorySelect(catId);
+    setMenuDropdownOpen(false);
+    setTimeout(() => menuSectionRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+  };
+
+  const items = (currentCategory?.items ?? []).filter(
+    (item) => search.trim() === "" || item.name.toLowerCase().includes(search.toLowerCase())
+  );
+  const allPopular = categories.flatMap((ct) => ct.items).filter((i) => i.isPopular).slice(0, 3);
+  const greeting = () => { const h = new Date().getHours(); if (h < 12) return "Good morning!"; if (h < 17) return "Good afternoon!"; return "Good evening!"; };
+
+  return (
+    <div style={{ background: c.bg, color: c.text, fontFamily: "'DM Sans', sans-serif", minHeight: "100vh" }}>
+
+      {/* ── NAVBAR ── */}
+      <header className="fixed top-0 left-0 right-0 z-50 transition-all duration-300"
+        style={{ background: navScrolled ? `${c.surface}f7` : "transparent", backdropFilter: navScrolled ? "blur(16px)" : "none", borderBottom: navScrolled ? `1px solid ${border}` : "none", padding: "0 20px" }}>
+        <div className="flex items-center justify-between h-16 max-w-2xl mx-auto">
+          <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 20, color: navScrolled ? c.primary : "#ffffff", transition: "color 0.3s" }}>{restaurantName}</div>
+          <div className="flex items-center gap-3">
+            <div className="relative" ref={dropdownRef}>
+              <button onClick={() => setMenuDropdownOpen((v) => !v)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-semibold border transition-all"
+                style={{ borderColor: navScrolled ? border : "rgba(255,255,255,0.3)", color: navScrolled ? c.primary : "#ffffff", background: navScrolled ? c.surface : "rgba(255,255,255,0.1)" }}>
+                <Menu className="h-3.5 w-3.5" />Menu
+                <ChevronDown className="h-3 w-3 transition-transform" style={{ transform: menuDropdownOpen ? "rotate(180deg)" : "rotate(0deg)" }} />
+              </button>
+              {menuDropdownOpen && (
+                <div className="absolute right-0 top-full mt-2 w-64 rounded-2xl overflow-hidden z-50 shadow-xl"
+                  style={{ background: c.surface, border: `1px solid ${border}` }}>
+                  <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: border }}>
+                    <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: muted }}>Browse Menu</span>
+                    <button onClick={() => setMenuDropdownOpen(false)}><X className="h-4 w-4" style={{ color: muted }} /></button>
+                  </div>
+                  <div className="py-2 max-h-56 overflow-y-auto">
+                    {categories.map((cat) => (
+                      <button key={cat.id} onClick={() => scrollToCategory(cat.id)}
+                        className="w-full flex items-center justify-between px-4 py-3 text-left transition-all"
+                        style={{ borderBottom: `1px solid ${border}` }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = tagBg)}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
+                        <span className="text-sm font-medium" style={{ color: c.text }}>{cat.name}</span>
+                        <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: tagBg, color: c.primary }}>{cat.items.length}</span>
+                      </button>
+                    ))}
+                  </div>
+                  {allPopular.length > 0 && (
+                    <div className="border-t px-4 py-3" style={{ borderColor: border }}>
+                      <p className="text-xs uppercase tracking-wider mb-2" style={{ color: muted }}>Crowd Favourites</p>
+                      <div className="space-y-2">
+                        {allPopular.map((item) => (
+                          <div key={item.id} className="flex items-center gap-2">
+                            {item.imageUrl ? <img src={item.imageUrl} alt={item.name} className="w-8 h-8 rounded-xl object-cover flex-shrink-0" />
+                              : <div className="w-8 h-8 rounded-xl flex-shrink-0 flex items-center justify-center text-sm" style={{ background: tagBg }}>🌿</div>}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-medium truncate" style={{ color: c.text }}>{item.name}</p>
+                              <p className="text-xs" style={{ color: c.primary }}>{currency}{parseFloat(item.price).toFixed(2)}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            <button onClick={scrollToMenu} className="px-4 py-2 rounded-full text-xs font-bold transition-all hover:opacity-90"
+              style={{ background: c.primary, color: "#ffffff" }}>Order Now</button>
+            {tableLabel && (
+              <div className="hidden sm:flex text-xs font-semibold px-3 py-1.5 rounded-full"
+                style={{ background: navScrolled ? primaryPale : "rgba(255,255,255,0.15)", color: navScrolled ? c.primary : "#ffffff", transition: "all 0.3s" }}>
+                🪑 {tableLabel}
+              </div>
+            )}
+          </div>
+        </div>
+      </header>
+
+      {/* ── HERO ── */}
+      <section className="relative flex flex-col items-center justify-center text-center" style={{ height: "100vh", minHeight: 600 }}>
+        <img src="https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=1200&q=80" alt="Fresh food"
+          className="absolute inset-0 w-full h-full object-cover" style={{ filter: "brightness(0.45)" }} />
+        <div className="absolute inset-0" style={{ background: `linear-gradient(to bottom, ${c.primary}80 0%, rgba(0,0,0,0.5) 60%, ${c.bg}f5 100%)` }} />
+        <div className="relative z-10 px-6 max-w-sm mx-auto">
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full mb-5" style={{ background: "rgba(255,255,255,0.15)", backdropFilter: "blur(8px)" }}>
+            <span className="text-xs font-semibold text-white tracking-wider">{tableLabel ? `🪑 ${tableLabel}` : "🌿 Fresh & Seasonal"}</span>
+          </div>
+          <h1 className="mb-4 text-white" style={{ fontFamily: "'DM Serif Display', serif", fontSize: "clamp(36px,10vw,54px)", lineHeight: 1.1 }}>{restaurantName}</h1>
+          <p className="text-sm mb-8 text-white/80 leading-relaxed">Wholesome food made with love. Fresh ingredients, bold flavours, and a menu that changes with the seasons.</p>
+          <div className="flex flex-col gap-3">
+            <button onClick={scrollToMenu} className="w-full px-8 py-4 rounded-full text-sm font-bold text-white transition-all hover:opacity-90 hover:-translate-y-0.5"
+              style={{ background: c.primary }}>{greeting()} — Start Your Order</button>
+            <button onClick={scrollToMenu} className="w-full px-8 py-4 rounded-full text-sm font-semibold border transition-all"
+              style={{ borderColor: "rgba(255,255,255,0.4)", color: "white" }}>See Today's Menu</button>
+          </div>
+        </div>
+        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 animate-bounce">
+          <span className="text-xs text-white/60 tracking-widest uppercase">Scroll</span>
+          <ChevronDown className="h-4 w-4 text-white/60" />
+        </div>
+      </section>
+
+      {/* ── MENU SECTION ── */}
+      <section ref={menuSectionRef} className="pb-10" style={{ background: c.bg }}>
+        <div className="px-5 pt-12 pb-4 text-center">
+          <p className="text-xs uppercase tracking-widest mb-1" style={{ color: muted }}>What's Good Today</p>
+          <h2 style={{ fontFamily: "'DM Serif Display', serif", fontSize: 26, color: c.text }}>Our Menu</h2>
+        </div>
+        <div className="px-4 pb-3">
+          <div className="flex items-center gap-2.5 px-4 py-3 rounded-full border" style={{ background: c.surface, borderColor: border }}>
+            <Search className="h-4 w-4 flex-shrink-0" style={{ color: muted }} />
+            <input type="text" placeholder="Search our menu..." value={search} onChange={(e) => setSearch(e.target.value)}
+              className="flex-1 border-none outline-none bg-transparent text-sm" style={{ fontFamily: "'DM Sans', sans-serif", color: c.text }} />
+          </div>
+        </div>
+        <div className="flex gap-0 overflow-x-auto px-4 mb-5" style={{ scrollbarWidth: "none" }}>
+          {categories.map((cat) => (
+            <button key={cat.id} onClick={() => onCategorySelect(cat.id)}
+              className="flex-shrink-0 px-4 py-2.5 text-sm font-semibold border-b-2 transition-all whitespace-nowrap"
+              style={selectedCategory === cat.id ? { color: c.primary, borderColor: c.primary } : { color: muted, borderColor: "transparent" }}>
+              {cat.name}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-col gap-3 px-4">
+          {isLoadingMenu ? [1,2,3].map((i) => <Skeleton key={i} className="h-28 w-full rounded-2xl" />)
+            : items.length === 0 ? <p className="text-center py-12" style={{ color: muted }}>{search ? "No results found" : "No items in this category"}</p>
+            : items.map((item) => {
+                const available = item.isAvailable !== false;
+                return (
+                  <div key={item.id} onClick={() => available && onItemClick(item)}
+                    className="flex gap-3.5 items-center p-3.5 rounded-2xl border transition-all"
+                    style={{ background: c.surface, borderColor: border, boxShadow: "0 2px 8px rgba(0,0,0,0.04)", opacity: available ? 1 : 0.55, cursor: available ? "pointer" : "default" }}>
+                    {item.imageUrl
+                      ? <img src={item.imageUrl} alt={item.name} className="flex-shrink-0 rounded-2xl object-cover" style={{ width: 88, height: 88, borderRadius: 14 }} />
+                      : <div className="flex-shrink-0 flex items-center justify-center text-2xl rounded-2xl" style={{ width: 88, height: 88, background: tagBg, borderRadius: 14 }}>🌿</div>}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex gap-1.5 mb-1.5 flex-wrap">
+                        {item.isPopular && <span className="text-xs font-semibold px-2 py-0.5 rounded-xl" style={{ background: "#FFF8ED", color: "#F4A261" }}>⭐ Popular</span>}
+                        {item.isNew && <span className="text-xs font-semibold px-2 py-0.5 rounded-xl" style={{ background: tagBg, color: c.primary }}>New</span>}
+                        {item.modifierGroups && item.modifierGroups.length > 0 && <span className="text-xs font-semibold px-2 py-0.5 rounded-xl" style={{ background: tagBg, color: c.primary }}>Customizable</span>}
+                      </div>
+                      <p className="font-semibold text-base truncate" style={{ color: c.text }}>{item.name}</p>
+                      {item.description && <p className="text-xs mt-0.5 line-clamp-2" style={{ color: muted }}>{item.description}</p>}
+                      <div className="flex items-center justify-between mt-2">
+                        <span className="text-base font-bold" style={{ color: c.text }}>{currency}{parseFloat(item.price).toFixed(2)}</span>
+                        {available && (
+                          <button onClick={(e) => { e.stopPropagation(); item.modifierGroups?.length ? onItemClick(item) : onQuickAdd(item); }}
+                            className="w-8 h-8 rounded-full flex items-center justify-center text-xl font-bold border-2 transition-all hover:opacity-80"
+                            style={{ borderColor: c.primary, color: c.primary, background: c.surface }}>+</button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+        </div>
+      </section>
+
+      {/* ── WHY WE'RE DIFFERENT ── */}
+      <section className="px-6 py-16" style={{ background: c.surface }}>
+        <div className="text-center mb-10">
+          <p className="text-xs uppercase tracking-widest mb-2" style={{ color: muted }}>Our Values</p>
+          <h2 style={{ fontFamily: "'DM Serif Display', serif", fontSize: 24, color: c.text }}>Why We're Different</h2>
+        </div>
+        <div className="space-y-6">
+          {[
+            { icon: "🌱", title: "Locally Sourced", desc: "We partner with local farmers to bring you the freshest produce every single day." },
+            { icon: "🥗", title: "Nutritionist Approved", desc: "Every dish is crafted with balance, flavour and your wellbeing in mind." },
+            { icon: "♻️", title: "Eco Conscious", desc: "Minimal waste, sustainable packaging and a genuine commitment to the planet." },
+            { icon: "💚", title: "Inclusive Menu", desc: "Vegan, gluten-free and allergen-aware options clearly marked throughout." },
+          ].map((f) => (
+            <div key={f.title} className="flex gap-4 items-start">
+              <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-xl flex-shrink-0" style={{ background: tagBg }}>{f.icon}</div>
+              <div>
+                <p className="font-semibold text-sm mb-1" style={{ color: c.text }}>{f.title}</p>
+                <p className="text-sm leading-relaxed" style={{ color: muted }}>{f.desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── HOURS & LOCATION ── */}
+      <section className="px-6 py-14" style={{ background: c.bg }}>
+        <div className="text-center mb-8">
+          <p className="text-xs uppercase tracking-widest mb-2" style={{ color: muted }}>Find Us</p>
+          <h2 style={{ fontFamily: "'DM Serif Display', serif", fontSize: 24, color: c.text }}>Hours & Location</h2>
+        </div>
+        <div className="rounded-2xl overflow-hidden mb-6" style={{ background: c.surface, border: `1px solid ${border}` }}>
+          {[
+            { day: "Monday – Friday", hours: "7:00 AM – 4:00 PM" },
+            { day: "Saturday", hours: "8:00 AM – 5:00 PM" },
+            { day: "Sunday", hours: "8:00 AM – 3:00 PM" },
+          ].map((row, i, arr) => (
+            <div key={row.day} className="flex justify-between items-center px-5 py-4"
+              style={{ borderBottom: i < arr.length - 1 ? `1px solid ${border}` : "none" }}>
+              <span className="text-sm" style={{ color: c.text }}>{row.day}</span>
+              <span className="text-sm font-semibold" style={{ color: c.primary }}>{row.hours}</span>
+            </div>
+          ))}
+        </div>
+        <div className="flex items-start gap-3 p-4 rounded-2xl" style={{ background: tagBg }}>
+          <span className="text-xl">📍</span>
+          <div>
+            <p className="text-sm font-semibold mb-0.5" style={{ color: c.text }}>Our Location</p>
+            <p className="text-xs leading-relaxed" style={{ color: muted }}>123 Green Lane, Freshville NSW 2000</p>
+          </div>
+        </div>
+      </section>
+
+      {/* ── FOOTER ── */}
+      <footer className="px-6 pt-10 pb-16 text-center" style={{ background: c.primary }}>
+        <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 22, color: "#ffffff", marginBottom: 8 }}>{restaurantName}</div>
+        <p className="text-xs mb-6" style={{ color: "rgba(255,255,255,0.6)", letterSpacing: 1 }}>Fresh · Seasonal · Wholesome</p>
+        <div className="flex justify-center gap-6 mb-6">
+          {["Instagram", "Facebook", "Google"].map((s) => (
+            <span key={s} className="text-xs cursor-pointer text-white/60 hover:text-white/90 transition-opacity">{s}</span>
+          ))}
+        </div>
+        <p className="text-xs" style={{ color: "rgba(255,255,255,0.35)" }}>© {new Date().getFullYear()} {restaurantName}. All rights reserved.</p>
+      </footer>
+
+      {/* ── CART BAR ── */}
+      {cartItemCount > 0 && (
+        <div className="fixed bottom-0 left-0 right-0 px-4 pb-5 pt-3" style={{ background: `linear-gradient(to top, ${c.bg} 60%, transparent)` }}>
+          <div onClick={onCartOpen}
+            className="flex items-center justify-between px-5 py-4 rounded-2xl cursor-pointer transition-transform hover:-translate-y-0.5"
+            style={{ background: c.primary, boxShadow: `0 8px 24px ${c.primary}66` }}>
+            <div className="flex items-center gap-3">
+              <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold" style={{ background: "#ffffff", color: c.primary }}>{cartItemCount}</div>
+              <span className="text-sm font-semibold text-white">View Cart</span>
+            </div>
+            <span className="text-base font-bold text-white">{currency}{cartTotal.toFixed(2)} →</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

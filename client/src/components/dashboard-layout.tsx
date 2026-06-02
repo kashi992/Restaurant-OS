@@ -52,7 +52,7 @@ const navItems = [
   { title: "Tables", url: "/dashboard/tables", icon: Grid3X3, feature: null, permission: "tables:read" },
   { title: "Staff", url: "/dashboard/staff", icon: Users, feature: null, permission: "staff:read" },
   { title: "Inventory",  url: "/dashboard/inventory",   icon: Package , feature: "inventory_management", permission: "menu:read"},
-  { title: "Recipe Costing",  url: "/dashboard/recipe-costing", icon: FlaskConical,  feature: "inventory_management", permission: "menu:read"     }, 
+  { title: "Recipe Costing",    url: "/dashboard/recipe-costing", icon: FlaskConical,    feature: "recipe_management",    permission: "menu:read" },
   { title: "Settings", url: "/dashboard/settings", icon: Settings, feature: null, permission: "settings:read" },
 ];
 

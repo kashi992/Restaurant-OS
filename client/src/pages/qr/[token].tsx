@@ -42,7 +42,21 @@ import {
   Circle,
 } from "lucide-react";
 
-type QrTemplate = "classic" | "bento" | "minimal";
+import LuxeDarkTheme from "./themes/luxe-dark";
+import FreshMinimalTheme from "./themes/fresh-minimal";
+import WarmSpiceTheme from "./themes/warm-spice";
+
+type QrTemplate = "luxe-dark" | "fresh-minimal" | "warm-spice";
+
+// ── Per-theme color overrides (all optional — themes have built-in defaults) ──
+interface ThemeColors {
+  bg?: string;
+  primary?: string;
+  primaryLight?: string;
+  primaryDark?: string;
+  text?: string;
+  surface?: string;
+}
 
 interface TokenData {
   restaurant: {
@@ -70,6 +84,7 @@ interface TokenData {
     stripe: boolean;
     paypal: boolean;
   };
+  qrThemeColors?: ThemeColors | null;
 }
 
 interface Modifier {
@@ -603,6 +618,176 @@ export default function QROrderingPage({ token }: { token: string }) {
       </div>
     );
   }
+
+  // ── New full-page themes ──────────────────────────────────────────────────
+  const activeTemplate: QrTemplate = (tokenData.qrTemplate as QrTemplate) ?? "luxe-dark";
+  const isCustomTheme = true; // All templates are now custom themes
+
+  if (isCustomTheme) {
+    const themeProps = {
+      restaurantName: tokenData.restaurant.name,
+      tableLabel: tokenData.table?.label ?? null,
+      categories: menu?.categories ?? [],
+      currentCategory,
+      selectedCategory,
+      onCategorySelect: setSelectedCategory,
+      cartItemCount,
+      cartTotal,
+      currency,
+      onItemClick: (item: MenuItem) => setSelectedItem(item),
+      onQuickAdd: (item: MenuItem) => addToCart(item, 1, []),
+      onCartOpen: () => setCartOpen(true),
+      isLoadingMenu: loadingMenu,
+      themeColors: tokenData.qrThemeColors ?? undefined, // ← NEW
+    };
+
+    return (
+      <div>
+        {activeTemplate === "luxe-dark" && <LuxeDarkTheme {...themeProps} />}
+        {activeTemplate === "fresh-minimal" && <FreshMinimalTheme {...themeProps} />}
+        {activeTemplate === "warm-spice" && <WarmSpiceTheme {...themeProps} />}
+
+        {/* Shared Cart Sheet */}
+        <Sheet open={cartOpen} onOpenChange={setCartOpen}>
+          <SheetContent
+            className="flex flex-col w-full sm:max-w-md"
+            onInteractOutside={(e) => e.preventDefault()}
+            onEscapeKeyDown={(e) => e.preventDefault()}
+          >
+            <SheetHeader>
+              <SheetTitle>Your Order</SheetTitle>
+            </SheetHeader>
+            <ScrollArea className="flex-1 -mx-6 px-6">
+              {cart.length > 0 ? (
+                <div className="space-y-4 py-4">
+                  {cart.map((ci) => {
+                    const unitTotal = parseFloat(ci.menuItem.price) + ci.modifiersTotal;
+                    return (
+                      <div key={ci.cartId} className="border rounded-md p-3 space-y-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium">{ci.menuItem.name}</p>
+                            {ci.selectedModifiers.length > 0 && (
+                              <div className="mt-1 space-y-0.5">
+                                {ci.selectedModifiers.map((mod) => (
+                                  <p key={mod.id} className="text-xs text-muted-foreground">
+                                    {mod.name}
+                                    {parseFloat(mod.price) > 0 && ` (+${currency}${parseFloat(mod.price).toFixed(2)})`}
+                                  </p>
+                                ))}
+                              </div>
+                            )}
+                            <p className="text-sm font-semibold mt-1">
+                              {currency}{(unitTotal * ci.quantity).toFixed(2)}
+                            </p>
+                          </div>
+                          <Button size="icon" variant="ghost" onClick={() => removeFromCart(ci.cartId)}>
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button size="icon" variant="outline" onClick={() => updateCartQuantity(ci.cartId, -1)}>
+                            <Minus className="h-4 w-4" />
+                          </Button>
+                          <span className="w-8 text-center font-medium">{ci.quantity}</span>
+                          <Button size="icon" variant="outline" onClick={() => updateCartQuantity(ci.cartId, 1)}>
+                            <Plus className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-12">
+                  <ShoppingCart className="h-12 w-12 text-muted-foreground" />
+                  <p className="mt-4 text-muted-foreground">Your cart is empty</p>
+                </div>
+              )}
+            </ScrollArea>
+
+            {cart.length > 0 && (
+              <div className="border-t pt-4 space-y-4">
+                {tokenData.requiresTableSelection && (
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Select Table</label>
+                    <Select value={selectedTable} onValueChange={setSelectedTable}>
+                      <SelectTrigger><SelectValue placeholder="Choose your table" /></SelectTrigger>
+                      <SelectContent>
+                        {tables?.map((table) => (
+                          <SelectItem key={table.id} value={table.id}>{table.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Your Name</label>
+                  <Input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="e.g., Alice" />
+                </div>
+                <div className="flex justify-between text-lg font-semibold">
+                  <span>Total</span>
+                  <span>{currency}{cartTotal.toFixed(2)}</span>
+                </div>
+                {checkoutStep === "cart" ? (
+                  <Button
+                    className="w-full" size="lg"
+                    onClick={() => {
+                      if (availableQrPayMethods.length > 0) {
+                        setCheckoutStep("payment");
+                        if (availableQrPayMethods.length === 1) setSelectedPaymentMethod(availableQrPayMethods[0].value);
+                      } else {
+                        createOrderMutation.mutate();
+                      }
+                    }}
+                    disabled={createOrderMutation.isPending || (tokenData.requiresTableSelection && !selectedTable) || !customerName.trim()}
+                  >
+                    Proceed to Payment
+                  </Button>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="text-sm font-medium">Select Payment Method</div>
+                    <div className="space-y-2">
+                      {availableQrPayMethods.map((method) => (
+                        <button
+                          key={method.id}
+                          onClick={() => setSelectedPaymentMethod(method.value)}
+                          className={`w-full flex items-center gap-3 p-3 rounded-lg border-2 transition-colors ${selectedPaymentMethod === method.value ? "border-primary bg-primary/5" : "border-muted hover:border-muted-foreground/30"}`}
+                        >
+                          <div className={`h-5 w-5 rounded-full border-2 flex items-center justify-center ${selectedPaymentMethod === method.value ? "border-primary" : "border-muted-foreground/30"}`}>
+                            {selectedPaymentMethod === method.value && <div className="h-3 w-3 rounded-full bg-primary" />}
+                          </div>
+                          <span className="font-medium">{method.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <Button variant="outline" className="flex-1" onClick={() => { setCheckoutStep("cart"); setSelectedPaymentMethod(""); }}>Back</Button>
+                      <Button className="flex-1" size="lg" onClick={() => createOrderMutation.mutate()} disabled={createOrderMutation.isPending || !selectedPaymentMethod}>
+                        {createOrderMutation.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : `Pay ${currency}${cartTotal.toFixed(2)}`}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </SheetContent>
+        </Sheet>
+
+        {/* Shared Item Detail Dialog */}
+        {selectedItem && (
+          <ItemDetailDialog
+            item={selectedItem}
+            open={!!selectedItem}
+            onClose={() => setSelectedItem(null)}
+            onAddToCart={addToCart}
+            currency={currency}
+          />
+        )}
+      </div>
+    );
+  }
+  // ── End of new themes block ───────────────────────────────────────────────────
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
