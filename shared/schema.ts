@@ -37,6 +37,8 @@ export const restaurants = pgTable("restaurants", {
   postalCode: text("postal_code"),
   phone: text("phone"),
   email: text("email"),
+  description: text("description"),
+  openingHours: jsonb("opening_hours").$type<{ day: string; hours: string }[]>(),
   timezone: text("timezone").default("UTC"),
   currency: text("currency").default("USD"),
   taxRate: decimal("tax_rate", { precision: 5, scale: 4 }).default("0.0000"),

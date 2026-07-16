@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { queryClient } from "@/lib/queryClient";
@@ -24,6 +24,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   CreditCard,
   QrCode,
@@ -36,6 +38,9 @@ import {
   EyeOff,
   Trash2,
   Palette,
+  Store,
+  Plus,
+  X,
 } from "lucide-react";
 import { SiStripe, SiPaypal } from "react-icons/si";
 
@@ -82,6 +87,17 @@ export default function SettingsPage() {
   const [paypalClientSecret, setPaypalClientSecret] = useState("");
   const [paypalMode, setPaypalMode] = useState<"sandbox" | "live">("sandbox");
   const [showPaypalSecret, setShowPaypalSecret] = useState(false);
+
+  // Restaurant info form state
+  const [infoForm, setInfoForm] = useState({
+    address: "",
+    city: "",
+    phone: "",
+    email: "",
+    description: "",
+  });
+  const [openingHours, setOpeningHours] = useState<{ day: string; hours: string }[]>([]);
+  const [infoLoaded, setInfoLoaded] = useState(false);
 
   const { data: settingsData, isLoading } = useQuery<{ settings: Record<string, unknown>; features: Record<string, boolean> }>({
     queryKey: ["/api/restaurants", restaurantId, "settings"],
@@ -158,6 +174,56 @@ export default function SettingsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "settings"] });
       toast({ title: "Theme colors saved", description: "Your QR ordering page has been updated." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  // Fetch restaurant info
+  const { data: infoData } = useQuery<{ restaurant: { address?: string; city?: string; phone?: string; email?: string; description?: string; openingHours?: { day: string; hours: string }[] } }>({
+    queryKey: ["/api/restaurants", restaurantId, "info"],
+    queryFn: async () => {
+      const res = await fetch(`/api/restaurants/${restaurantId}/info`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to fetch restaurant info");
+      return res.json();
+    },
+    enabled: !!accessToken && !!restaurantId,
+  });
+
+  // Populate form once data loads
+  useEffect(() => {
+    if (infoData && !infoLoaded) {
+      const r = infoData.restaurant;
+      setInfoForm({
+        address: r.address || "",
+        city: r.city || "",
+        phone: r.phone || "",
+        email: r.email || "",
+        description: r.description || "",
+      });
+      setOpeningHours(r.openingHours || []);
+      setInfoLoaded(true);
+    }
+  }, [infoData, infoLoaded]);
+
+  const saveInfoMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/restaurants/${restaurantId}/info`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        credentials: "include",
+        body: JSON.stringify({ ...infoForm, openingHours }),
+      });
+      if (!res.ok) throw new Error("Failed to save restaurant info");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "info"] });
+      toast({ title: "Restaurant info saved successfully" });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -298,6 +364,130 @@ export default function SettingsPage() {
       </div>
 
       <div className="grid gap-6">
+        {/* Restaurant Info Card */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Store className="h-5 w-5" />
+              Restaurant Information
+            </CardTitle>
+            <CardDescription>
+              This information appears on your QR ordering page for customers.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="info-address">Address</Label>
+                <Input
+                  id="info-address"
+                  placeholder="123 Main Street"
+                  value={infoForm.address}
+                  onChange={(e) => setInfoForm({ ...infoForm, address: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="info-city">City</Label>
+                <Input
+                  id="info-city"
+                  placeholder="Sydney"
+                  value={infoForm.city}
+                  onChange={(e) => setInfoForm({ ...infoForm, city: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="info-phone">Phone</Label>
+                <Input
+                  id="info-phone"
+                  placeholder="+1 (555) 000-0000"
+                  value={infoForm.phone}
+                  onChange={(e) => setInfoForm({ ...infoForm, phone: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="info-email">Email</Label>
+                <Input
+                  id="info-email"
+                  type="email"
+                  placeholder="hello@restaurant.com"
+                  value={infoForm.email}
+                  onChange={(e) => setInfoForm({ ...infoForm, email: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="info-description">About / Description</Label>
+              <Textarea
+                id="info-description"
+                placeholder="Tell your customers about your restaurant..."
+                value={infoForm.description}
+                onChange={(e) => setInfoForm({ ...infoForm, description: e.target.value })}
+                rows={3}
+              />
+              <p className="text-xs text-muted-foreground">Shown as "Our Story" on your QR ordering page.</p>
+            </div>
+
+            {/* Opening Hours */}
+            <div className="space-y-2">
+              <Label>Opening Hours</Label>
+              <div className="space-y-2">
+                {openingHours.map((row, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <Input
+                      placeholder="e.g. Monday – Friday"
+                      value={row.day}
+                      onChange={(e) => {
+                        const updated = [...openingHours];
+                        updated[i] = { ...updated[i], day: e.target.value };
+                        setOpeningHours(updated);
+                      }}
+                      className="flex-1"
+                    />
+                    <Input
+                      placeholder="e.g. 9:00 AM – 10:00 PM"
+                      value={row.hours}
+                      onChange={(e) => {
+                        const updated = [...openingHours];
+                        updated[i] = { ...updated[i], hours: e.target.value };
+                        setOpeningHours(updated);
+                      }}
+                      className="flex-1"
+                    />
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="text-destructive shrink-0"
+                      onClick={() => setOpeningHours(openingHours.filter((_, idx) => idx !== i))}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setOpeningHours([...openingHours, { day: "", hours: "" }])}
+              >
+                <Plus className="h-3.5 w-3.5 mr-1.5" />
+                Add Hours
+              </Button>
+            </div>
+
+            <div className="flex justify-end">
+              <Button
+                onClick={() => saveInfoMutation.mutate()}
+                disabled={saveInfoMutation.isPending}
+              >
+                {saveInfoMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Save Info
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">

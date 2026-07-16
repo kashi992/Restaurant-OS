@@ -3883,6 +3883,70 @@ export async function registerRoutes(
   // RESTAURANT SETTINGS (Soft Toggles) - Admin controlled
   // ----------------------------------------------------------------------------
 
+  // Get restaurant info (owner-level)
+  app.get(
+    "/api/restaurants/:restaurantId/info",
+    authenticate,
+    requireRestaurantAccess, requireActiveRestaurant,
+    requirePermission("settings:read"),
+    async (req, res) => {
+      try {
+        const { restaurantId } = req.params;
+        const [restaurant] = await db
+          .select({
+            name: restaurants.name,
+            address: restaurants.address,
+            city: restaurants.city,
+            phone: restaurants.phone,
+            email: restaurants.email,
+            description: restaurants.description,
+            openingHours: restaurants.openingHours,
+          })
+          .from(restaurants)
+          .where(eq(restaurants.id, restaurantId));
+
+        if (!restaurant) return res.status(404).json({ message: "Restaurant not found" });
+        res.json({ restaurant });
+      } catch (error) {
+        console.error("Get restaurant info error:", error);
+        res.status(500).json({ error: "Internal Server Error", message: "Failed to get restaurant info" });
+      }
+    }
+  );
+
+  // Update restaurant info (owner-level: address, phone, email, description, openingHours)
+  app.patch(
+    "/api/restaurants/:restaurantId/info",
+    authenticate,
+    requireRestaurantAccess, requireActiveRestaurant,
+    requirePermission("settings:read"),
+    async (req, res) => {
+      try {
+        const { restaurantId } = req.params;
+        const { address, city, phone, email, description, openingHours } = req.body;
+
+        const updates: Record<string, unknown> = { updatedAt: new Date() };
+        if (address !== undefined) updates.address = address;
+        if (city !== undefined) updates.city = city;
+        if (phone !== undefined) updates.phone = phone;
+        if (email !== undefined) updates.email = email;
+        if (description !== undefined) updates.description = description;
+        if (openingHours !== undefined) updates.openingHours = openingHours;
+
+        const [restaurant] = await db
+          .update(restaurants)
+          .set(updates)
+          .where(eq(restaurants.id, restaurantId))
+          .returning();
+
+        res.json({ restaurant });
+      } catch (error) {
+        console.error("Update restaurant info error:", error);
+        res.status(500).json({ error: "Internal Server Error", message: "Failed to update restaurant info" });
+      }
+    }
+  );
+
   // Get restaurant settings
   app.get(
     "/api/restaurants/:restaurantId/settings",
@@ -4411,6 +4475,12 @@ export async function registerRoutes(
             currency: restaurants.currency,
             taxRate: restaurants.taxRate,
             suspendedAt: restaurants.suspendedAt,
+            address: restaurants.address,
+            city: restaurants.city,
+            phone: restaurants.phone,
+            email: restaurants.email,
+            description: restaurants.description,
+            openingHours: restaurants.openingHours,
           })
           .from(restaurants)
           .where(eq(restaurants.id, qrToken.restaurantId));
@@ -4498,6 +4568,12 @@ const qrThemeColors = rawColors
             logoUrl: restaurant.logoUrl,
             currency: restaurant.currency,
             taxRate: restaurant.taxRate,
+            address: restaurant.address ?? null,
+            city: restaurant.city ?? null,
+            phone: restaurant.phone ?? null,
+            email: restaurant.email ?? null,
+            description: restaurant.description ?? null,
+            openingHours: restaurant.openingHours ?? null,
           },
           qrToken: {
             id: qrToken.id,

@@ -65,6 +65,12 @@ interface TokenData {
     logoUrl: string | null;
     currency: string;
     taxRate: string;
+    address: string | null;
+    city: string | null;
+    phone: string | null;
+    email: string | null;
+    description: string | null;
+    openingHours: { day: string; hours: string }[] | null;
   };
   qrToken: {
     id: string;
@@ -638,7 +644,13 @@ export default function QROrderingPage({ token }: { token: string }) {
       onQuickAdd: (item: MenuItem) => addToCart(item, 1, []),
       onCartOpen: () => setCartOpen(true),
       isLoadingMenu: loadingMenu,
-      themeColors: tokenData.qrThemeColors ?? undefined, // ← NEW
+      themeColors: tokenData.qrThemeColors ?? undefined,
+      restaurantAddress: tokenData.restaurant.address,
+      restaurantCity: tokenData.restaurant.city,
+      restaurantPhone: tokenData.restaurant.phone,
+      restaurantEmail: tokenData.restaurant.email,
+      restaurantDescription: tokenData.restaurant.description,
+      openingHours: tokenData.restaurant.openingHours,
     };
 
     return (

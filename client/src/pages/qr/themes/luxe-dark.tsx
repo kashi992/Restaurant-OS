@@ -54,6 +54,12 @@ export interface QrThemeProps {
   onCartOpen: () => void;
   isLoadingMenu: boolean;
   themeColors?: ThemeColors;
+  restaurantAddress?: string | null;
+  restaurantCity?: string | null;
+  restaurantPhone?: string | null;
+  restaurantEmail?: string | null;
+  restaurantDescription?: string | null;
+  openingHours?: { day: string; hours: string }[] | null;
 }
 
 export default function LuxeDarkTheme({
@@ -71,6 +77,12 @@ export default function LuxeDarkTheme({
   onCartOpen,
   isLoadingMenu,
   themeColors,
+  restaurantAddress,
+  restaurantCity,
+  restaurantPhone,
+  restaurantEmail,
+  restaurantDescription,
+  openingHours,
 }: QrThemeProps) {
 
   // ── Merge custom colors with defaults ─────────────────────────────────────
@@ -351,52 +363,49 @@ export default function LuxeDarkTheme({
       </section>
 
       {/* ── OUR STORY ── */}
-      <section className="px-6 py-16 text-center" style={{ background: c.surface }}>
-        <p className="text-xs uppercase tracking-[4px] mb-3" style={{ color: c.primary }}>Established 2008</p>
-        <h2 className="mb-4" style={{ fontFamily: "'Playfair Display', serif", fontSize: 26, fontWeight: 700, color: c.text }}>Our Story</h2>
-        <div className="flex items-center justify-center gap-3 mb-6">
-          <div className="h-px w-10" style={{ background: borderCol }} />
-          <span style={{ color: c.primary, fontSize: 12 }}>✦</span>
-          <div className="h-px w-10" style={{ background: borderCol }} />
-        </div>
-        <p className="text-sm leading-relaxed max-w-sm mx-auto" style={{ color: muted }}>
-          Born from a passion for exceptional ingredients and timeless technique, {restaurantName} has been crafting unforgettable dining experiences. Every dish tells a story of dedication, culture and creativity.
-        </p>
-        <div className="grid grid-cols-3 gap-4 mt-10">
-          {[
-            { icon: "🌿", label: "Fresh Daily", sub: "Locally sourced" },
-            { icon: "👨‍🍳", label: "Expert Chefs", sub: "20+ years combined" },
-            { icon: "🍷", label: "Fine Selection", sub: "Curated wine list" },
-          ].map((p) => (
-            <div key={p.label} className="flex flex-col items-center gap-2">
-              <div className="w-12 h-12 rounded-full flex items-center justify-center text-xl"
-                style={{ background: `${c.primary}1a`, border: `1px solid ${borderCol}` }}>{p.icon}</div>
-              <p className="text-xs font-semibold" style={{ color: c.text }}>{p.label}</p>
-              <p className="text-xs text-center" style={{ color: muted }}>{p.sub}</p>
-            </div>
-          ))}
-        </div>
-      </section>
+      {restaurantDescription && (
+        <section className="px-6 py-16 text-center" style={{ background: c.surface }}>
+          <h2 className="mb-4" style={{ fontFamily: "'Playfair Display', serif", fontSize: 26, fontWeight: 700, color: c.text }}>Our Story</h2>
+          <div className="flex items-center justify-center gap-3 mb-6">
+            <div className="h-px w-10" style={{ background: borderCol }} />
+            <span style={{ color: c.primary, fontSize: 12 }}>✦</span>
+            <div className="h-px w-10" style={{ background: borderCol }} />
+          </div>
+          <p className="text-sm leading-relaxed max-w-sm mx-auto" style={{ color: muted }}>
+            {restaurantDescription}
+          </p>
+        </section>
+      )}
 
       {/* ── OPENING HOURS ── */}
-      <section className="px-6 py-14" style={{ background: c.bg }}>
-        <div className="text-center mb-8">
-          <p className="text-xs uppercase tracking-[4px] mb-2" style={{ color: c.primary }}>Visit Us</p>
-          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 24, fontWeight: 700, color: c.text }}>Opening Hours</h2>
-        </div>
-        <div className="max-w-xs mx-auto space-y-3">
-          {[
-            { day: "Monday – Thursday", hours: "5:00 PM – 10:00 PM" },
-            { day: "Friday – Saturday", hours: "12:00 PM – 11:00 PM" },
-            { day: "Sunday", hours: "12:00 PM – 9:00 PM" },
-          ].map((row) => (
-            <div key={row.day} className="flex items-center justify-between py-3 border-b" style={{ borderColor: borderCol }}>
-              <span className="text-sm" style={{ color: muted }}>{row.day}</span>
-              <span className="text-sm font-semibold" style={{ color: c.primary }}>{row.hours}</span>
+      {openingHours && openingHours.length > 0 && (
+        <section className="px-6 py-14" style={{ background: c.bg }}>
+          <div className="text-center mb-8">
+            <p className="text-xs uppercase tracking-[4px] mb-2" style={{ color: c.primary }}>Visit Us</p>
+            <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 24, fontWeight: 700, color: c.text }}>Opening Hours</h2>
+          </div>
+          <div className="max-w-xs mx-auto space-y-3">
+            {openingHours.map((row) => (
+              <div key={row.day} className="flex items-center justify-between py-3 border-b" style={{ borderColor: borderCol }}>
+                <span className="text-sm" style={{ color: muted }}>{row.day}</span>
+                <span className="text-sm font-semibold" style={{ color: c.primary }}>{row.hours}</span>
+              </div>
+            ))}
+          </div>
+          {(restaurantAddress || restaurantCity || restaurantPhone) && (
+            <div className="max-w-xs mx-auto mt-8 space-y-2 text-center">
+              {(restaurantAddress || restaurantCity) && (
+                <p className="text-sm" style={{ color: muted }}>
+                  📍 {[restaurantAddress, restaurantCity].filter(Boolean).join(", ")}
+                </p>
+              )}
+              {restaurantPhone && (
+                <p className="text-sm" style={{ color: muted }}>📞 {restaurantPhone}</p>
+              )}
             </div>
-          ))}
-        </div>
-      </section>
+          )}
+        </section>
+      )}
 
       {/* ── GALLERY ── */}
       <section className="py-10 overflow-hidden" style={{ background: c.surface }}>

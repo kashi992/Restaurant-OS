@@ -53,6 +53,12 @@ export interface QrThemeProps {
   onCartOpen: () => void;
   isLoadingMenu: boolean;
   themeColors?: ThemeColors;
+  restaurantAddress?: string | null;
+  restaurantCity?: string | null;
+  restaurantPhone?: string | null;
+  restaurantEmail?: string | null;
+  restaurantDescription?: string | null;
+  openingHours?: { day: string; hours: string }[] | null;
 }
 
 export default function FreshMinimalTheme({
@@ -70,6 +76,11 @@ export default function FreshMinimalTheme({
   onCartOpen,
   isLoadingMenu,
   themeColors,
+  restaurantAddress,
+  restaurantCity,
+  restaurantPhone,
+  restaurantDescription,
+  openingHours,
 }: QrThemeProps) {
 
   const c: Required<ThemeColors> = {
@@ -276,57 +287,55 @@ export default function FreshMinimalTheme({
         </div>
       </section>
 
-      {/* ── WHY WE'RE DIFFERENT ── */}
-      <section className="px-6 py-16" style={{ background: c.surface }}>
-        <div className="text-center mb-10">
-          <p className="text-xs uppercase tracking-widest mb-2" style={{ color: muted }}>Our Values</p>
-          <h2 style={{ fontFamily: "'DM Serif Display', serif", fontSize: 24, color: c.text }}>Why We're Different</h2>
-        </div>
-        <div className="space-y-6">
-          {[
-            { icon: "🌱", title: "Locally Sourced", desc: "We partner with local farmers to bring you the freshest produce every single day." },
-            { icon: "🥗", title: "Nutritionist Approved", desc: "Every dish is crafted with balance, flavour and your wellbeing in mind." },
-            { icon: "♻️", title: "Eco Conscious", desc: "Minimal waste, sustainable packaging and a genuine commitment to the planet." },
-            { icon: "💚", title: "Inclusive Menu", desc: "Vegan, gluten-free and allergen-aware options clearly marked throughout." },
-          ].map((f) => (
-            <div key={f.title} className="flex gap-4 items-start">
-              <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-xl flex-shrink-0" style={{ background: tagBg }}>{f.icon}</div>
-              <div>
-                <p className="font-semibold text-sm mb-1" style={{ color: c.text }}>{f.title}</p>
-                <p className="text-sm leading-relaxed" style={{ color: muted }}>{f.desc}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
+      {/* ── ABOUT ── */}
+      {restaurantDescription && (
+        <section className="px-6 py-16" style={{ background: c.surface }}>
+          <div className="text-center mb-8">
+            <p className="text-xs uppercase tracking-widest mb-2" style={{ color: muted }}>About Us</p>
+            <h2 style={{ fontFamily: "'DM Serif Display', serif", fontSize: 24, color: c.text }}>{restaurantName}</h2>
+          </div>
+          <p className="text-sm leading-relaxed text-center max-w-sm mx-auto" style={{ color: muted }}>
+            {restaurantDescription}
+          </p>
+        </section>
+      )}
 
       {/* ── HOURS & LOCATION ── */}
-      <section className="px-6 py-14" style={{ background: c.bg }}>
-        <div className="text-center mb-8">
-          <p className="text-xs uppercase tracking-widest mb-2" style={{ color: muted }}>Find Us</p>
-          <h2 style={{ fontFamily: "'DM Serif Display', serif", fontSize: 24, color: c.text }}>Hours & Location</h2>
-        </div>
-        <div className="rounded-2xl overflow-hidden mb-6" style={{ background: c.surface, border: `1px solid ${border}` }}>
-          {[
-            { day: "Monday – Friday", hours: "7:00 AM – 4:00 PM" },
-            { day: "Saturday", hours: "8:00 AM – 5:00 PM" },
-            { day: "Sunday", hours: "8:00 AM – 3:00 PM" },
-          ].map((row, i, arr) => (
-            <div key={row.day} className="flex justify-between items-center px-5 py-4"
-              style={{ borderBottom: i < arr.length - 1 ? `1px solid ${border}` : "none" }}>
-              <span className="text-sm" style={{ color: c.text }}>{row.day}</span>
-              <span className="text-sm font-semibold" style={{ color: c.primary }}>{row.hours}</span>
-            </div>
-          ))}
-        </div>
-        <div className="flex items-start gap-3 p-4 rounded-2xl" style={{ background: tagBg }}>
-          <span className="text-xl">📍</span>
-          <div>
-            <p className="text-sm font-semibold mb-0.5" style={{ color: c.text }}>Our Location</p>
-            <p className="text-xs leading-relaxed" style={{ color: muted }}>123 Green Lane, Freshville NSW 2000</p>
+      {((openingHours && openingHours.length > 0) || restaurantAddress || restaurantCity || restaurantPhone) && (
+        <section className="px-6 py-14" style={{ background: c.bg }}>
+          <div className="text-center mb-8">
+            <p className="text-xs uppercase tracking-widest mb-2" style={{ color: muted }}>Find Us</p>
+            <h2 style={{ fontFamily: "'DM Serif Display', serif", fontSize: 24, color: c.text }}>Hours & Location</h2>
           </div>
-        </div>
-      </section>
+          {openingHours && openingHours.length > 0 && (
+            <div className="rounded-2xl overflow-hidden mb-6" style={{ background: c.surface, border: `1px solid ${border}` }}>
+              {openingHours.map((row, i, arr) => (
+                <div key={row.day} className="flex justify-between items-center px-5 py-4"
+                  style={{ borderBottom: i < arr.length - 1 ? `1px solid ${border}` : "none" }}>
+                  <span className="text-sm" style={{ color: c.text }}>{row.day}</span>
+                  <span className="text-sm font-semibold" style={{ color: c.primary }}>{row.hours}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {(restaurantAddress || restaurantCity || restaurantPhone) && (
+            <div className="flex items-start gap-3 p-4 rounded-2xl" style={{ background: tagBg }}>
+              <span className="text-xl">📍</span>
+              <div>
+                <p className="text-sm font-semibold mb-0.5" style={{ color: c.text }}>Our Location</p>
+                {(restaurantAddress || restaurantCity) && (
+                  <p className="text-xs leading-relaxed" style={{ color: muted }}>
+                    {[restaurantAddress, restaurantCity].filter(Boolean).join(", ")}
+                  </p>
+                )}
+                {restaurantPhone && (
+                  <p className="text-xs mt-1" style={{ color: muted }}>📞 {restaurantPhone}</p>
+                )}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
 
       {/* ── FOOTER ── */}
       <footer className="px-6 pt-10 pb-16 text-center" style={{ background: c.primary }}>

@@ -231,6 +231,8 @@ export class MemStorage implements IStorage {
       postalCode: insertRestaurant.postalCode ?? null,
       phone: insertRestaurant.phone ?? null,
       email: insertRestaurant.email ?? null,
+      description: insertRestaurant.description ?? null,
+      openingHours: insertRestaurant.openingHours ?? null,
       timezone: insertRestaurant.timezone ?? "UTC",
       currency: insertRestaurant.currency ?? "USD",
       taxRate: insertRestaurant.taxRate ?? "0.0000",

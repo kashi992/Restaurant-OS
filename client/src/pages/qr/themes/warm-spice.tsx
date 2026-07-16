@@ -54,12 +54,19 @@ export interface QrThemeProps {
   onCartOpen: () => void;
   isLoadingMenu: boolean;
   themeColors?: ThemeColors;
+  restaurantAddress?: string | null;
+  restaurantCity?: string | null;
+  restaurantPhone?: string | null;
+  restaurantEmail?: string | null;
+  restaurantDescription?: string | null;
+  openingHours?: { day: string; hours: string }[] | null;
 }
 
 export default function WarmSpiceTheme({
   restaurantName, tableLabel, categories, currentCategory,
   selectedCategory, onCategorySelect, cartItemCount, cartTotal,
   currency, onItemClick, onQuickAdd, onCartOpen, isLoadingMenu, themeColors,
+  restaurantAddress, restaurantCity, restaurantPhone, restaurantDescription, openingHours,
 }: QrThemeProps) {
 
   const c: Required<ThemeColors> = {
@@ -326,41 +333,55 @@ export default function WarmSpiceTheme({
         </div>
       </section>
 
-      {/* ── CHEF'S QUOTE ── */}
-      <section className="py-14 px-8 text-center" style={{ background: c.bg }}>
-        <span style={{ color: c.primaryLight, fontSize: 32, fontFamily: "'Cormorant Garamond', serif" }}>"</span>
-        <p className="text-lg italic leading-relaxed my-2" style={{ fontFamily: "'Cormorant Garamond', serif", color: c.text, lineHeight: 1.7 }}>
-          Food is our language. Every spice tells a story, every dish carries a memory. We cook not just to feed — but to connect.
-        </p>
-        <span style={{ color: c.primaryLight, fontSize: 32, fontFamily: "'Cormorant Garamond', serif" }}>"</span>
-        <p className="text-xs mt-4 font-bold tracking-widest uppercase" style={{ color: muted }}>— Head Chef, {restaurantName}</p>
-      </section>
+      {/* ── ABOUT ── */}
+      {restaurantDescription && (
+        <section className="py-14 px-8 text-center" style={{ background: c.bg }}>
+          <span style={{ color: c.primaryLight, fontSize: 32, fontFamily: "'Cormorant Garamond', serif" }}>"</span>
+          <p className="text-lg italic leading-relaxed my-2" style={{ fontFamily: "'Cormorant Garamond', serif", color: c.text, lineHeight: 1.7 }}>
+            {restaurantDescription}
+          </p>
+          <span style={{ color: c.primaryLight, fontSize: 32, fontFamily: "'Cormorant Garamond', serif" }}>"</span>
+        </section>
+      )}
 
       {/* ── OPENING HOURS ── */}
-      <section className="px-6 py-14" style={{ background: "#ffffff" }}>
-        <div className="text-center mb-8">
-          <h2 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 26, fontWeight: 600, color: c.text }}>Opening Hours</h2>
-          <div className="flex items-center justify-center gap-3 mt-2">
-            <div className="h-px w-8" style={{ background: borderCol }} />
-            <span style={{ color: c.primary, fontSize: 10 }}>✦</span>
-            <div className="h-px w-8" style={{ background: borderCol }} />
-          </div>
-        </div>
-        <div className="max-w-xs mx-auto rounded-2xl overflow-hidden border" style={{ borderColor: borderCol }}>
-          {[
-            { day: "Monday – Wednesday", hours: "12:00 PM – 10:00 PM" },
-            { day: "Thursday – Friday", hours: "12:00 PM – 11:00 PM" },
-            { day: "Saturday", hours: "11:00 AM – 11:00 PM" },
-            { day: "Sunday", hours: "11:00 AM – 9:00 PM" },
-          ].map((row, i, arr) => (
-            <div key={row.day} className="flex justify-between items-center px-5 py-4"
-              style={{ borderBottom: i < arr.length - 1 ? `1px solid ${borderCol}` : "none", background: i % 2 === 0 ? "#ffffff" : c.bg }}>
-              <span className="text-sm" style={{ color: muted }}>{row.day}</span>
-              <span className="text-sm font-bold" style={{ color: c.primary }}>{row.hours}</span>
+      {((openingHours && openingHours.length > 0) || restaurantAddress || restaurantCity || restaurantPhone) && (
+        <section className="px-6 py-14" style={{ background: "#ffffff" }}>
+          {openingHours && openingHours.length > 0 && (
+            <>
+              <div className="text-center mb-8">
+                <h2 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 26, fontWeight: 600, color: c.text }}>Opening Hours</h2>
+                <div className="flex items-center justify-center gap-3 mt-2">
+                  <div className="h-px w-8" style={{ background: borderCol }} />
+                  <span style={{ color: c.primary, fontSize: 10 }}>✦</span>
+                  <div className="h-px w-8" style={{ background: borderCol }} />
+                </div>
+              </div>
+              <div className="max-w-xs mx-auto rounded-2xl overflow-hidden border" style={{ borderColor: borderCol }}>
+                {openingHours.map((row, i, arr) => (
+                  <div key={row.day} className="flex justify-between items-center px-5 py-4"
+                    style={{ borderBottom: i < arr.length - 1 ? `1px solid ${borderCol}` : "none", background: i % 2 === 0 ? "#ffffff" : c.bg }}>
+                    <span className="text-sm" style={{ color: muted }}>{row.day}</span>
+                    <span className="text-sm font-bold" style={{ color: c.primary }}>{row.hours}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+          {(restaurantAddress || restaurantCity || restaurantPhone) && (
+            <div className="max-w-xs mx-auto mt-8 text-center space-y-2">
+              {(restaurantAddress || restaurantCity) && (
+                <p className="text-sm" style={{ color: muted }}>
+                  📍 {[restaurantAddress, restaurantCity].filter(Boolean).join(", ")}
+                </p>
+              )}
+              {restaurantPhone && (
+                <p className="text-sm" style={{ color: muted }}>📞 {restaurantPhone}</p>
+              )}
             </div>
-          ))}
-        </div>
-      </section>
+          )}
+        </section>
+      )}
 
       {/* ── FOOTER ── */}
       <footer className="px-6 pt-10 pb-16" style={{ background: c.primaryDark, borderTop: `4px solid ${c.primary}` }}>
