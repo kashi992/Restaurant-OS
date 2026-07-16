@@ -4472,17 +4472,7 @@ export async function registerRoutes(
 
         const payMethods = await resolvePaymentMethods(qrToken.restaurantId);
 
-        // Fetch QR template setting
-        const [templateSetting] = await db
-          .select()
-          .from(restaurantSettings)
-          .where(and(
-            eq(restaurantSettings.restaurantId, qrToken.restaurantId),
-            eq(restaurantSettings.settingKey, "qr_template")
-          ));
-        const qrTemplate = (templateSetting?.settingValue as string) || "classic";
-
-        // ── Read qr_template and qr_theme_colors settings ──────────────────────
+        // ── Read all restaurant settings in one query ─────────────────────────────
         const allRestaurantSettings = await db
           .select()
           .from(restaurantSettings)
@@ -4494,13 +4484,12 @@ export async function registerRoutes(
         }
 
         const qrTemplate = (settingsMap["qr_template"] as string) || "luxe-dark";
-        const qrThemeColors = settingsMap["qr_theme_colors"]
-          ? (typeof settingsMap["qr_theme_colors"] === "string"
-            ? JSON.parse(settingsMap["qr_theme_colors"])
-            : settingsMap["qr_theme_colors"])
-          : null;
+   const rawColors = settingsMap["qr_theme_colors"];
+const qrThemeColors = rawColors
+  ? (typeof rawColors === "string" ? JSON.parse(rawColors) : rawColors)
+  : null;
 
-        // ── Build response ────────────────────────────────────────────────────
+        // ── Build response based on mode ──────────────────────────────────────────
         const response: any = {
           restaurant: {
             id: restaurant.id,
@@ -4516,15 +4505,14 @@ export async function registerRoutes(
           },
           orderingMode: qrSettings.mode,
           qrTemplate,
-          qrThemeColors, // null means "use defaults"
+          qrThemeColors,
+          paymentMethods: payMethods,
         };
 
         if (qrSettings.mode === "auto" && tableInfo) {
-          // AUTO mode with table-specific QR
           response.table = tableInfo;
           response.requiresTableSelection = false;
         } else {
-          // MANUAL mode or no table linked
           response.requiresTableSelection = true;
           response.tableInputType = qrSettings.manualInputType;
         }
@@ -8062,7 +8050,7 @@ export async function registerRoutes(
       try {
         const { restaurantId } = req.params;
 
-        // Get all menu items with their recipes
+        // Get all menu items
         const items = await db
           .select({
             id: menuItems.id,
@@ -8074,9 +8062,33 @@ export async function registerRoutes(
           .where(eq(menuItems.restaurantId, restaurantId))
           .orderBy(menuItems.name);
 
+        // Calculate recipe-based cost per menu item:
+        // SUM(recipe.quantity * inventory_item.costPerUnit) grouped by menuItemId
+        const recipeCosts = await db
+          .select({
+            menuItemId: menuItemRecipes.menuItemId,
+            recipeCost: sql<string>`SUM(CAST(${menuItemRecipes.quantity} AS numeric) * CAST(${inventoryItems.costPerUnit} AS numeric))`,
+          })
+          .from(menuItemRecipes)
+          .innerJoin(inventoryItems, eq(menuItemRecipes.inventoryItemId, inventoryItems.id))
+          .where(eq(menuItemRecipes.restaurantId, restaurantId))
+          .groupBy(menuItemRecipes.menuItemId);
+
+        // Build a lookup map: menuItemId → calculated recipe cost
+        const recipeCostMap = new Map<string, number>();
+        for (const r of recipeCosts) {
+          recipeCostMap.set(r.menuItemId, parseFloat(r.recipeCost || "0"));
+        }
+
         const report = items.map((item) => {
           const sellingPrice = parseFloat(item.price || "0");
-          const costPrice = parseFloat(item.cost || "0");
+
+          // Use recipe cost if available, otherwise fall back to manual cost
+          const hasRecipeCost = recipeCostMap.has(item.id);
+          const costPrice = hasRecipeCost
+            ? recipeCostMap.get(item.id)!
+            : parseFloat(item.cost || "0");
+
           const grossProfit = sellingPrice - costPrice;
           const marginPct = sellingPrice > 0
             ? ((grossProfit / sellingPrice) * 100).toFixed(1)
@@ -8090,6 +8102,7 @@ export async function registerRoutes(
             grossProfit: grossProfit.toFixed(2),
             marginPercent: marginPct,
             hasCost: costPrice > 0,
+            costSource: hasRecipeCost ? "recipe" : "manual",
           };
         });
 

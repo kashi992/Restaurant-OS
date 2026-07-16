@@ -103,11 +103,7 @@ export default function SettingsPage() {
     splitBillingEnabled: settingsData?.settings?.split_billing_enabled === "true" || settingsData?.settings?.split_billing_enabled === true,
     qrOrderingMode: (settingsData?.settings?.qr_ordering_mode as "AUTO" | "MANUAL") || "AUTO",
     qrTemplate: ((settingsData?.settings?.qr_template as QrTemplate) || "luxe-dark"),
-    qrThemeColors: settingsData?.settings?.qr_theme_colors
-      ? (typeof settingsData.settings.qr_theme_colors === "string"
-        ? JSON.parse(settingsData.settings.qr_theme_colors as string)
-        : settingsData.settings.qr_theme_colors as ThemeColors)
-      : null,
+    qrThemeColors: (settingsData?.settings?.qr_theme_colors as ThemeColors) ?? null,
     defaultMenuId: settingsData?.settings?.default_menu_id as string | null,
     stripeCredentials: (settingsData?.settings?.stripe_credentials as CredentialInfo) || { configured: false },
     paypalCredentials: (settingsData?.settings?.paypal_credentials as CredentialInfo) || { configured: false },
@@ -141,32 +137,32 @@ export default function SettingsPage() {
   });
 
   const saveColorsMutation = useMutation({
-  mutationFn: async ({ theme, colors }: { theme: QrTemplate; colors: ThemeColors }) => {
-    // Save theme selection
-    await fetch(`/api/restaurants/${restaurantId}/settings/qr_template`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-      credentials: "include",
-      body: JSON.stringify({ value: theme }),
-    });
-    // Save colors as JSON string
-    const res = await fetch(`/api/restaurants/${restaurantId}/settings/qr_theme_colors`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-      credentials: "include",
-      body: JSON.stringify({ value: JSON.stringify(colors) }),
-    });
-    if (!res.ok) throw new Error("Failed to save theme colors");
-    return res.json();
-  },
-  onSuccess: () => {
-    queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "settings"] });
-    toast({ title: "Theme colors saved", description: "Your QR ordering page has been updated." });
-  },
-  onError: (error: Error) => {
-    toast({ title: "Error", description: error.message, variant: "destructive" });
-  },
-});
+    mutationFn: async ({ theme, colors }: { theme: QrTemplate; colors: ThemeColors }) => {
+      // Save theme selection
+      await fetch(`/api/restaurants/${restaurantId}/settings/qr_template`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        credentials: "include",
+        body: JSON.stringify({ value: theme }),
+      });
+      // Save colors as JSON object (jsonb column accepts objects, not strings)
+      const res = await fetch(`/api/restaurants/${restaurantId}/settings/qr_theme_colors`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        credentials: "include",
+        body: JSON.stringify({ value: colors }),  // ✅ send the object directly
+      });
+      if (!res.ok) throw new Error("Failed to save theme colors");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/restaurants", restaurantId, "settings"] });
+      toast({ title: "Theme colors saved", description: "Your QR ordering page has been updated." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
 
   const saveCredentialsMutation = useMutation({
     mutationFn: async ({ provider, data }: { provider: string; data: Record<string, string> }) => {
@@ -641,32 +637,32 @@ export default function SettingsPage() {
             </div>
           </CardContent>
         </Card> */}
-    <Card>
-  <CardHeader>
-    <CardTitle className="flex items-center gap-2">
-      <Palette className="h-5 w-5" />
-      QR Ordering Theme
-    </CardTitle>
-    <CardDescription>
-      Choose your QR ordering page theme and customize its colors.
-      Click a theme to activate it and open the color editor.
-    </CardDescription>
-  </CardHeader>
-  <CardContent>
-    <QrThemePicker
-      currentTheme={settings.qrTemplate}
-      currentColors={settings.qrThemeColors}
-      onSelectTheme={(theme) =>
-        updateSettingMutation.mutate({ key: "qr_template", value: theme })
-      }
-      onSaveColors={(theme, colors) =>
-        saveColorsMutation.mutate({ theme, colors })
-      }
-      isSavingTheme={updateSettingMutation.isPending}
-      isSavingColors={saveColorsMutation.isPending}
-    />
-  </CardContent>
-</Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Palette className="h-5 w-5" />
+              QR Ordering Theme
+            </CardTitle>
+            <CardDescription>
+              Choose your QR ordering page theme and customize its colors.
+              Click a theme to activate it and open the color editor.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <QrThemePicker
+              currentTheme={settings.qrTemplate}
+              currentColors={settings.qrThemeColors}
+              onSelectTheme={(theme) =>
+                updateSettingMutation.mutate({ key: "qr_template", value: theme })
+              }
+              onSaveColors={(theme, colors) =>
+                saveColorsMutation.mutate({ theme, colors })
+              }
+              isSavingTheme={updateSettingMutation.isPending}
+              isSavingColors={saveColorsMutation.isPending}
+            />
+          </CardContent>
+        </Card>
       </div>
 
       {updateSettingMutation.isPending && (

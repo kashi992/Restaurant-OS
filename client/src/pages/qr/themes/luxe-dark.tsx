@@ -31,12 +31,12 @@ interface ThemeColors {
 
 // ── DEFAULT COLORS — used when restaurant has not customized ──────────────────
 const DEFAULTS: Required<ThemeColors> = {
-  bg:           "#0D0D0D",
-  primary:      "#C9A84C",
+  bg: "#0D0D0D",
+  primary: "#C9A84C",
   primaryLight: "#E2C97E",
-  primaryDark:  "#0D0D0D",
-  text:         "#F5F0E8",
-  surface:      "#1A1A1A",
+  primaryDark: "#0D0D0D",
+  text: "#FFF",
+  surface: "#1A1A1A",
 };
 
 export interface QrThemeProps {
@@ -75,18 +75,18 @@ export default function LuxeDarkTheme({
 
   // ── Merge custom colors with defaults ─────────────────────────────────────
   const c: Required<ThemeColors> = {
-    bg:           themeColors?.bg           ?? DEFAULTS.bg,
-    primary:      themeColors?.primary      ?? DEFAULTS.primary,
+    bg: themeColors?.bg ?? DEFAULTS.bg,
+    primary: themeColors?.primary ?? DEFAULTS.primary,
     primaryLight: themeColors?.primaryLight ?? DEFAULTS.primaryLight,
-    primaryDark:  themeColors?.primaryDark  ?? DEFAULTS.primaryDark,
-    text:         themeColors?.text         ?? DEFAULTS.text,
-    surface:      themeColors?.surface      ?? DEFAULTS.surface,
+    primaryDark: themeColors?.primaryDark ?? DEFAULTS.primaryDark,
+    text: themeColors?.text ?? DEFAULTS.text,
+    surface: themeColors?.surface ?? DEFAULTS.surface,
   };
 
   // Derived colours (keep consistent feel)
-  const surface2   = c.surface + "dd";
-  const borderCol  = "#2A2A2A";
-  const muted      = "#7A7A7A";
+  const surface2 = c.surface + "dd";
+  const borderCol = "#2A2A2A";
+  const muted = "#7A7A7A";
 
   const menuSectionRef = useRef<HTMLDivElement>(null);
   const [menuDropdownOpen, setMenuDropdownOpen] = useState(false);
@@ -126,9 +126,9 @@ export default function LuxeDarkTheme({
     setTimeout(() => menuSectionRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
   };
 
-  const items    = currentCategory?.items ?? [];
+  const items = currentCategory?.items ?? [];
   const featured = items[0];
-  const rest     = items.slice(1);
+  const rest = items.slice(1);
   const allItems = categories.flatMap((c) => c.items);
 
   return (
@@ -213,10 +213,10 @@ export default function LuxeDarkTheme({
       </header>
 
       {/* ── HERO ── */}
-      <section className="relative flex flex-col items-center justify-center text-center" style={{ height: "100vh", minHeight: 600 }}>
+      <section className="relative flex flex-col items-center justify-center text-center min-h-screen">
         <img src="https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=1200&q=80" alt="Restaurant"
-          className="absolute inset-0 w-full h-full object-cover" style={{ filter: "brightness(0.28)" }} />
-        <div className="absolute inset-0" style={{ background: `linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.6) 60%, ${c.bg} 100%)` }} />
+          className="absolute inset-0 w-full h-full object-cover" style={{ filter: "brightness(0.4)" }} />
+        <div className="absolute inset-0" />
         <div className="relative z-10 px-6 max-w-sm mx-auto">
           <p className="text-xs font-semibold tracking-[4px] uppercase mb-6" style={{ color: c.primary }}>Fine Dining Experience</p>
           <h1 className="mb-4" style={{ fontFamily: "'Playfair Display', serif", fontSize: "clamp(38px,10vw,58px)", fontWeight: 700, color: c.text, lineHeight: 1.1 }}>
@@ -228,7 +228,7 @@ export default function LuxeDarkTheme({
             <div className="h-px w-12" style={{ background: `linear-gradient(to left, transparent, ${c.primary})` }} />
           </div>
           {tableLabel && <p className="text-sm mb-2 font-medium" style={{ color: c.primary }}>{tableLabel}</p>}
-          <p className="text-sm mb-8 leading-relaxed" style={{ color: `${c.text}99`, letterSpacing: 1 }}>
+          <p className="text-sm mb-8 leading-relaxed" style={{ color: `${c.text}`, letterSpacing: 1 }}>
             An unforgettable dining experience, crafted with passion and precision.
           </p>
           <div className="flex flex-col gap-3 items-center">
@@ -237,15 +237,18 @@ export default function LuxeDarkTheme({
               Explore The Menu
             </button>
             <button onClick={scrollToMenu} className="w-full px-8 py-4 rounded-full text-sm font-semibold border transition-all hover:bg-white/5"
-              style={{ borderColor: "rgba(255,255,255,0.2)", color: c.text }}>
+              style={{ borderColor: c.text, color: c.text }}>
               View Tonight's Specials
             </button>
           </div>
         </div>
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 animate-bounce">
-          <span className="text-xs tracking-widest uppercase" style={{ color: muted }}>Scroll</span>
-          <ChevronDown className="h-4 w-4" style={{ color: c.primary }} />
+        <div className="absolute bottom-8 left-1/2 -translate-x-1/2">
+          <div className="flex flex-col items-center gap-2 animate-bounce">
+            <span className="text-xs tracking-widest uppercase" style={{ color: c.text }}>Scroll</span>
+            <ChevronDown className="h-4 w-4" style={{ color: c.primary }} />
+          </div>
         </div>
+
       </section>
 
       {/* ── MENU SECTION ── */}
@@ -273,7 +276,7 @@ export default function LuxeDarkTheme({
         <div className="px-4">
           {isLoadingMenu ? (
             <div className="grid grid-cols-2 gap-3.5">
-              {[1,2,3,4].map((i) => <Skeleton key={i} className="h-52 w-full rounded-2xl" />)}
+              {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-52 w-full rounded-2xl" />)}
             </div>
           ) : items.length === 0 ? (
             <p className="text-center py-12" style={{ color: muted }}>No items in this category</p>

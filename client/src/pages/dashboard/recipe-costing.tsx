@@ -88,6 +88,7 @@ interface ProfitReportItem {
   grossProfit: string;
   marginPercent: string;
   hasCost: boolean;
+  costSource: "recipe" | "manual";
 }
 
 interface ProfitReport {
@@ -104,6 +105,7 @@ interface ProfitReport {
 function RecipeBuilderTab({ restaurantId }: { restaurantId: string }) {
   const { toast } = useToast();
   const qc = useQueryClient();
+  const { accessToken } = useAuth();
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [selectedMenuItemId, setSelectedMenuItemId] = useState<string>("");
@@ -118,19 +120,43 @@ function RecipeBuilderTab({ restaurantId }: { restaurantId: string }) {
 
   const { data: menuItemsData, isLoading: menuLoading } = useQuery<MenuItem[]>({
     queryKey: ["/api/restaurants", restaurantId, "menu-items"],
-    enabled: !!restaurantId,
+    queryFn: async () => {
+      const res = await fetch(`/api/restaurants/${restaurantId}/menu-items`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to fetch menu items");
+      return res.json();
+    },
+    enabled: !!accessToken && !!restaurantId,
   });
 
   const { data: recipesData, isLoading: recipesLoading } = useQuery<{
     recipes: (RecipeIngredient & { menuItemName: string })[];
   }>({
     queryKey: ["/api/restaurants", restaurantId, "recipes"],
-    enabled: !!restaurantId,
+    queryFn: async () => {
+      const res = await fetch(`/api/restaurants/${restaurantId}/recipes`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to fetch recipes");
+      return res.json();
+    },
+    enabled: !!accessToken && !!restaurantId,
   });
 
   const { data: inventoryItemsData } = useQuery<InventoryItem[]>({
     queryKey: ["/api/restaurants", restaurantId, "inventory"],
-    enabled: !!restaurantId,
+    queryFn: async () => {
+      const res = await fetch(`/api/restaurants/${restaurantId}/inventory`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to fetch inventory");
+      return res.json();
+    },
+    enabled: !!accessToken && !!restaurantId,
   });
   const inventoryItems = inventoryItemsData || [];
 
@@ -440,9 +466,18 @@ function RecipeBuilderTab({ restaurantId }: { restaurantId: string }) {
 // ─── Profit Report Tab ────────────────────────────────────────────────────────
 
 function ProfitReportTab({ restaurantId }: { restaurantId: string }) {
+  const { accessToken } = useAuth();
   const { data, isLoading, isError } = useQuery<ProfitReport>({
     queryKey: ["/api/restaurants", restaurantId, "recipes", "profit-report"],
-    enabled: !!restaurantId,
+    queryFn: async () => {
+      const res = await fetch(`/api/restaurants/${restaurantId}/recipes/profit-report`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to fetch profit report");
+      return res.json();
+    },
+    enabled: !!accessToken && !!restaurantId,
   });
 
   if (isLoading) {
@@ -541,6 +576,7 @@ function ProfitReportTab({ restaurantId }: { restaurantId: string }) {
                   <TableHead>Item</TableHead>
                   <TableHead className="text-right">Selling Price</TableHead>
                   <TableHead className="text-right">Cost Price</TableHead>
+                  <TableHead className="text-center">Cost Source</TableHead>
                   <TableHead className="text-right">Gross Profit</TableHead>
                   <TableHead className="text-right">Margin %</TableHead>
                   <TableHead className="text-center">Rating</TableHead>
@@ -555,6 +591,17 @@ function ProfitReportTab({ restaurantId }: { restaurantId: string }) {
                     </TableCell>
                     <TableCell className="text-right text-muted-foreground">
                       {item.hasCost ? `$${item.costPrice}` : "—"}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {item.hasCost ? (
+                        item.costSource === "recipe" ? (
+                          <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">Recipe</Badge>
+                        ) : (
+                          <Badge variant="secondary">Manual</Badge>
+                        )
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
                     </TableCell>
                     <TableCell className="text-right">
                       {item.hasCost ? (
