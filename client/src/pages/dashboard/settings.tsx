@@ -308,9 +308,6 @@ export default function SettingsPage() {
     updateSettingMutation.mutate({ key: "qr_ordering_mode", value });
   };
 
-  const handleTemplateChange = (value: QrTemplate) => {
-    updateSettingMutation.mutate({ key: "qr_template", value });
-  };
 
   const handleSaveStripe = () => {
     if (!stripeSecretKey.trim() || !stripePublishableKey.trim()) {
@@ -725,108 +722,6 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        {/* <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Palette className="h-5 w-5" />
-              QR Ordering Template
-            </CardTitle>
-            <CardDescription>
-              Choose the visual layout for your customer-facing QR ordering page.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {(
-                [
-                  {
-                    id: "classic" as QrTemplate,
-                    label: "Classic",
-                    description: "Clean card list with image, name, and price side by side.",
-                    preview: (
-                      <div className="space-y-1.5">
-                        {[1, 2, 3].map((i) => (
-                          <div key={i} className="flex items-center gap-2 bg-white rounded p-1.5 border border-gray-200">
-                            <div className="w-8 h-8 rounded bg-orange-100 shrink-0" />
-                            <div className="flex-1 space-y-1">
-                              <div className="h-1.5 bg-gray-300 rounded w-3/4" />
-                              <div className="h-1 bg-gray-200 rounded w-1/2" />
-                            </div>
-                            <div className="h-2 w-8 bg-orange-400 rounded" />
-                          </div>
-                        ))}
-                      </div>
-                    ),
-                  },
-                  {
-                    id: "bento" as QrTemplate,
-                    label: "Bento Grid",
-                    description: "Image-first 2-column grid. Great for visual menus.",
-                    preview: (
-                      <div className="grid grid-cols-2 gap-1.5">
-                        {[1, 2, 3, 4].map((i) => (
-                          <div key={i} className="bg-white rounded border border-gray-200 overflow-hidden">
-                            <div className="h-8 bg-orange-100 w-full" />
-                            <div className="p-1.5 space-y-1">
-                              <div className="h-1.5 bg-gray-300 rounded w-full" />
-                              <div className="h-1 bg-orange-400 rounded w-1/2" />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ),
-                  },
-                  {
-                    id: "minimal" as QrTemplate,
-                    label: "Minimal",
-                    description: "Elegant list with subtle dividers. Sleek & fast to scan.",
-                    preview: (
-                      <div className="space-y-0">
-                        {[1, 2, 3, 4].map((i) => (
-                          <div key={i} className="flex items-center justify-between py-1.5 border-b border-gray-100 last:border-0">
-                            <div className="flex items-center gap-2">
-                              <div className="w-6 h-6 rounded-sm bg-gray-100 shrink-0" />
-                              <div className="h-1.5 bg-gray-300 rounded w-16" />
-                            </div>
-                            <div className="h-1.5 w-8 bg-orange-400 rounded" />
-                          </div>
-                        ))}
-                      </div>
-                    ),
-                  },
-                ] as const
-              ).map((tmpl) => {
-                const isSelected = (settings?.qrTemplate ?? "classic") === tmpl.id;
-                return (
-                  <button
-                    key={tmpl.id}
-                    type="button"
-                    onClick={() => handleTemplateChange(tmpl.id)}
-                    disabled={updateSettingMutation.isPending}
-                    data-testid={`button-template-${tmpl.id}`}
-                    className={`rounded-xl border-2 p-3 text-left transition-all ${isSelected
-                      ? "border-primary bg-primary/5"
-                      : "border-muted hover:border-muted-foreground/40"
-                      }`}
-                  >
-                    <div className="mb-3 rounded-lg bg-muted/40 p-2.5 border border-muted">
-                      {tmpl.preview}
-                    </div>
-                    <div className="flex items-center justify-between gap-2">
-                      <div>
-                        <p className="font-semibold text-sm">{tmpl.label}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">{tmpl.description}</p>
-                      </div>
-                      {isSelected && (
-                        <CheckCircle className="h-4 w-4 text-primary shrink-0" />
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card> */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">

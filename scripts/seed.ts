@@ -82,7 +82,7 @@ async function seed() {
     { featureKey: "split_payments", isEnabled: true },
     { featureKey: "table_reservations", isEnabled: false },
     { featureKey: "kitchen_display", isEnabled: true },
-    { featureKey: "inventory_management", isEnabled: false },
+    { featureKey: "inventory_management", isEnabled: true },
     { featureKey: "loyalty_program", isEnabled: false },
     { featureKey: "stripe_payments", isEnabled: true },
     { featureKey: "paypal_payments", isEnabled: true },

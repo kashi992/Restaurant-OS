@@ -35,7 +35,7 @@ const DEFAULTS: Required<ThemeColors> = {
   primary: "#C9A84C",
   primaryLight: "#E2C97E",
   primaryDark: "#0D0D0D",
-  text: "#FFF",
+  text: "#F5F0E8",
   surface: "#1A1A1A",
 };
 
@@ -228,7 +228,7 @@ export default function LuxeDarkTheme({
       <section className="relative flex flex-col items-center justify-center text-center min-h-screen">
         <img src="https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=1200&q=80" alt="Restaurant"
           className="absolute inset-0 w-full h-full object-cover" style={{ filter: "brightness(0.4)" }} />
-        <div className="absolute inset-0" />
+        <div className="absolute inset-0" style={{ background: "linear-gradient(to top, #0D0D0D 0%, rgba(0,0,0,0.4) 60%, transparent 100%)" }} />
         <div className="relative z-10 px-6 max-w-sm mx-auto">
           <p className="text-xs font-semibold tracking-[4px] uppercase mb-6" style={{ color: c.primary }}>Fine Dining Experience</p>
           <h1 className="mb-4" style={{ fontFamily: "'Playfair Display', serif", fontSize: "clamp(38px,10vw,58px)", fontWeight: 700, color: c.text, lineHeight: 1.1 }}>

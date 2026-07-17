@@ -1,6 +1,6 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/lib/auth";
-import { Settings, Shield, Bell } from "lucide-react";
+import { Shield } from "lucide-react";
 
 export default function AdminSettingsPage() {
   const { user } = useAuth();
@@ -34,37 +34,6 @@ export default function AdminSettingsPage() {
               <div className="text-sm text-muted-foreground">Role</div>
               <div className="font-medium">Super Administrator</div>
             </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Bell className="h-5 w-5" />
-              Notifications
-            </CardTitle>
-            <CardDescription>Configure notification preferences</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground text-sm">
-              Notification settings will be available in a future update.
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="md:col-span-2">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Settings className="h-5 w-5" />
-              System Configuration
-            </CardTitle>
-            <CardDescription>Global platform settings</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground text-sm">
-              System-wide configuration options will be available in a future update.
-              This includes default feature toggles, payment provider settings, and more.
-            </p>
           </CardContent>
         </Card>
       </div>

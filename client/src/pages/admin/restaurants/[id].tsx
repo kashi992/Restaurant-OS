@@ -24,6 +24,10 @@ import {
   Pencil,
   Save,
   X,
+  Plus,
+  Trash2,
+  CheckCircle,
+  AlertCircle,
 } from "lucide-react";
 
 interface Restaurant {
@@ -42,10 +46,13 @@ interface Restaurant {
   daysRemaining: number | null;
 }
 
-interface FeatureAllowlist {
+interface Domain {
+  id: string;
   restaurantId: string;
-  featureKey: string;
-  enabled: boolean;
+  domain: string;
+  isPrimary: boolean;
+  isVerified: boolean;
+  createdAt: string;
 }
 
 const MASTER_FEATURES = [
@@ -57,8 +64,7 @@ const MASTER_FEATURES = [
   { key: "table_management",  label: "Table Management",      description: "Dining tables and floor plan" },
   { key: "split_billing",     label: "Split Billing",         description: "Bill splitting for tables" },
   // ── Inventory & Recipes ──────────────────────────────────────────────
-  { key: "inventory_management", label: "Inventory Management", description: "Stock tracking and low-stock alerts" },
-  { key: "recipe_management", label: "Recipe & Cost Management", description: "Recipe builder and profit margin reports" },
+  { key: "inventory_management", label: "Inventory Management", description: "Stock tracking, low-stock alerts, and recipe costing" },
   // ── Menu ─────────────────────────────────────────────────────────────
   { key: "modifiers",         label: "Item Modifiers",        description: "Menu item customization options" },
   { key: "reporting",         label: "Reports & Analytics",   description: "Sales and performance reports" },
@@ -82,9 +88,12 @@ export default function RestaurantDetailPage() {
     phone: "",
   });
 
+  const [newDomain, setNewDomain] = useState("");
+
   const { data: restaurantData, isLoading: loadingRestaurant } = useQuery<{
     restaurant: Restaurant;
     features: Record<string, { isEnabled: boolean; expiresAt: string | null }>;
+    domains: Domain[];
     staffCount: number;
   }>({
     queryKey: ["/api/admin/restaurants", restaurantId],
@@ -101,6 +110,7 @@ export default function RestaurantDetailPage() {
 
   const restaurant = restaurantData?.restaurant;
   const features = restaurantData?.features || {};
+  const domains = restaurantData?.domains || [];
 
   // Initialize edit form when restaurant data loads
   const startEditing = () => {
@@ -208,6 +218,52 @@ export default function RestaurantDetailPage() {
         description: "Failed to extend subscription",
         variant: "destructive",
       });
+    },
+  });
+
+  const addDomainMutation = useMutation({
+    mutationFn: async (domain: string) => {
+      const res = await fetch(`/api/admin/restaurants/${restaurantId}/domains`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        credentials: "include",
+        body: JSON.stringify({ domain }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Failed to add domain");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/restaurants", restaurantId] });
+      toast({ title: "Domain added successfully" });
+      setNewDomain("");
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteDomainMutation = useMutation({
+    mutationFn: async (domainId: string) => {
+      const res = await fetch(`/api/admin/restaurants/${restaurantId}/domains/${domainId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${accessToken}` },
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Failed to remove domain");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/restaurants", restaurantId] });
+      toast({ title: "Domain removed" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
 
@@ -566,7 +622,7 @@ export default function RestaurantDetailPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="domains">
+        <TabsContent value="domains" className="space-y-4">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -574,16 +630,93 @@ export default function RestaurantDetailPage() {
                 Custom Domains
               </CardTitle>
               <CardDescription>
-                Configure custom domains for this restaurant's ordering pages.
+                Add custom domains so this restaurant's QR ordering page is accessible at their own branded URL.
               </CardDescription>
             </CardHeader>
-            <CardContent>
-              <p className="text-muted-foreground">
-                Domain management coming soon. Currently, the restaurant is accessible at:
-              </p>
-              <code className="mt-2 block rounded bg-muted p-2 text-sm">
-                /order/{restaurant.slug}
-              </code>
+            <CardContent className="space-y-6">
+
+              {/* Default URL info */}
+              <div className="rounded-lg bg-muted p-4">
+                <p className="text-sm text-muted-foreground mb-1">Default ordering URL</p>
+                <code className="text-sm font-mono">/order/{restaurant.slug}</code>
+              </div>
+
+              {/* Add domain */}
+              <div className="space-y-2">
+                <Label htmlFor="new-domain">Add Custom Domain</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="new-domain"
+                    placeholder="e.g. order.flyingfork.com"
+                    value={newDomain}
+                    onChange={(e) => setNewDomain(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && newDomain.trim()) {
+                        addDomainMutation.mutate(newDomain.trim());
+                      }
+                    }}
+                    data-testid="input-new-domain"
+                  />
+                  <Button
+                    onClick={() => newDomain.trim() && addDomainMutation.mutate(newDomain.trim())}
+                    disabled={addDomainMutation.isPending || !newDomain.trim()}
+                    data-testid="button-add-domain"
+                  >
+                    <Plus className="h-4 w-4 mr-1.5" />
+                    Add
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  The restaurant must point their DNS CNAME record to this server for the domain to work.
+                </p>
+              </div>
+
+              {/* Domain list */}
+              <div className="space-y-2">
+                <Label>Configured Domains</Label>
+                {domains.length === 0 ? (
+                  <div className="rounded-lg border border-dashed p-6 text-center">
+                    <Globe className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+                    <p className="text-sm text-muted-foreground">No custom domains added yet.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {domains.map((d) => (
+                      <div
+                        key={d.id}
+                        className="flex items-center justify-between p-4 rounded-lg border"
+                        data-testid={`domain-row-${d.id}`}
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          {d.isVerified ? (
+                            <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />
+                          ) : (
+                            <AlertCircle className="h-4 w-4 text-orange-400 shrink-0" />
+                          )}
+                          <div className="min-w-0">
+                            <p className="font-mono text-sm truncate">{d.domain}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {d.isVerified ? "Verified" : "Pending DNS verification"}
+                              {d.isPrimary && " · Primary"}
+                            </p>
+                          </div>
+                        </div>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="text-destructive shrink-0"
+                          onClick={() => deleteDomainMutation.mutate(d.id)}
+                          disabled={deleteDomainMutation.isPending}
+                          data-testid={`button-delete-domain-${d.id}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
             </CardContent>
           </Card>
         </TabsContent>

@@ -652,7 +652,7 @@ export default function RecipeCostingPage() {
   const restaurantId = user?.restaurantId;
 
   // Feature gate check
-  const hasRecipeFeature  = user?.features?.["recipe_management"] === true;
+  const hasRecipeFeature  = user?.features?.["inventory_management"] === true;
 
 if (!hasRecipeFeature) {
   return (
