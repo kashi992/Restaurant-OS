@@ -1,6 +1,7 @@
 node_modules
 dist
 .DS_Store
+.claude/settings.local.json
 server/public
 vite.config.ts.*
 *.tar.gz
