@@ -1997,7 +1997,72 @@ export async function registerRoutes(
     }
   });
 
-  // Get audit logs (super admin only)
+  // Get restaurant staff/admin users (super admin only)
+  app.get("/api/admin/restaurants/:restaurantId/staff", authenticate, requireSuperAdmin, async (req, res) => {
+    try {
+      const { restaurantId } = req.params;
+      const staffList = await db
+        .select({
+          id: restaurantUsers.id,
+          userId: users.id,
+          email: users.email,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          roleName: roles.name,
+          isActive: restaurantUsers.isActive,
+        })
+        .from(restaurantUsers)
+        .innerJoin(users, eq(restaurantUsers.userId, users.id))
+        .innerJoin(roles, eq(restaurantUsers.roleId, roles.id))
+        .where(eq(restaurantUsers.restaurantId, restaurantId))
+        .orderBy(restaurantUsers.createdAt);
+      res.json({ staff: staffList });
+    } catch (error) {
+      console.error('Get restaurant staff error:', error);
+      res.status(500).json({ error: 'Internal Server Error', message: 'Failed to get staff' });
+    }
+  });
+
+  // Update restaurant admin user credentials (super admin only)
+  app.patch("/api/admin/restaurants/:restaurantId/admin/:userId", authenticate, requireSuperAdmin, async (req, res) => {
+    try {
+      const { restaurantId, userId } = req.params;
+      const { email, password, firstName, lastName } = req.body;
+
+      const [member] = await db
+        .select()
+        .from(restaurantUsers)
+        .where(and(eq(restaurantUsers.userId, userId), eq(restaurantUsers.restaurantId, restaurantId)))
+        .limit(1);
+
+      if (!member) {
+        return res.status(404).json({ error: 'Not Found', message: 'User not found in this restaurant' });
+      }
+
+      const updates: Record<string, any> = {};
+      if (email) updates.email = email.toLowerCase();
+      if (firstName) updates.firstName = firstName;
+      if (lastName) updates.lastName = lastName;
+      if (password) updates.password = await bcrypt.hash(password, 10);
+
+      if (Object.keys(updates).length === 0) {
+        return res.status(400).json({ error: 'Bad Request', message: 'No fields to update' });
+      }
+
+      const [updatedUser] = await db
+        .update(users)
+        .set(updates)
+        .where(eq(users.id, userId))
+        .returning({ id: users.id, email: users.email, firstName: users.firstName, lastName: users.lastName });
+
+      res.json({ user: updatedUser });
+    } catch (error) {
+      console.error('Update admin credentials error:', error);
+      res.status(500).json({ error: 'Internal Server Error', message: 'Failed to update credentials' });
+    }
+  });
+
+    // Get audit logs (super admin only)
   app.get("/api/admin/audit-logs", authenticate, requireSuperAdmin, async (req, res) => {
     try {
       const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);

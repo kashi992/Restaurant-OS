@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft,
@@ -28,6 +29,8 @@ import {
   Trash2,
   CheckCircle,
   AlertCircle,
+  Users,
+  KeyRound,
 } from "lucide-react";
 
 interface Restaurant {
@@ -89,6 +92,10 @@ export default function RestaurantDetailPage() {
   });
 
   const [newDomain, setNewDomain] = useState("");
+
+  // Staff / credentials edit state
+  const [editCredUser, setEditCredUser] = useState<{ id: string; userId: string; email: string; firstName: string; lastName: string } | null>(null);
+  const [credForm, setCredForm] = useState({ email: "", firstName: "", lastName: "", password: "" });
 
   const { data: restaurantData, isLoading: loadingRestaurant } = useQuery<{
     restaurant: Restaurant;
@@ -267,6 +274,53 @@ export default function RestaurantDetailPage() {
     },
   });
 
+  const { data: staffData, isLoading: loadingStaff } = useQuery<{ staff: Array<{ id: string; userId: string; email: string; firstName: string; lastName: string; roleName: string; isActive: boolean }> }>({
+    queryKey: ["/api/admin/restaurants", restaurantId, "staff"],
+    queryFn: async () => {
+      const res = await fetch(`/api/admin/restaurants/${restaurantId}/staff`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to fetch staff");
+      return res.json();
+    },
+    enabled: !!accessToken && !!restaurantId,
+  });
+
+  const updateCredentialsMutation = useMutation({
+    mutationFn: async ({ userId, data }: { userId: string; data: typeof credForm }) => {
+      const body: Record<string, string> = {};
+      if (data.email) body.email = data.email;
+      if (data.firstName) body.firstName = data.firstName;
+      if (data.lastName) body.lastName = data.lastName;
+      if (data.password) body.password = data.password;
+      const res = await fetch(`/api/admin/restaurants/${restaurantId}/admin/${userId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        credentials: "include",
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Failed to update credentials");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/restaurants", restaurantId, "staff"] });
+      toast({ title: "Credentials updated successfully" });
+      setEditCredUser(null);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const openEditCred = (member: { id: string; userId: string; email: string; firstName: string; lastName: string }) => {
+    setEditCredUser(member);
+    setCredForm({ email: member.email, firstName: member.firstName, lastName: member.lastName, password: "" });
+  };
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "active":
@@ -347,6 +401,10 @@ export default function RestaurantDetailPage() {
           <TabsTrigger value="domains" data-testid="tab-domains">
             <Globe className="mr-2 h-4 w-4" />
             Domains
+          </TabsTrigger>
+          <TabsTrigger value="staff" data-testid="tab-staff">
+            <Users className="mr-2 h-4 w-4" />
+            Staff
           </TabsTrigger>
         </TabsList>
 
@@ -720,7 +778,104 @@ export default function RestaurantDetailPage() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        <TabsContent value="staff" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5" />
+                Staff & Admin Users
+              </CardTitle>
+              <CardDescription>
+                Manage credentials for restaurant staff. Click the key icon to update email or password.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loadingStaff ? (
+                <div className="space-y-3">
+                  {[1, 2, 3].map((i) => <Skeleton key={i} className="h-14 w-full" />)}
+                </div>
+              ) : !staffData?.staff?.length ? (
+                <p className="text-sm text-muted-foreground">No staff found for this restaurant.</p>
+              ) : (
+                <div className="space-y-2">
+                  {staffData.staff.map((member) => (
+                    <div key={member.id} className="flex items-center justify-between p-4 rounded-lg border">
+                      <div>
+                        <p className="font-medium">{member.firstName} {member.lastName}</p>
+                        <p className="text-sm text-muted-foreground">{member.email}</p>
+                        <Badge variant="outline" className="mt-1 text-xs">{member.roleName}</Badge>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openEditCred(member)}
+                      >
+                        <KeyRound className="h-4 w-4 mr-1.5" />
+                        Edit Credentials
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
+
+      {/* Edit Credentials Dialog */}
+      <Dialog open={!!editCredUser} onOpenChange={(open) => { if (!open) setEditCredUser(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Credentials — {editCredUser?.firstName} {editCredUser?.lastName}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Email</Label>
+              <Input
+                value={credForm.email}
+                onChange={(e) => setCredForm({ ...credForm, email: e.target.value })}
+                placeholder="Email address"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>First Name</Label>
+              <Input
+                value={credForm.firstName}
+                onChange={(e) => setCredForm({ ...credForm, firstName: e.target.value })}
+                placeholder="First name"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Last Name</Label>
+              <Input
+                value={credForm.lastName}
+                onChange={(e) => setCredForm({ ...credForm, lastName: e.target.value })}
+                placeholder="Last name"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>New Password</Label>
+              <Input
+                type="password"
+                value={credForm.password}
+                onChange={(e) => setCredForm({ ...credForm, password: e.target.value })}
+                placeholder="Leave blank to keep current password"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditCredUser(null)}>Cancel</Button>
+            <Button
+              onClick={() => editCredUser && updateCredentialsMutation.mutate({ userId: editCredUser.userId, data: credForm })}
+              disabled={updateCredentialsMutation.isPending}
+            >
+              <Save className="h-4 w-4 mr-1.5" />
+              {updateCredentialsMutation.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
