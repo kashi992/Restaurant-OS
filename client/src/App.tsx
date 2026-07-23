@@ -16,6 +16,8 @@ import NotFound from "@/pages/not-found";
 import LoginPage from "@/pages/login";
 import UnauthorizedPage from "@/pages/unauthorized";
 import AdminDashboard from "@/pages/admin/index";
+import AdminDashboardHome from "@/pages/admin/dashboard";
+import AdminSettingsPage from "@/pages/admin/settings";
 import CreateRestaurantPage from "@/pages/admin/restaurants/new";
 import RestaurantDetailPage from "@/pages/admin/restaurants/[id]";
 import DashboardHome from "@/pages/dashboard/index";
@@ -88,10 +90,24 @@ function AppRouter() {
           </AdminLayout>
         </ProtectedRoute>
       </Route>
-      <Route path="/admin">
+      <Route path="/admin/settings">
+        <ProtectedRoute requireSuperAdmin>
+          <AdminLayout>
+            <AdminSettingsPage />
+          </AdminLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/restaurants">
         <ProtectedRoute requireSuperAdmin>
           <AdminLayout>
             <AdminDashboard />
+          </AdminLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin">
+        <ProtectedRoute requireSuperAdmin>
+          <AdminLayout>
+            <AdminDashboardHome />
           </AdminLayout>
         </ProtectedRoute>
       </Route>

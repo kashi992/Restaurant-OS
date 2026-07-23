@@ -863,6 +863,91 @@ export async function registerRoutes(
     return "active";
   };
 
+  // Super admin profile update (name, email, password)
+  app.patch("/api/admin/profile", authenticate, requireSuperAdmin, async (req, res) => {
+    try {
+      const { firstName, lastName, email, currentPassword, newPassword } = req.body;
+      const userId = req.user!.userId;
+
+      const [currentUser] = await db.select().from(users).where(eq(users.id, userId));
+      if (!currentUser) return res.status(404).json({ error: "User not found" });
+
+      const updates: Partial<typeof users.$inferInsert> = {};
+
+      if (firstName !== undefined) updates.firstName = firstName;
+      if (lastName !== undefined) updates.lastName = lastName;
+
+      if (email && email !== currentUser.email) {
+        const [existing] = await db.select().from(users).where(eq(users.email, email));
+        if (existing) return res.status(400).json({ error: "Email already in use" });
+        updates.email = email;
+      }
+
+      if (newPassword) {
+        if (!currentPassword) return res.status(400).json({ error: "Current password is required" });
+        const valid = await bcrypt.compare(currentPassword, currentUser.password);
+        if (!valid) return res.status(400).json({ error: "Current password is incorrect" });
+        updates.password = await bcrypt.hash(newPassword, 10);
+      }
+
+      updates.updatedAt = new Date();
+      await db.update(users).set(updates).where(eq(users.id, userId));
+
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Error updating admin profile:", err);
+      res.status(500).json({ error: "Failed to update profile" });
+    }
+  });
+
+  // Super admin dashboard stats
+  app.get("/api/admin/stats", authenticate, requireSuperAdmin, async (req, res) => {
+    try {
+      const allRestaurants = await db.select().from(restaurants);
+
+      const now = Date.now();
+      const thirtyDays = 30 * 24 * 60 * 60 * 1000;
+
+      let active = 0, suspended = 0, expired = 0, expiringSoon = 0;
+      for (const r of allRestaurants) {
+        const status = computeRestaurantStatus(r);
+        if (status === "active") active++;
+        else if (status === "suspended") suspended++;
+        else if (status === "expired") expired++;
+        if (r.subscriptionEndAt && status === "active") {
+          const ms = new Date(r.subscriptionEndAt).getTime() - now;
+          if (ms > 0 && ms <= thirtyDays) expiringSoon++;
+        }
+      }
+
+      const totalStaff = await db.select({ count: sql<number>`count(*)` }).from(restaurantUsers);
+      const recentLogs = await db
+        .select({
+          id: adminAuditLogs.id,
+          action: adminAuditLogs.action,
+          targetName: adminAuditLogs.targetName,
+          targetType: adminAuditLogs.targetType,
+          createdAt: adminAuditLogs.createdAt,
+        })
+        .from(adminAuditLogs)
+        .orderBy(desc(adminAuditLogs.createdAt))
+        .limit(5);
+
+      res.json({
+        totalRestaurants: allRestaurants.length,
+        active,
+        suspended,
+        expired,
+        expiringSoon,
+        totalStaff: Number(totalStaff[0]?.count ?? 0),
+        recentActivity: recentLogs,
+      });
+    } catch (err) {
+      console.error("Admin stats error:", err);
+      res.status(500).json({ error: "Failed to fetch stats" });
+    }
+  });
+
   // List all restaurants (super admin only)
   app.get("/api/admin/restaurants", authenticate, requireSuperAdmin, async (req, res) => {
     try {

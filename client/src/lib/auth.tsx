@@ -119,7 +119,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
     const data = await res.json();
-    console.log("🔐 Login response:", data);
     setAccessToken(data.accessToken);
 
   const defaultPaymentMethods = { cash: false, counter: false, card: false, stripe: false, paypal: false };
@@ -137,7 +136,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     paymentMethods: data.user.paymentMethods || defaultPaymentMethods,
   };
   
-   console.log("👤 Setting user:", userObj); // ✅ DEBUG LOG
   setUser(userObj);
  
   return;

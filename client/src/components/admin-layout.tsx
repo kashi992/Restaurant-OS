@@ -34,9 +34,9 @@ import {
 } from "lucide-react";
 
 const navItems = [
-  { title: "Dashboard", url: "/admin", icon: LayoutDashboard },
-  { title: "Restaurants", url: "/admin", icon: Building2 },
-  { title: "Settings", url: "/admin/settings", icon: Settings },
+  { title: "Dashboard", url: "/admin", icon: LayoutDashboard, exact: true },
+  { title: "Restaurants", url: "/admin/restaurants", icon: Building2, exact: false },
+  { title: "Settings", url: "/admin/settings", icon: Settings, exact: true },
 ];
 
 export function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -75,7 +75,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
                     <SidebarMenuItem key={item.title}>
                       <SidebarMenuButton
                         asChild
-                        isActive={location === item.url}
+                        isActive={item.exact ? location === item.url : location.startsWith(item.url)}
                       >
                         <Link href={item.url}>
                           <item.icon className="h-4 w-4" />
