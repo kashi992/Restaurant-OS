@@ -8,8 +8,19 @@ import "dotenv/config";
 import { Pool } from "pg";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-const RESTAURANT_ID = "e3b72c03-d126-4c09-bbea-d1948a8f7165";
-const MENU_ID = "9d09ef1d-0bfd-4c40-a6d3-562ab2403e4a";
+
+// Look up IDs dynamically so this works on any environment
+async function getIds(client: any) {
+  const restResult = await client.query(`SELECT id FROM restaurants LIMIT 1`);
+  if (restResult.rows.length === 0) throw new Error("No restaurant found. Run seed.ts first.");
+  const RESTAURANT_ID = restResult.rows[0].id;
+
+  const menuResult = await client.query(`SELECT id FROM menus WHERE restaurant_id = '${RESTAURANT_ID}' LIMIT 1`);
+  if (menuResult.rows.length === 0) throw new Error("No menu found for restaurant.");
+  const MENU_ID = menuResult.rows[0].id;
+
+  return { RESTAURANT_ID, MENU_ID };
+}
 
 function uid() {
   return crypto.randomUUID();
@@ -19,6 +30,7 @@ async function run() {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    const { RESTAURANT_ID, MENU_ID } = await getIds(client);
 
     // ── Clear existing data ───────────────────────────────────────────────────
     console.log("Clearing old data...");
