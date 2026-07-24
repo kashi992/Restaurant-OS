@@ -6,6 +6,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
@@ -193,7 +194,7 @@ export default function AdminSettingsPage() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Current Password</FormLabel>
-                      <FormControl><Input type="password" placeholder="••••••••" {...field} /></FormControl>
+                      <FormControl><PasswordInput placeholder="••••••••" {...field} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -204,7 +205,7 @@ export default function AdminSettingsPage() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>New Password</FormLabel>
-                      <FormControl><Input type="password" placeholder="Min 8 characters" {...field} /></FormControl>
+                      <FormControl><PasswordInput placeholder="Min 8 characters" {...field} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -215,7 +216,7 @@ export default function AdminSettingsPage() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Confirm New Password</FormLabel>
-                      <FormControl><Input type="password" placeholder="••••••••" {...field} /></FormControl>
+                      <FormControl><PasswordInput placeholder="••••••••" {...field} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}

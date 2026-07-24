@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/auth";
 import { queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -439,7 +440,7 @@ export default function StaffManager() {
                   <FormItem>
                     <FormLabel>Password</FormLabel>
                     <FormControl>
-                      <Input type="password" placeholder="Min 8 characters" data-testid="input-staff-password" {...field} />
+                      <PasswordInput placeholder="Min 8 characters" data-testid="input-staff-password" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -544,7 +545,7 @@ export default function StaffManager() {
                   <FormItem>
                     <FormLabel>New Password</FormLabel>
                     <FormControl>
-                      <Input type="password" placeholder="Leave blank to keep current" data-testid="input-edit-password" {...field} />
+                      <PasswordInput placeholder="Leave blank to keep current" data-testid="input-edit-password" {...field} />
                     </FormControl>
                     <FormDescription>Leave empty to keep the current password.</FormDescription>
                     <FormMessage />

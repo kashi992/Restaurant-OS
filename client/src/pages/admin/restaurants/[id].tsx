@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { PasswordInput } from "@/components/ui/password-input";
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft,
@@ -856,8 +857,7 @@ export default function RestaurantDetailPage() {
             </div>
             <div className="space-y-2">
               <Label>New Password</Label>
-              <Input
-                type="password"
+              <PasswordInput
                 value={credForm.password}
                 onChange={(e) => setCredForm({ ...credForm, password: e.target.value })}
                 placeholder="Leave blank to keep current password"
