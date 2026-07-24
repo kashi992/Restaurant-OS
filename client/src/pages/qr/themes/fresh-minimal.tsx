@@ -230,6 +230,55 @@ export default function FreshMinimalTheme({
         </div>
       </section>
 
+      {/* ── STATS STRIP ── */}
+      <div style={{ background: c.surface, borderBottom: `1px solid ${border}` }}>
+        <div className="flex items-center justify-around px-4 py-6 max-w-2xl mx-auto">
+          {[
+            { value: `${categories.flatMap(ct => ct.items).length}+`, label: "Menu Items" },
+            { value: "4.8★", label: "Rating" },
+            { value: "8+", label: "Years Open" },
+            { value: "30k+", label: "Happy Guests" },
+          ].map((stat) => (
+            <div key={stat.label} className="flex flex-col items-center gap-1">
+              <span className="text-xl font-bold" style={{ fontFamily: "'DM Serif Display', serif", color: c.primary }}>{stat.value}</span>
+              <span className="text-xs uppercase tracking-wider" style={{ color: muted }}>{stat.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── POPULAR PICKS ── */}
+      {allPopular.length > 0 && (
+        <section className="py-12 px-4" style={{ background: c.bg }}>
+          <div className="text-center mb-6">
+            <p className="text-xs uppercase tracking-widest mb-1" style={{ color: muted }}>Most Loved</p>
+            <h2 style={{ fontFamily: "'DM Serif Display', serif", fontSize: 24, color: c.text }}>Popular Picks</h2>
+          </div>
+          <div className="flex flex-col gap-3">
+            {allPopular.map((item) => (
+              <div key={item.id} className="flex gap-4 items-center p-3.5 rounded-2xl border cursor-pointer transition-all"
+                style={{ background: c.surface, borderColor: border, boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}
+                onClick={() => onItemClick(item)}>
+                {item.imageUrl
+                  ? <img src={item.imageUrl} alt={item.name} className="flex-shrink-0 rounded-2xl object-cover" style={{ width: 80, height: 80, borderRadius: 14 }} />
+                  : <div className="flex-shrink-0 flex items-center justify-center text-2xl rounded-2xl" style={{ width: 80, height: 80, background: `${c.primary}14`, borderRadius: 14 }}>🌿</div>}
+                <div className="flex-1 min-w-0">
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-xl mb-1 inline-block" style={{ background: "#FFF8ED", color: "#F4A261" }}>⭐ Popular</span>
+                  <p className="font-semibold text-base truncate" style={{ color: c.text }}>{item.name}</p>
+                  {item.description && <p className="text-xs mt-0.5 line-clamp-1" style={{ color: muted }}>{item.description}</p>}
+                  <div className="flex items-center justify-between mt-2">
+                    <span className="text-base font-bold" style={{ color: c.text }}>{currency}{parseFloat(item.price).toFixed(2)}</span>
+                    <button onClick={(e) => { e.stopPropagation(); item.modifierGroups?.length ? onItemClick(item) : onQuickAdd(item); }}
+                      className="w-8 h-8 rounded-full flex items-center justify-center text-xl font-bold border-2 transition-all hover:opacity-80"
+                      style={{ borderColor: c.primary, color: c.primary, background: c.surface }}>+</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* ── MENU SECTION ── */}
       <section ref={menuSectionRef} className="pb-10" style={{ background: c.bg }}>
         <div className="px-5 pt-12 pb-4 text-center">
@@ -284,6 +333,54 @@ export default function FreshMinimalTheme({
                   </div>
                 );
               })}
+        </div>
+      </section>
+
+      {/* ── GALLERY STRIP ── */}
+      <section className="py-10 overflow-hidden" style={{ background: c.surface }}>
+        <div className="px-5 mb-4 text-center">
+          <p className="text-xs uppercase tracking-widest mb-1" style={{ color: muted }}>Our Kitchen</p>
+          <h2 style={{ fontFamily: "'DM Serif Display', serif", fontSize: 22, color: c.text }}>A Peek Inside</h2>
+        </div>
+        <div className="flex gap-3 px-5 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+          {[
+            "https://images.unsplash.com/photo-1498837167922-ddd27525d352?w=400&q=80",
+            "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&q=80",
+            "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=400&q=80",
+            "https://images.unsplash.com/photo-1490645935967-10de6ba17061?w=400&q=80",
+            "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=400&q=80",
+          ].map((src, i) => (
+            <img key={i} src={src} alt="Food" className="flex-shrink-0 object-cover rounded-2xl"
+              style={{ width: 140, height: 160, borderRadius: 16, border: `1px solid ${border}` }} />
+          ))}
+        </div>
+      </section>
+
+      {/* ── TESTIMONIALS ── */}
+      <section className="py-14 px-4" style={{ background: c.bg }}>
+        <div className="text-center mb-8">
+          <p className="text-xs uppercase tracking-widest mb-1" style={{ color: muted }}>What Our Guests Say</p>
+          <h2 style={{ fontFamily: "'DM Serif Display', serif", fontSize: 24, color: c.text }}>Reviews</h2>
+        </div>
+        <div className="flex flex-col gap-4">
+          {[
+            { name: "Priya K.", stars: 5, text: "The salads here are unlike anything I've had — so fresh and vibrant. You can taste the quality of every ingredient. My new weekly ritual!" },
+            { name: "Tom W.", stars: 5, text: "Clean, bright space with food that actually nourishes you. The seasonal menu keeps me coming back to try what's new. Highly recommend." },
+            { name: "Amara O.", stars: 5, text: "Incredibly friendly staff and food that feels genuinely wholesome. The grain bowls are outstanding. A gem of a restaurant." },
+          ].map((r) => (
+            <div key={r.name} className="p-5 rounded-2xl border" style={{ background: c.surface, borderColor: border, boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
+              <div className="flex items-center gap-0.5 mb-3">
+                {Array.from({ length: r.stars }).map((_, i) => (
+                  <span key={i} style={{ color: "#F4A261", fontSize: 14 }}>★</span>
+                ))}
+              </div>
+              <p className="text-sm leading-relaxed mb-4" style={{ color: c.text }}>"{r.text}"</p>
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold" style={{ background: `${c.primary}14`, color: c.primary }}>{r.name[0]}</div>
+                <p className="text-xs font-semibold" style={{ color: muted }}>{r.name}</p>
+              </div>
+            </div>
+          ))}
         </div>
       </section>
 

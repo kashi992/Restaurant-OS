@@ -263,6 +263,60 @@ export default function LuxeDarkTheme({
 
       </section>
 
+      {/* ── STATS STRIP ── */}
+      <div style={{ background: c.surface, borderTop: `1px solid ${borderCol}`, borderBottom: `1px solid ${borderCol}` }}>
+        <div className="flex items-center justify-around px-4 py-6 max-w-2xl mx-auto">
+          {[
+            { value: `${categories.flatMap(ct => ct.items).length}+`, label: "Dishes" },
+            { value: "4.9★", label: "Rating" },
+            { value: "12+", label: "Years Open" },
+            { value: "50k+", label: "Happy Guests" },
+          ].map((stat) => (
+            <div key={stat.label} className="flex flex-col items-center gap-1">
+              <span className="text-xl font-bold" style={{ fontFamily: "'Playfair Display', serif", color: c.primary }}>{stat.value}</span>
+              <span className="text-xs uppercase tracking-widest" style={{ color: muted }}>{stat.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── POPULAR PICKS ── */}
+      {allItems.filter(i => i.isPopular).slice(0, 3).length > 0 && (
+        <section className="py-12 px-5" style={{ background: c.bg }}>
+          <div className="text-center mb-8">
+            <p className="text-xs uppercase tracking-[4px] mb-2" style={{ color: c.primary }}>Guest Favourites</p>
+            <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 26, fontWeight: 700, color: c.text }}>Popular Picks</h2>
+            <div className="flex items-center justify-center gap-3 mt-3">
+              <div className="h-px w-10" style={{ background: borderCol }} />
+              <span style={{ color: c.primary, fontSize: 12 }}>✦</span>
+              <div className="h-px w-10" style={{ background: borderCol }} />
+            </div>
+          </div>
+          <div className="flex flex-col gap-4">
+            {allItems.filter(i => i.isPopular).slice(0, 3).map((item) => (
+              <div key={item.id} className="flex gap-4 items-center rounded-2xl overflow-hidden border cursor-pointer"
+                style={{ background: c.surface, borderColor: `${c.primary}40` }}
+                onClick={() => onItemClick(item)}>
+                {item.imageUrl
+                  ? <img src={item.imageUrl} alt={item.name} className="flex-shrink-0 object-cover" style={{ width: 100, height: 100 }} />
+                  : <div className="flex-shrink-0 flex items-center justify-center text-3xl" style={{ width: 100, height: 100, background: borderCol }}>🍽️</div>}
+                <div className="flex-1 py-3 pr-3">
+                  <p className="text-xs uppercase tracking-widest mb-1" style={{ color: c.primary }}>★ Popular</p>
+                  <p className="font-bold text-base mb-1" style={{ fontFamily: "'Playfair Display', serif", color: c.text }}>{item.name}</p>
+                  {item.description && <p className="text-xs mb-2 line-clamp-1" style={{ color: muted }}>{item.description}</p>}
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-sm" style={{ color: c.primary }}>{currency}{parseFloat(item.price).toFixed(2)}</span>
+                    <button onClick={(e) => { e.stopPropagation(); item.modifierGroups?.length ? onItemClick(item) : onQuickAdd(item); }}
+                      className="px-4 py-1.5 rounded-full text-xs font-bold"
+                      style={{ background: `linear-gradient(135deg, ${c.primary}, ${c.primaryLight})`, color: c.bg }}>Add</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* ── MENU SECTION ── */}
       <section ref={menuSectionRef} className="pb-10" style={{ background: c.bg }}>
         <div className="px-5 pt-12 pb-6 text-center">
@@ -359,6 +413,36 @@ export default function LuxeDarkTheme({
               )}
             </>
           )}
+        </div>
+      </section>
+
+      {/* ── TESTIMONIALS ── */}
+      <section className="py-14 px-5" style={{ background: c.bg }}>
+        <div className="text-center mb-8">
+          <p className="text-xs uppercase tracking-[4px] mb-2" style={{ color: c.primary }}>What Guests Say</p>
+          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 26, fontWeight: 700, color: c.text }}>Reviews</h2>
+          <div className="flex items-center justify-center gap-3 mt-3">
+            <div className="h-px w-10" style={{ background: borderCol }} />
+            <span style={{ color: c.primary, fontSize: 12 }}>✦</span>
+            <div className="h-px w-10" style={{ background: borderCol }} />
+          </div>
+        </div>
+        <div className="flex flex-col gap-4">
+          {[
+            { name: "Isabelle M.", stars: 5, text: "An extraordinary evening. The lamb was cooked to absolute perfection — tender, aromatic, and beautifully presented. Pure luxury." },
+            { name: "James T.", stars: 5, text: "The atmosphere is incomparable. Candlelit, intimate, with service that anticipates your every need. We'll be back for every anniversary." },
+            { name: "Sofia R.", stars: 5, text: "The tasting menu took us on a journey. Each course told a story. Truly the finest dining experience we've had in the city." },
+          ].map((r) => (
+            <div key={r.name} className="p-5 rounded-2xl border" style={{ background: c.surface, borderColor: borderCol }}>
+              <div className="flex items-center gap-1 mb-3">
+                {Array.from({ length: r.stars }).map((_, i) => (
+                  <span key={i} style={{ color: c.primary, fontSize: 14 }}>★</span>
+                ))}
+              </div>
+              <p className="text-sm leading-relaxed mb-4 italic" style={{ color: c.text, fontFamily: "'Playfair Display', serif" }}>"{r.text}"</p>
+              <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: muted }}>— {r.name}</p>
+            </div>
+          ))}
         </div>
       </section>
 

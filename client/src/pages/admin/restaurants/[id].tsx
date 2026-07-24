@@ -83,6 +83,15 @@ export default function RestaurantDetailPage() {
   const { accessToken } = useAuth();
   const { toast } = useToast();
   const restaurantId = params?.id;
+
+  const validTabs = ["subscription", "features", "settings", "domains", "staff"];
+  const searchParams = new URLSearchParams(window.location.search);
+  const initialTab = validTabs.includes(searchParams.get("tab") ?? "") ? searchParams.get("tab")! : "subscription";
+  const handleTabChange = (tab: string) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", tab);
+    window.history.replaceState(null, "", url.toString());
+  };
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({
     name: "",
@@ -167,7 +176,8 @@ export default function RestaurantDetailPage() {
   });
 
   const toggleFeatureMutation = useMutation({
-    mutationFn: async ({ featureKey, enabled }: { featureKey: string; enabled: boolean }) => {
+    mutationFn: async ({ featureKey, enabled, _bulk }: { featureKey: string; enabled: boolean; _bulk?: Record<string, { isEnabled: boolean; expiresAt: null }> }) => {
+      const featuresPayload = _bulk ?? { [featureKey]: { isEnabled: enabled, expiresAt: null } };
       const res = await fetch(`/api/admin/restaurants/${restaurantId}/features`, {
         method: "POST",
         headers: {
@@ -175,20 +185,13 @@ export default function RestaurantDetailPage() {
           Authorization: `Bearer ${accessToken}`,
         },
         credentials: "include",
-        body: JSON.stringify({
-          features: {
-            [featureKey]: {
-              isEnabled: enabled,
-              expiresAt: null // or omit if not needed
-            }
-          }
-        }),
+        body: JSON.stringify({ features: featuresPayload }),
       });
       if (!res.ok) throw new Error("Failed to toggle feature");
     },
-    onSuccess: () => {
+    onSuccess: (_, { _bulk }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/restaurants", restaurantId] });
-      toast({ title: "Feature updated", description: "Feature toggle has been saved." });
+      toast({ title: _bulk ? "All features updated" : "Feature updated" });
     },
     onError: (error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -385,7 +388,7 @@ export default function RestaurantDetailPage() {
         </div>
       </div>
 
-      <Tabs defaultValue="subscription">
+      <Tabs defaultValue={initialTab} onValueChange={handleTabChange}>
         <TabsList className="flex-wrap">
           <TabsTrigger value="subscription" data-testid="tab-subscription">
             <Calendar className="mr-2 h-4 w-4" />
@@ -476,15 +479,30 @@ export default function RestaurantDetailPage() {
 
         <TabsContent value="features" className="space-y-4">
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Shield className="h-5 w-5" />
-                Feature Allowlist
-              </CardTitle>
-              <CardDescription>
-                Control which features this restaurant can access. These are hard permissions
-                that override restaurant-level settings.
-              </CardDescription>
+            <CardHeader className="flex flex-row items-start justify-between gap-4">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Shield className="h-5 w-5" />
+                  Feature Allowlist
+                </CardTitle>
+                <CardDescription className="mt-1">
+                  Control which features this restaurant can access. These are hard permissions
+                  that override restaurant-level settings.
+                </CardDescription>
+              </div>
+              <div className="flex items-center gap-2 shrink-0 pt-1">
+                <span className="text-sm font-medium">Enable All</span>
+                <Switch
+                  checked={MASTER_FEATURES.every((f) => isFeatureEnabled(f.key))}
+                  onCheckedChange={(enabled) => {
+                    const allFeatures = Object.fromEntries(
+                      MASTER_FEATURES.map((f) => [f.key, { isEnabled: enabled, expiresAt: null }])
+                    );
+                    toggleFeatureMutation.mutate({ featureKey: "__bulk__", enabled, _bulk: allFeatures });
+                  }}
+                  disabled={toggleFeatureMutation.isPending}
+                />
+              </div>
             </CardHeader>
             <CardContent>
               {loadingRestaurant ? (

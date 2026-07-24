@@ -215,6 +215,65 @@ export default function WarmSpiceTheme({
         </div>
       </section>
 
+      {/* ── STATS STRIP ── */}
+      <div style={{ background: c.surface, borderTop: `2px solid ${borderCol}`, borderBottom: `2px solid ${borderCol}` }}>
+        <div className="flex items-center justify-around px-4 py-6 max-w-2xl mx-auto">
+          {[
+            { value: `${categories.flatMap(ct => ct.items).length}+`, label: "Dishes" },
+            { value: "4.9★", label: "Rating" },
+            { value: "26+", label: "Years Open" },
+            { value: "100k+", label: "Happy Guests" },
+          ].map((stat) => (
+            <div key={stat.label} className="flex flex-col items-center gap-1">
+              <span className="text-xl font-extrabold" style={{ fontFamily: "'Cormorant Garamond', serif", color: c.primary, fontSize: 22 }}>{stat.value}</span>
+              <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: muted }}>{stat.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── POPULAR PICKS ── */}
+      {allPopular.length > 0 && (
+        <section className="py-12 px-4" style={{ background: c.bg }}>
+          <div className="text-center mb-7">
+            <div className="flex items-center justify-center gap-3 mb-3">
+              <div className="h-px w-8" style={{ background: c.primary }} />
+              <span style={{ color: c.primary, fontSize: 14 }}>✦</span>
+              <div className="h-px w-8" style={{ background: c.primary }} />
+            </div>
+            <h2 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 28, fontWeight: 700, color: c.text }}>Popular Picks</h2>
+            <p className="text-xs mt-1 tracking-wider" style={{ color: muted }}>Our guests keep coming back for these</p>
+          </div>
+          <div className="grid md:grid-cols-2 gap-4">
+            {allPopular.map((item) => (
+              <div key={item.id} className="rounded-2xl overflow-hidden border cursor-pointer transition-all"
+                style={{ background: c.surface, borderColor: borderCol, boxShadow: "0 2px 12px rgba(193,68,14,0.06)" }}
+                onClick={() => onItemClick(item)}>
+                <div className="relative h-[250px]">
+                  {item.imageUrl
+                    ? <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
+                    : <div className="w-full h-full flex items-center justify-center text-4xl" style={{ background: terraPale }}>🍽️</div>}
+                  <div className="absolute inset-0" style={{ background: "linear-gradient(to top, rgba(30,18,8,0.55) 0%, transparent 50%)" }} />
+                  <span className="absolute top-2.5 left-2.5 text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: c.primaryLight, color: c.primaryDark }}>⭐ Popular</span>
+                </div>
+                <div className="p-3.5 flex items-center justify-between">
+                  <div className="flex-1 mr-3">
+                    <p className="text-lg font-semibold" style={{ fontFamily: "'Cormorant Garamond', serif", color: c.text }}>{item.name}</p>
+                    {item.description && <p className="text-xs line-clamp-1" style={{ color: muted }}>{item.description}</p>}
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <span className="text-sm font-extrabold px-3 py-1 rounded-full" style={{ background: terraPale, color: c.primary }}>{currency}{parseFloat(item.price).toFixed(2)}</span>
+                    <button onClick={(e) => { e.stopPropagation(); item.modifierGroups?.length ? onItemClick(item) : onQuickAdd(item); }}
+                      className="px-4 py-2 rounded-full text-sm font-bold text-white transition-all hover:opacity-90"
+                      style={{ background: c.primary }}>+ Add</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* ── MENU SECTION ── */}
       <section ref={menuSectionRef} className="pb-10" style={{ background: c.bg }}>
         <div className="px-5 pt-12 pb-6 text-center">
@@ -234,7 +293,7 @@ export default function WarmSpiceTheme({
               const isSelected = selectedCategory === cat.id;
               return (
                 <div key={cat.id} onClick={() => onCategorySelect(cat.id)}
-                  className="relative h-24 rounded-2xl overflow-hidden cursor-pointer transition-all"
+                  className="relative h-32 rounded-2xl overflow-hidden cursor-pointer transition-all"
                   style={{ border: `2px solid ${isSelected ? c.primaryLight : "transparent"}` }}>
                   {thumb ? <img src={thumb} alt={cat.name} className="w-full h-full object-cover" style={{ filter: "brightness(0.5)" }} />
                     : <div className="w-full h-full" style={{ background: c.primaryDark }} />}
@@ -264,7 +323,7 @@ export default function WarmSpiceTheme({
           <div className="flex items-center justify-between mb-3.5">
             <h3 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 22, fontWeight: 600, color: c.text }}>{currentCategory?.name || "Menu"}</h3>
           </div>
-          <div className="flex flex-col gap-3.5">
+          <div className="grid md:grid-cols-2 gap-3.5">
             {isLoadingMenu ? [1,2,3].map((i) => <Skeleton key={i} className="h-64 w-full rounded-2xl" />)
               : items.length === 0 ? <p className="text-center py-12" style={{ color: muted }}>No items in this category</p>
               : items.map((item) => {
@@ -307,6 +366,59 @@ export default function WarmSpiceTheme({
                   );
                 })}
           </div>
+        </div>
+      </section>
+
+      {/* ── GALLERY STRIP ── */}
+      <section className="py-10 overflow-hidden" style={{ background: "#ffffff" }}>
+        <div className="px-5 mb-4 text-center">
+          <p className="text-xs font-bold uppercase tracking-widest mb-1" style={{ color: muted }}>A Feast for the Eyes</p>
+          <h2 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 24, fontWeight: 700, color: c.text }}>From Our Kitchen</h2>
+        </div>
+        <div className="flex gap-3 px-5 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+          {[
+            "https://images.unsplash.com/photo-1455619452474-d2be8b1e70cd?w=400&q=80",
+            "https://images.unsplash.com/photo-1563379926898-05f4575a45d8?w=400&q=80",
+            "https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?w=400&q=80",
+            "https://images.unsplash.com/photo-1476718406336-bb5a9690ee2a?w=400&q=80",
+            "https://images.unsplash.com/photo-1544025162-d76694265947?w=400&q=80",
+          ].map((src, i) => (
+            <img key={i} src={src} alt="Food" className="flex-shrink-0 object-cover"
+              style={{ width: 240, height: 168, borderRadius: 16, border: `2px solid ${borderCol}` }} />
+          ))}
+        </div>
+      </section>
+
+      {/* ── TESTIMONIALS ── */}
+      <section className="py-14 px-5" style={{ background: c.bg }}>
+        <div className="text-center mb-8">
+          <div className="flex items-center justify-center gap-3 mb-3">
+            <div className="h-px w-8" style={{ background: c.primary }} />
+            <span style={{ color: c.primary, fontSize: 14 }}>✦</span>
+            <div className="h-px w-8" style={{ background: c.primary }} />
+          </div>
+          <h2 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 28, fontWeight: 700, color: c.text }}>Guest Words</h2>
+          <p className="text-xs tracking-wider mt-1" style={{ color: muted }}>Stories from our table to yours</p>
+        </div>
+        <div className="flex flex-col gap-4">
+          {[
+            { name: "Rajan P.", stars: 5, text: "The biryani transported me straight to my grandmother's kitchen. Rich, layered spices and perfectly cooked rice. Absolutely authentic." },
+            { name: "Maria S.", stars: 5, text: "The warmth of this place matches the warmth of the food. Every dish bursts with flavour. The lamb curry is unmissable — a true masterpiece." },
+            { name: "David L.", stars: 5, text: "We've tried every Indian restaurant in town and this is hands down the best. The slow-cooked dal and fresh naan are simply outstanding." },
+          ].map((r) => (
+            <div key={r.name} className="p-5 rounded-2xl border" style={{ background: c.surface, borderColor: borderCol }}>
+              <div className="flex items-center gap-0.5 mb-3">
+                {Array.from({ length: r.stars }).map((_, i) => (
+                  <span key={i} style={{ color: c.primaryLight, fontSize: 15 }}>★</span>
+                ))}
+              </div>
+              <p className="text-base italic leading-relaxed mb-4" style={{ fontFamily: "'Cormorant Garamond', serif", color: c.text, fontSize: 16, lineHeight: 1.65 }}>"{r.text}"</p>
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-extrabold" style={{ background: terraPale, color: c.primary }}>{r.name[0]}</div>
+                <p className="text-xs font-bold" style={{ color: muted }}>{r.name}</p>
+              </div>
+            </div>
+          ))}
         </div>
       </section>
 
